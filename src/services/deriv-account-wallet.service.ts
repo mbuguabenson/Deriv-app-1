@@ -717,9 +717,9 @@ export class DerivAccountWalletService {
                         if (data?.msg_type === 'transaction' && data?.transaction) {
                             const t = data.transaction;
                             onTransaction({
-                                action: t.action,
-                                amount: parseFloat(t.amount || '0'),
-                                balance: parseFloat(t.balance || '0'),
+                                action: String(t.action || t.action_type || 'transaction'),
+                                amount: typeof t.amount === 'number' ? t.amount : (parseFloat(t.amount || '0') || 0),
+                                balance: typeof t.balance === 'number' ? t.balance : (parseFloat(t.balance || '0') || 0),
                                 barrier: t.barrier,
                                 contract_id: t.contract_id,
                                 currency: t.currency || 'USD',
@@ -729,8 +729,8 @@ export class DerivAccountWalletService {
                                 longcode: t.longcode,
                                 purchase_time: t.purchase_time,
                                 symbol: t.symbol,
-                                transaction_id: t.transaction_id,
-                                transaction_time: t.transaction_time,
+                                transaction_id: t.transaction_id || Date.now(),
+                                transaction_time: t.transaction_time || Math.floor(Date.now() / 1000),
                             });
                         }
                     });
@@ -743,9 +743,9 @@ export class DerivAccountWalletService {
                 if (res?.transaction) {
                     const t = res.transaction;
                     onTransaction({
-                        action: t.action,
-                        amount: parseFloat(t.amount || '0'),
-                        balance: parseFloat(t.balance || '0'),
+                        action: String(t.action || t.action_type || 'transaction'),
+                        amount: typeof t.amount === 'number' ? t.amount : (parseFloat(t.amount || '0') || 0),
+                        balance: typeof t.balance === 'number' ? t.balance : (parseFloat(t.balance || '0') || 0),
                         barrier: t.barrier,
                         contract_id: t.contract_id,
                         currency: t.currency || 'USD',
@@ -755,8 +755,8 @@ export class DerivAccountWalletService {
                         longcode: t.longcode,
                         purchase_time: t.purchase_time,
                         symbol: t.symbol,
-                        transaction_id: t.transaction_id,
-                        transaction_time: t.transaction_time,
+                        transaction_id: t.transaction_id || Date.now(),
+                        transaction_time: t.transaction_time || Math.floor(Date.now() / 1000),
                     });
                 }
             } catch (e) {

@@ -220,13 +220,30 @@ const AccountPage = observer(() => {
     }, [client, fetchPortfolio, fetchProfitTable, fetchStatement]);
 
     // Format money helper
-    const formatAmount = (amount: number, curr = 'USD') => {
+    const formatAmount = (amount: number | string | undefined | null, curr = 'USD') => {
         const isKes = displayCurrency === 'KES' && curr === 'USD';
-        const val = isKes ? amount * rate : amount;
-        const code = isKes ? 'KES' : getCurrencyDisplayCode(curr);
+        const numVal = Number(amount) || 0;
+        const val = isKes ? numVal * rate : numVal;
+        const safeCurr = curr || 'USD';
+        let code = isKes ? 'KES' : safeCurr;
+        try {
+            if (!isKes && typeof getCurrencyDisplayCode === 'function') {
+                code = getCurrencyDisplayCode(safeCurr) || safeCurr;
+            }
+        } catch {
+            code = safeCurr;
+        }
         const prefix = val > 0 ? '+' : '';
-        const dec = isKes ? 2 : getDecimalPlaces(curr);
-        return `${prefix}${addComma(val.toFixed(dec))} ${code}`;
+        let dec = 2;
+        try {
+            if (!isKes && typeof getDecimalPlaces === 'function') {
+                dec = getDecimalPlaces(safeCurr) ?? 2;
+            }
+        } catch {
+            dec = 2;
+        }
+        const safeVal = isNaN(val) ? 0 : val;
+        return `${prefix}${addComma(safeVal.toFixed(dec))} ${code}`;
     };
 
     // Filter statement transactions
@@ -480,15 +497,15 @@ const AccountPage = observer(() => {
                 </div>
                 {latestTransaction ? (
                     <div className='acc-stream-ticker__event'>
-                        <span className={`acc-stream-ticker__badge ${latestTransaction.amount >= 0 ? 'credit' : 'debit'}`}>
-                            {latestTransaction.action.toUpperCase()}
+                        <span className={`acc-stream-ticker__badge ${Number(latestTransaction.amount || 0) >= 0 ? 'credit' : 'debit'}`}>
+                            {String(latestTransaction.action || 'transaction').toUpperCase()}
                         </span>
                         <span className='acc-stream-ticker__amount'>
-                            {formatAmount(latestTransaction.amount, latestTransaction.currency)}
+                            {formatAmount(latestTransaction.amount, latestTransaction.currency || activeAccountData.currency)}
                         </span>
                         <span className='acc-stream-ticker__dot'>•</span>
                         <span className='acc-stream-ticker__meta'>
-                            {localize('Balance')}: ${addComma(latestTransaction.balance.toFixed(2))} {latestTransaction.currency}
+                            {localize('Balance')}: ${addComma((Number(latestTransaction.balance || 0)).toFixed(2))} {latestTransaction.currency || activeAccountData.currency}
                         </span>
                         {latestTransaction.symbol && (
                             <>
@@ -895,8 +912,8 @@ const AccountPage = observer(() => {
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        <span className={`acc-action-pill acc-action-pill--${tx.action_type.toLowerCase()}`}>
-                                                            {tx.action_type.toUpperCase()}
+                                                        <span className={`acc-action-pill acc-action-pill--${String(tx.action_type || 'transaction').toLowerCase()}`}>
+                                                            {String(tx.action_type || 'transaction').toUpperCase()}
                                                         </span>
                                                     </td>
                                                     <td>
@@ -1175,14 +1192,15 @@ const AccountPage = observer(() => {
                                     </thead>
                                     <tbody>
                                         {streamEvents.map((st, idx) => {
-                                            const isCredit = st.amount >= 0;
-                                            const tDate = new Date(st.transaction_time * 1000).toLocaleTimeString();
+                                            const isCredit = Number(st.amount || 0) >= 0;
+                                            const tDate = st.transaction_time ? new Date(st.transaction_time * 1000).toLocaleTimeString() : '—';
+                                            const actionStr = String(st.action || 'transaction');
                                             return (
                                                 <tr key={`${st.transaction_id}-${idx}`}>
                                                     <td className='text-nowrap acc-mono text-muted'>{tDate}</td>
                                                     <td>
-                                                        <span className={`acc-action-pill acc-action-pill--${st.action.toLowerCase()}`}>
-                                                            {st.action.toUpperCase()}
+                                                        <span className={`acc-action-pill acc-action-pill--${actionStr.toLowerCase()}`}>
+                                                            {actionStr.toUpperCase()}
                                                         </span>
                                                     </td>
                                                     <td className='acc-mono'>
@@ -1190,10 +1208,10 @@ const AccountPage = observer(() => {
                                                     </td>
                                                     <td className='font-bold'>{st.symbol || st.display_name || '—'}</td>
                                                     <td className={`text-right acc-mono font-bold ${isCredit ? 'text-win' : 'text-loss'}`}>
-                                                        {formatAmount(st.amount, st.currency)}
+                                                        {formatAmount(st.amount, st.currency || activeAccountData.currency)}
                                                     </td>
                                                     <td className='text-right acc-mono font-bold'>
-                                                        ${addComma(st.balance.toFixed(2))} {st.currency}
+                                                        ${addComma((Number(st.balance || 0)).toFixed(2))} {st.currency || activeAccountData.currency}
                                                     </td>
                                                 </tr>
                                             );
