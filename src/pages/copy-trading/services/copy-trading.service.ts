@@ -13,6 +13,7 @@
 import { getAppId } from '@/components/shared/utils/config/config';
 import { getAccountsList } from '@/utils/token-bridge';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
+import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
 
 export interface CopierAccount {
     id: string; // Unique identifier (UUID or loginid)
@@ -28,11 +29,12 @@ export interface CopierAccount {
     multiplier: number; // e.g. 1.0 = exact stake, 0.5 = half stake, 2.0 = double
     fixed_stake?: number; // e.g. 1.00 USD
     is_active: boolean; // Active or Paused
-    scopes: string[]; // ['read', 'trade', 'payments', ...]
-    last_trade_time?: string;
-    last_trade_status?: 'success' | 'failed' | 'idle';
+    scopes?: string[]; // Token permission scopes (read, trade, etc.)
     total_copied_trades?: number;
     total_profit?: number;
+    last_trade_time?: string;
+    last_trade_status?: 'idle' | 'success' | 'failed';
+    last_error?: string;
 }
 
 export interface CopierTradeLog {
@@ -201,8 +203,53 @@ class CopyTradingEngine {
      * - scopes: string[]
      */
     /**
-     * Connects to Deriv WebSocket and validates an API PAT token with multiple candidate App IDs.
-     * Tries official Deriv API App ID (1089) first, then app-specific IDs.
+     * Cleans and sanitizes user-pasted Deriv tokens:
+     * - Strips invisible BOM (\uFEFF) and zero-width spaces (\u200B-\u200D)
+     * - Strips non-breaking spaces (\u00A0) and newlines
+     * - Strips enclosing quotes, double quotes, and backticks
+     * - Handles pasted JSON e.g. {"token":"..."}
+     * - Handles pasted URLs or query strings e.g. ?token1=xxx
+     * - Strips "Bearer " prefix
+     * - Strips trailing dots/ellipses
+     */
+    public sanitizeToken(input: string): string {
+        if (!input || typeof input !== 'string') return '';
+        let cleaned = input.trim();
+
+        // 1. Remove BOM, zero-width spaces, and control chars
+        cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '');
+
+        // 2. Strip surrounding quotes and backticks
+        cleaned = cleaned.replace(/^['"`“”‘’]+|['"`“”‘’]+$/g, '').trim();
+
+        // 3. Handle JSON input (e.g. {"token": "xxx"})
+        if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(cleaned);
+                cleaned = parsed.token || parsed.api_token || parsed.access_token || parsed.authToken || cleaned;
+            } catch {}
+        }
+
+        // 4. Handle URL or query parameter input (e.g. ?token1=xxx or &token=xxx or acct1=CR...&token1=xxx)
+        if (cleaned.includes('token1=') || cleaned.includes('token=')) {
+            const match = cleaned.match(/(?:token1|token)=([a-zA-Z0-9_-]+)/i);
+            if (match && match[1]) {
+                cleaned = match[1];
+            }
+        }
+
+        // 5. Strip "Bearer " prefix if user copied from Authorization header
+        cleaned = cleaned.replace(/^Bearer\s+/i, '').trim();
+
+        // 6. Remove any trailing ellipses if copied from truncated UI
+        cleaned = cleaned.replace(/\.{2,}$/, '').trim();
+
+        return cleaned;
+    }
+
+    /**
+     * Connects to Deriv and validates an API token (PAT or OAuth).
+     * Tests candidate App IDs in parallel for fast response.
      */
     public async validateToken(token: string): Promise<{
         valid: boolean;
@@ -216,7 +263,8 @@ class CopyTradingEngine {
         app_id?: string;
         error?: string;
     }> {
-        if (!token || typeof token !== 'string' || token.trim().length < 4) {
+        const cleaned = this.sanitizeToken(token);
+        if (!cleaned || cleaned.length < 4) {
             return {
                 valid: false,
                 loginid: '',
@@ -230,32 +278,82 @@ class CopyTradingEngine {
             };
         }
 
-        const trimmed = token.trim().replace(/^['"]+|['"]+$/g, '');
-        // 1089 is the universal Deriv API ID for PAT tokens; also try platform IDs
-        const candidateAppIds = Array.from(new Set(['1089', getAppId() || '121856', '66723']));
-
-        let lastError = 'The token is invalid. Please verify token permissions on Deriv.';
-        for (const appId of candidateAppIds) {
-            const res = await this.tryAuthorizeWithAppId(trimmed, appId);
-            if (res.valid) {
-                return { ...res, app_id: appId };
-            }
-            if (res.error) {
-                lastError = res.error;
+        // Check if token is an OAuth JWT token (starts with 'ey')
+        if (cleaned.startsWith('ey')) {
+            try {
+                const accounts = await DerivWSAccountsService.fetchAccountsList(cleaned);
+                if (accounts && accounts.length > 0) {
+                    const primary = accounts[0];
+                    return {
+                        valid: true,
+                        loginid: primary.account_id,
+                        is_virtual: primary.account_type === 'demo',
+                        balance: parseFloat(primary.balance) || 0,
+                        currency: primary.currency || 'USD',
+                        scopes: ['read', 'trade'],
+                        fullname: primary.account_id,
+                        email: '',
+                        app_id: getAppId() || '121856',
+                    };
+                }
+            } catch (e: any) {
+                console.warn('[validateToken] OAuth verification failed, checking WebSocket:', e);
             }
         }
 
-        return {
-            valid: false,
-            loginid: '',
-            is_virtual: false,
-            balance: 0,
-            currency: 'USD',
-            scopes: [],
-            fullname: '',
-            email: '',
-            error: lastError,
-        };
+        // Candidate App IDs to test in parallel:
+        // 1089 (Universal PAT token ID), platform IDs, bot ID (16929), DBot (36544), SmartTrader (36545)
+        const candidateAppIds = Array.from(
+            new Set(['1089', getAppId() || '121856', '16929', '36544', '36545', '66723', '11780'])
+        );
+
+        // Test all candidate App IDs in parallel
+        const attempts = candidateAppIds.map(appId =>
+            this.tryAuthorizeWithAppId(cleaned, appId).then(res => ({ ...res, app_id: appId }))
+        );
+
+        try {
+            const results = await Promise.allSettled(attempts);
+            // Check if any attempt succeeded
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value.valid) {
+                    return r.value;
+                }
+            }
+
+            // Find best error message from attempts
+            let lastError = 'The token is invalid. Please verify token permissions on Deriv.';
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value.error) {
+                    lastError = r.value.error;
+                    break;
+                }
+            }
+
+            return {
+                valid: false,
+                loginid: '',
+                is_virtual: false,
+                balance: 0,
+                currency: 'USD',
+                scopes: [],
+                fullname: '',
+                email: '',
+                error: lastError,
+            };
+        } catch (err: any) {
+            return {
+                valid: false,
+                loginid: '',
+                is_virtual: false,
+                balance: 0,
+                currency: 'USD',
+                scopes: [],
+                fullname: '',
+                email: '',
+                error: err?.message || 'Token validation failed.',
+            };
+        }
     }
 
     private async tryAuthorizeWithAppId(
@@ -710,7 +808,17 @@ class CopyTradingEngine {
         error?: string;
     }> {
         const appId = account.app_id || '1089';
-        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
+        let wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
+        const isOAuth = account.token.startsWith('ey');
+
+        if (isOAuth) {
+            try {
+                const otpUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(account.token, account.loginid);
+                if (otpUrl) wsUrl = otpUrl;
+            } catch (err) {
+                console.warn('[executeTradeOnAccount] Failed to get OTP URL, attempting direct WebSocket:', err);
+            }
+        }
 
         return new Promise(resolve => {
             let ws: WebSocket | null = null;
@@ -732,6 +840,32 @@ class CopyTradingEngine {
                 }
             };
 
+            const sendProposal = () => {
+                const proposalReq: Record<string, any> = {
+                    proposal: 1,
+                    amount: stake,
+                    basis: 'stake',
+                    contract_type: trade.contract_type,
+                    currency: account.currency || 'USD',
+                    symbol: trade.symbol,
+                    duration: trade.duration || 5,
+                    duration_unit: trade.duration_unit || 't',
+                };
+
+                const rawBarrier =
+                    trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
+                        ? trade.barrier
+                        : trade.prediction;
+                if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+                    proposalReq.barrier = String(rawBarrier);
+                }
+                if (trade.selected_tick !== undefined) {
+                    proposalReq.selected_tick = trade.selected_tick;
+                }
+
+                ws?.send(JSON.stringify(proposalReq));
+            };
+
             timeout = setTimeout(() => {
                 cleanup();
                 resolve({ success: false, error: 'Trade replication timeout.' });
@@ -741,7 +875,12 @@ class CopyTradingEngine {
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
-                    ws?.send(JSON.stringify({ authorize: account.token }));
+                    if (isOAuth && wsUrl.includes('token=')) {
+                        // Already pre-authenticated with OTP
+                        sendProposal();
+                    } else {
+                        ws?.send(JSON.stringify({ authorize: account.token }));
+                    }
                 };
 
                 ws.onmessage = event => {
@@ -759,29 +898,7 @@ class CopyTradingEngine {
                             }
 
                             // Step 2: Send Proposal Request
-                            const proposalReq: Record<string, any> = {
-                                proposal: 1,
-                                amount: stake,
-                                basis: 'stake',
-                                contract_type: trade.contract_type,
-                                currency: account.currency || 'USD',
-                                symbol: trade.symbol,
-                                duration: trade.duration || 5,
-                                duration_unit: trade.duration_unit || 't',
-                            };
-
-                            const rawBarrier =
-                                trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
-                                    ? trade.barrier
-                                    : trade.prediction;
-                            if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
-                                proposalReq.barrier = String(rawBarrier);
-                            }
-                            if (trade.selected_tick !== undefined) {
-                                proposalReq.selected_tick = trade.selected_tick;
-                            }
-
-                            ws?.send(JSON.stringify(proposalReq));
+                            sendProposal();
                             return;
                         }
 

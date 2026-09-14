@@ -100,37 +100,60 @@ export const CopyTradingPage: React.FC = observer(() => {
         return copyTradingService.getAvailableStoredAccounts();
     }, [dockTab]);
 
-    // Handle token validation with auto cleaning
+    const validationTimerRef = React.useRef<any>(null);
+
+    // Handle token validation with auto cleaning & debouncing
     const handleValidateToken = useCallback(
-        async (tokenToValidate: string) => {
-            const cleaned = tokenToValidate.trim().replace(/^['"]+|['"]+$/g, '');
+        (tokenToValidate: string) => {
+            const cleaned = copyTradingService.sanitizeToken(tokenToValidate);
             if (!cleaned || cleaned.length < 4) {
                 setValidationResult(null);
+                setIsValidating(false);
                 return;
             }
 
-            setIsValidating(true);
-            try {
-                const res = await copyTradingService.validateToken(cleaned);
-                setValidationResult(res);
-                if (res.valid && !inputAlias) {
-                    setInputAlias(`${res.is_virtual ? 'Demo' : 'Real'} (${res.loginid})`);
-                }
-            } catch (err: any) {
-                setValidationResult({
-                    valid: false,
-                    error: err?.message || 'Failed to communicate with Deriv server.',
-                });
-            } finally {
-                setIsValidating(false);
+            if (validationTimerRef.current) {
+                clearTimeout(validationTimerRef.current);
             }
+
+            setIsValidating(true);
+            validationTimerRef.current = setTimeout(async () => {
+                try {
+                    const res = await copyTradingService.validateToken(cleaned);
+                    setValidationResult(res);
+                    if (res.valid && !inputAlias) {
+                        setInputAlias(`${res.is_virtual ? 'Demo' : 'Real'} (${res.loginid})`);
+                    }
+                } catch (err: any) {
+                    setValidationResult({
+                        valid: false,
+                        error: err?.message || 'Failed to communicate with Deriv server.',
+                    });
+                } finally {
+                    setIsValidating(false);
+                }
+            }, 300);
         },
         [inputAlias]
     );
 
+    // Paste token directly from clipboard
+    const handlePasteFromClipboard = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                const cleaned = copyTradingService.sanitizeToken(text);
+                setInputToken(cleaned);
+                handleValidateToken(cleaned);
+            }
+        } catch (err) {
+            console.warn('Clipboard read failed:', err);
+        }
+    };
+
     // Save token as follower account
     const handleSaveAccount = async () => {
-        const cleaned = inputToken.trim().replace(/^['"]+|['"]+$/g, '');
+        const cleaned = copyTradingService.sanitizeToken(inputToken);
         if (!cleaned || !validationResult?.valid) return;
 
         const res = await copyTradingService.addCopierAccount({
@@ -588,7 +611,26 @@ export const CopyTradingPage: React.FC = observer(() => {
                         {dockTab === 'token' ? (
                             <>
                                 <div className='ct-connect-dock__field'>
-                                    <label>Deriv API Token (PAT)</label>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <label>Deriv API Token (PAT)</label>
+                                        <button
+                                            type='button'
+                                            onClick={handlePasteFromClipboard}
+                                            style={{
+                                                background: 'rgba(6, 182, 212, 0.12)',
+                                                border: '1px solid rgba(6, 182, 212, 0.3)',
+                                                color: '#06b6d4',
+                                                borderRadius: '6px',
+                                                padding: '0.15rem 0.5rem',
+                                                fontSize: '0.72rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                            }}
+                                            title='Paste token from clipboard and auto-clean'
+                                        >
+                                            📋 Paste
+                                        </button>
+                                    </div>
                                     <input
                                         type='text'
                                         placeholder='Paste Deriv API Token (e.g. a1-abcdef12345...)'
@@ -599,7 +641,16 @@ export const CopyTradingPage: React.FC = observer(() => {
                                         }}
                                     />
                                     <span style={{ fontSize: '0.72rem', color: 'var(--ct-text-subtle)' }}>
-                                        Must have <strong>Read</strong> and <strong>Trade</strong> scopes from <em>app.deriv.com/account/api-token</em>.
+                                        Generated on{' '}
+                                        <a
+                                            href='https://app.deriv.com/account/api-token'
+                                            target='_blank'
+                                            rel='noopener noreferrer'
+                                            style={{ color: '#06b6d4', textDecoration: 'underline' }}
+                                        >
+                                            app.deriv.com/account/api-token
+                                        </a>{' '}
+                                        with <strong>Read</strong> & <strong>Trade</strong> scopes.
                                     </span>
                                 </div>
 
@@ -651,8 +702,42 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                 </div>
                                             </>
                                         ) : (
-                                            <div style={{ color: '#f43f5e', fontSize: '0.82rem', fontWeight: 700 }}>
-                                                ⚠️ {validationResult.error || 'Invalid Deriv API token. Please ensure it has Read and Trade scopes.'}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                <div style={{ color: '#f43f5e', fontSize: '0.84rem', fontWeight: 800 }}>
+                                                    ⚠️ {validationResult.error || 'The token is invalid.'}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        fontSize: '0.75rem',
+                                                        color: 'var(--ct-text-muted)',
+                                                        lineHeight: '1.45',
+                                                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                                                        paddingTop: '0.45rem',
+                                                    }}
+                                                >
+                                                    <strong style={{ color: 'var(--ct-text-title)' }}>How to fix this:</strong>
+                                                    <ol style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem' }}>
+                                                        <li>
+                                                            Open{' '}
+                                                            <a
+                                                                href='https://app.deriv.com/account/api-token'
+                                                                target='_blank'
+                                                                rel='noopener noreferrer'
+                                                                style={{ color: '#06b6d4', textDecoration: 'underline' }}
+                                                            >
+                                                                app.deriv.com/account/api-token
+                                                            </a>
+                                                        </li>
+                                                        <li>Switch to your target account (Demo or Real) on Deriv</li>
+                                                        <li>
+                                                            Check both <strong>Read</strong> and <strong>Trade</strong> checkboxes
+                                                        </li>
+                                                        <li>Click <strong>Create</strong>, copy the new token and paste it here</li>
+                                                    </ol>
+                                                    <div style={{ marginTop: '0.4rem', color: '#f59e0b' }}>
+                                                        💡 <em>Tip: You can also click the <strong>Session Accounts</strong> tab above to link your active accounts in 1 click!</em>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
