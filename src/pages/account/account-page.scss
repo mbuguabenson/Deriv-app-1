@@ -1,28 +1,31 @@
 /* ==========================================================================
-   Account Overview & Reports - Clean, Modern & Creative Cards (v2)
+   Account & Reports - Clean, Balanced & Modern UI (v2.1)
    ========================================================================== */
 
 .account-page-v2 {
     min-height: 100vh;
     background: var(--general-main-1, #080c14);
     color: var(--text-general, #f1f5f9);
-    padding: 20px 16px 48px;
+    padding: 20px 16px 40px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    gap: 16px;
+    max-width: 1240px;
+    margin: 0 auto;
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
 
     @media (min-width: 768px) {
-        padding: 28px 32px 60px;
-        max-width: 1400px;
-        margin: 0 auto;
-        width: 100%;
-        gap: 24px;
+        padding: 24px 24px 50px;
+        gap: 18px;
     }
 
-    /* Helper text color utilities */
+    /* Common Typography Utilities */
+    .acc-mono {
+        font-family: 'SF Mono', Consolas, Monaco, monospace;
+    }
     .text-win {
         color: #10b981 !important;
     }
@@ -38,24 +41,27 @@
     .text-muted {
         color: var(--text-less-prominent, #64748b) !important;
     }
-    .text-success {
-        color: #10b981 !important;
+    .font-bold {
+        font-weight: 700;
     }
-    .acc-mono {
-        font-family: 'SF Mono', Consolas, Monaco, monospace;
+    .text-right {
+        text-align: right;
+    }
+    .text-nowrap {
+        white-space: nowrap;
     }
 
     /* --------------------------------------------------------------------------
-       1. Topbar Header
+       1. Header Bar
        -------------------------------------------------------------------------- */
     .acc-topbar {
         display: flex;
         flex-direction: column;
-        gap: 16px;
-        padding-bottom: 20px;
-        border-bottom: 1px solid var(--border-divider, rgba(255, 255, 255, 0.08));
+        gap: 14px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-divider, rgba(255, 255, 255, 0.07));
 
-        @media (min-width: 992px) {
+        @media (min-width: 840px) {
             flex-direction: row;
             align-items: center;
             justify-content: space-between;
@@ -64,34 +70,32 @@
         &__left {
             display: flex;
             align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
+            gap: 12px;
         }
 
         &__right {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex-wrap: wrap;
         }
 
         .acc-back-btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border-radius: 10px;
+            gap: 6px;
+            padding: 7px 12px;
+            border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border-normal, rgba(255, 255, 255, 0.08));
+            border: 1px solid rgba(255, 255, 255, 0.08);
             color: var(--text-prominent, #f8fafc);
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.18s ease;
 
             &:hover {
                 background: rgba(255, 255, 255, 0.08);
-                border-color: rgba(255, 255, 255, 0.15);
                 transform: translateX(-2px);
             }
         }
@@ -99,120 +103,82 @@
         .acc-title-group {
             display: flex;
             flex-direction: column;
-            gap: 4px;
 
             .acc-title-row {
                 display: flex;
                 align-items: center;
                 gap: 10px;
-                flex-wrap: wrap;
-
-                .acc-brand-badge {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 34px;
-                    height: 34px;
-                    border-radius: 10px;
-                    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%);
-                    border: 1px solid rgba(99, 102, 241, 0.3);
-                    color: #60a5fa;
-                }
 
                 .acc-title {
-                    font-size: 20px;
-                    font-weight: 800;
+                    font-size: 18px;
+                    font-weight: 700;
                     letter-spacing: -0.02em;
                     color: var(--text-prominent, #ffffff);
                     margin: 0;
 
                     @media (min-width: 768px) {
-                        font-size: 24px;
+                        font-size: 20px;
                     }
                 }
 
-                .acc-version-tag {
+                .acc-live-indicator {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
                     font-size: 11px;
                     font-weight: 600;
-                    letter-spacing: 0.04em;
-                    text-transform: uppercase;
+                    color: #94a3b8;
+                    background: rgba(255, 255, 255, 0.04);
                     padding: 3px 8px;
                     border-radius: 6px;
-                    background: rgba(59, 130, 246, 0.12);
-                    border: 1px solid rgba(59, 130, 246, 0.25);
-                    color: #93c5fd;
-                }
-            }
+                    border: 1px solid rgba(255, 255, 255, 0.06);
 
-            .acc-subtitle {
-                font-size: 13px;
-                color: var(--text-less-prominent, #94a3b8);
-                margin: 0;
+                    .acc-live-dot {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 50%;
+                        background: #10b981;
+                        box-shadow: 0 0 6px #10b981;
+                    }
+                }
             }
         }
 
-        .acc-topbar__account-pill {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 6px 14px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-
-            .acc-type-badge {
-                font-size: 11px;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 0.04em;
-                padding: 3px 8px;
-                border-radius: 6px;
-
-                &.demo {
-                    background: rgba(245, 158, 11, 0.15);
-                    border: 1px solid rgba(245, 158, 11, 0.3);
-                    color: #fbbf24;
-                }
-
-                &.real {
-                    background: rgba(16, 185, 129, 0.15);
-                    border: 1px solid rgba(16, 185, 129, 0.3);
-                    color: #34d399;
-                }
-            }
-
-            .acc-topbar__loginid {
+        .acc-selector-wrap {
+            .acc-header-select {
+                padding: 7px 12px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: var(--text-prominent, #f8fafc);
                 font-size: 12px;
                 font-weight: 600;
-                font-family: 'SF Mono', Consolas, Monaco, monospace;
-                color: var(--text-prominent, #f8fafc);
-            }
+                outline: none;
+                cursor: pointer;
 
-            .acc-topbar__balance {
-                font-size: 12px;
-                font-weight: 700;
-                color: #38bdf8;
-                font-family: monospace;
+                option {
+                    background: #0f172a;
+                    color: #f8fafc;
+                }
             }
         }
 
-        .acc-action-btn {
+        .acc-btn-refresh {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 8px 14px;
-            border-radius: 10px;
+            padding: 7px 12px;
+            border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.08);
             color: var(--text-prominent, #f8fafc);
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.18s ease;
 
             &:hover:not(:disabled) {
                 background: rgba(255, 255, 255, 0.08);
-                border-color: rgba(255, 255, 255, 0.18);
                 color: #38bdf8;
             }
 
@@ -221,701 +187,358 @@
                 cursor: not-allowed;
             }
         }
+
+        .acc-btn-deposit {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            background: #2563eb;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.18s ease;
+
+            &:hover {
+                background: #1d4ed8;
+                transform: translateY(-1px);
+            }
+        }
     }
 
     /* --------------------------------------------------------------------------
-       2. Real-Time Transaction Stream Ticker
+       2. Balanced 4-Card Hero Strip
        -------------------------------------------------------------------------- */
-    .acc-stream-ticker {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 10px 18px;
-        border-radius: 12px;
-        background: rgba(15, 23, 42, 0.6);
-        border: 1px solid rgba(59, 130, 246, 0.18);
-        backdrop-filter: blur(12px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-        flex-wrap: wrap;
+    .acc-hero-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
 
-        &__indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
+        @media (min-width: 600px) {
+            grid-template-columns: repeat(2, 1fr);
         }
 
-        .acc-pulse-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #64748b;
+        @media (min-width: 1024px) {
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .acc-summary-card {
+            background: var(--general-section-1, #0d1322);
+            border: 1px solid var(--border-normal, rgba(255, 255, 255, 0.07));
+            border-radius: 14px;
+            padding: 16px 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 10px;
             position: relative;
+            transition: border-color 0.18s ease;
 
-            &.active {
-                background: #10b981;
-                box-shadow: 0 0 10px #10b981;
+            &:hover {
+                border-color: rgba(255, 255, 255, 0.14);
+            }
 
-                &::after {
-                    content: '';
-                    position: absolute;
-                    inset: -3px;
-                    border-radius: 50%;
-                    border: 2px solid #10b981;
-                    animation: radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            &.demo-accent {
+                border-left: 3px solid #fbbf24;
+            }
+            &.real-accent {
+                border-left: 3px solid #10b981;
+            }
+
+            .acc-card-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+
+                .acc-card-icon-wrap {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 7px;
+                    background: rgba(255, 255, 255, 0.04);
+                    color: var(--text-prominent, #f8fafc);
+                }
+
+                .acc-card-label {
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    color: var(--text-less-prominent, #94a3b8);
+                    flex: 1;
+                    margin-left: 8px;
+                }
+
+                .acc-tag {
+                    font-size: 10px;
+                    font-weight: 700;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    text-transform: uppercase;
+
+                    &.demo {
+                        background: rgba(245, 158, 11, 0.15);
+                        color: #fbbf24;
+                    }
+                    &.real {
+                        background: rgba(16, 185, 129, 0.15);
+                        color: #34d399;
+                    }
+                    &.neutral {
+                        background: rgba(255, 255, 255, 0.06);
+                        color: var(--text-less-prominent, #94a3b8);
+                    }
                 }
             }
+
+            .acc-card-body {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+
+                .acc-card-val {
+                    font-size: 22px;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
+                    color: var(--text-prominent, #ffffff);
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                }
+
+                .acc-card-sub {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 11px;
+
+                    .acc-inline-id-btn {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        padding: 2px 7px;
+                        border-radius: 5px;
+                        color: var(--text-less-prominent, #94a3b8);
+                        font-family: 'SF Mono', Consolas, monospace;
+                        font-size: 11px;
+                        cursor: pointer;
+
+                        &:hover {
+                            color: #ffffff;
+                            border-color: rgba(255, 255, 255, 0.2);
+                        }
+                    }
+
+                    .acc-inline-action-btn {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        background: rgba(245, 158, 11, 0.12);
+                        border: 1px solid rgba(245, 158, 11, 0.25);
+                        padding: 2px 7px;
+                        border-radius: 5px;
+                        color: #fbbf24;
+                        font-size: 10px;
+                        font-weight: 600;
+                        cursor: pointer;
+
+                        &:hover:not(:disabled) {
+                            background: rgba(245, 158, 11, 0.2);
+                        }
+
+                        &:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+                    }
+                }
+            }
+
+            .acc-card-toast {
+                font-size: 11px;
+                color: #cbd5e1;
+                background: rgba(0, 0, 0, 0.6);
+                padding: 4px 8px;
+                border-radius: 5px;
+            }
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+       3. Subtle Real-Time Live Feed Banner
+       -------------------------------------------------------------------------- */
+    .acc-live-ticker {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 14px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 12px;
+        overflow-x: auto;
+
+        .acc-ticker-head {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+
+            .acc-live-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #10b981;
+                box-shadow: 0 0 6px #10b981;
+            }
+
+            .acc-ticker-label {
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                color: #94a3b8;
+                text-transform: uppercase;
+            }
         }
 
-        &__label {
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            color: #93c5fd;
-            text-transform: uppercase;
-        }
-
-        &__event {
+        .acc-ticker-body {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            flex-wrap: wrap;
-        }
+            gap: 8px;
+            white-space: nowrap;
 
-        &__badge {
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            padding: 2px 7px;
-            border-radius: 5px;
-
-            &.credit {
-                background: rgba(16, 185, 129, 0.18);
-                border: 1px solid rgba(16, 185, 129, 0.35);
-                color: #34d399;
+            .acc-ticker-amount {
+                color: var(--text-prominent, #ffffff);
             }
 
-            &.debit {
-                background: rgba(239, 68, 68, 0.18);
-                border: 1px solid rgba(239, 68, 68, 0.35);
-                color: #f87171;
+            .acc-ticker-divider {
+                color: rgba(255, 255, 255, 0.2);
+            }
+
+            .acc-ticker-balance {
+                color: var(--text-less-prominent, #94a3b8);
+            }
+
+            .acc-ticker-symbol {
+                color: #38bdf8;
+                font-weight: 600;
             }
         }
 
-        &__amount {
-            font-weight: 700;
-            font-family: 'SF Mono', Consolas, Monaco, monospace;
-        }
-
-        &__dot {
-            color: rgba(255, 255, 255, 0.3);
-        }
-
-        &__meta {
-            font-size: 12px;
-            color: var(--text-less-prominent, #94a3b8);
-            font-family: monospace;
-        }
-
-        &__symbol {
-            font-size: 12px;
-            font-weight: 600;
-            color: #38bdf8;
-        }
-
-        &__idle {
-            font-size: 12px;
+        .acc-ticker-idle {
             color: var(--text-less-prominent, #64748b);
+            font-size: 11px;
             font-style: italic;
         }
     }
 
     /* --------------------------------------------------------------------------
-       3. Creative Bento Grid (3 Cards)
+       4. Reports & Financial Workspace
        -------------------------------------------------------------------------- */
-    .acc-bento-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 20px;
-
-        @media (min-width: 1024px) {
-            grid-template-columns: 1.15fr 1fr 0.95fr;
-        }
-    }
-
-    /* CARD 1: Creative VIP Glass Credit Card */
-    .acc-glass-card {
-        position: relative;
-        min-height: 250px;
-        border-radius: 20px;
-        padding: 24px;
-        box-sizing: border-box;
-        overflow: hidden;
+    .acc-workspace {
+        background: var(--general-section-1, #0d1322);
+        border: 1px solid var(--border-normal, rgba(255, 255, 255, 0.07));
+        border-radius: 16px;
+        padding: 16px;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
-        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #090d16 100%);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: 0 12px 36px -6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
-
-        &:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 16px 44px -8px rgba(99, 102, 241, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-        }
-
-        &--real {
-            background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #042f2e 100%);
-            border-color: rgba(52, 211, 153, 0.3);
-
-            .acc-glass-card__mesh {
-                background: radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.28) 0%, transparent 50%),
-                            radial-gradient(circle at 20% 80%, rgba(45, 212, 191, 0.2) 0%, transparent 60%);
-            }
-        }
-
-        &--demo {
-            background: linear-gradient(135deg, #1e293b 0%, #312e81 60%, #1e1b4b 100%);
-            border-color: rgba(99, 102, 241, 0.3);
-
-            .acc-glass-card__mesh {
-                background: radial-gradient(circle at 80% 10%, rgba(129, 140, 248, 0.25) 0%, transparent 50%),
-                            radial-gradient(circle at 20% 90%, rgba(245, 158, 11, 0.18) 0%, transparent 60%);
-            }
-        }
-
-        &__mesh {
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            mix-blend-mode: screen;
-        }
-
-        &__top {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        &__chip-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-
-            .acc-emv-chip {
-                position: relative;
-                width: 44px;
-                height: 32px;
-                border-radius: 6px;
-                background: linear-gradient(135deg, #fcd34d 0%, #b45309 100%);
-                box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
-                overflow: hidden;
-
-                .acc-emv-line {
-                    position: absolute;
-                    background: rgba(0, 0, 0, 0.3);
-
-                    &:nth-child(1) {
-                        top: 50%;
-                        left: 0;
-                        right: 0;
-                        height: 1px;
-                    }
-                    &:nth-child(2) {
-                        left: 50%;
-                        top: 0;
-                        bottom: 0;
-                        width: 1px;
-                    }
-                }
-            }
-
-            .acc-nfc-icon {
-                color: rgba(255, 255, 255, 0.45);
-                transform: rotate(90deg);
-            }
-        }
-
-        &__badge-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-
-            .acc-glass-card__copy-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                background: rgba(0, 0, 0, 0.35);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                padding: 4px 10px;
-                border-radius: 8px;
-                color: #f8fafc;
-                font-size: 12px;
-                font-family: 'SF Mono', Consolas, monospace;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.18s ease;
-
-                &:hover {
-                    background: rgba(0, 0, 0, 0.55);
-                    border-color: rgba(255, 255, 255, 0.3);
-                    color: #38bdf8;
-                }
-            }
-
-            .acc-pill-badge {
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-                padding: 4px 8px;
-                border-radius: 6px;
-
-                &.demo {
-                    background: rgba(245, 158, 11, 0.25);
-                    border: 1px solid rgba(245, 158, 11, 0.4);
-                    color: #fde68a;
-                }
-
-                &.real {
-                    background: rgba(16, 185, 129, 0.25);
-                    border: 1px solid rgba(16, 185, 129, 0.4);
-                    color: #a7f3d0;
-                }
-            }
-        }
-
-        &__mid {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            margin: 16px 0;
-
-            .acc-glass-card__label {
-                font-size: 11px;
-                text-transform: uppercase;
-                letter-spacing: 0.06em;
-                color: rgba(255, 255, 255, 0.65);
-                font-weight: 600;
-            }
-
-            .acc-glass-card__balance {
-                font-size: 30px;
-                font-weight: 800;
-                letter-spacing: -0.03em;
-                color: #ffffff;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-
-                @media (min-width: 768px) {
-                    font-size: 34px;
-                }
-            }
-
-            .acc-glass-card__converted {
-                font-size: 12px;
-                color: rgba(255, 255, 255, 0.7);
-                font-weight: 500;
-            }
-        }
-
-        &__footer {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-
-            .acc-card-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                padding: 7px 14px;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.18s ease;
-
-                &--primary {
-                    background: rgba(255, 255, 255, 0.15);
-                    border: 1px solid rgba(255, 255, 255, 0.25);
-                    color: #ffffff;
-                    backdrop-filter: blur(8px);
-
-                    &:hover {
-                        background: rgba(255, 255, 255, 0.25);
-                        transform: translateY(-1px);
-                    }
-                }
-
-                &--secondary {
-                    background: rgba(255, 255, 255, 0.08);
-                    border: 1px solid rgba(255, 255, 255, 0.15);
-                    color: #f8fafc;
-
-                    &:hover {
-                        background: rgba(255, 255, 255, 0.16);
-                        transform: translateY(-1px);
-                    }
-                }
-
-                &--reset {
-                    background: rgba(245, 158, 11, 0.2);
-                    border: 1px solid rgba(245, 158, 11, 0.35);
-                    color: #fef3c7;
-
-                    &:hover:not(:disabled) {
-                        background: rgba(245, 158, 11, 0.35);
-                        transform: translateY(-1px);
-                    }
-
-                    &:disabled {
-                        opacity: 0.6;
-                        cursor: not-allowed;
-                    }
-                }
-            }
-        }
-
-        &__toast {
-            position: absolute;
-            bottom: 12px;
-            left: 24px;
-            right: 24px;
-            font-size: 11px;
-            padding: 6px 12px;
-            border-radius: 6px;
-            background: rgba(0, 0, 0, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #cbd5e1;
-            z-index: 10;
-        }
-    }
-
-    /* CARD 2: Performance Pulse & CARD 3: Connected Accounts Bento Cards */
-    .acc-stat-bento-card {
-        background: var(--general-section-1, #0e1526);
-        border: 1px solid var(--border-normal, rgba(255, 255, 255, 0.08));
-        border-radius: 20px;
-        padding: 22px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
         gap: 16px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 
-        &__head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+        @media (min-width: 768px) {
+            padding: 20px;
         }
 
-        &__title-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        &__title {
-            font-size: 15px;
-            font-weight: 700;
-            color: var(--text-prominent, #f8fafc);
-            margin: 0;
-        }
-
-        &__tag {
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            color: #60a5fa;
-            background: rgba(59, 130, 246, 0.1);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            padding: 3px 8px;
-            border-radius: 6px;
-        }
-
-        &__metrics {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-
-            .acc-metric-cell {
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: 14px;
-                padding: 12px 14px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                transition: background 0.18s ease;
-
-                &:hover {
-                    background: rgba(255, 255, 255, 0.05);
-                }
-
-                &__label {
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: var(--text-less-prominent, #94a3b8);
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                }
-
-                &__val-group {
-                    display: flex;
-                    align-items: baseline;
-                    gap: 6px;
-                    flex-wrap: wrap;
-                }
-
-                &__val {
-                    font-size: 18px;
-                    font-weight: 800;
-                    letter-spacing: -0.01em;
-                    color: var(--text-prominent, #f8fafc);
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                }
-
-                &__sub {
-                    font-size: 11px;
-                    color: var(--text-less-prominent, #64748b);
-                }
-            }
-        }
-    }
-
-    /* CARD 3: Linked Accounts Switcher Hub */
-    .acc-account-selector-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        max-height: 200px;
-        overflow-y: auto;
-        padding-right: 4px;
-
-        &::-webkit-scrollbar {
-            width: 5px;
-        }
-        &::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.12);
-            border-radius: 4px;
-        }
-
-        .acc-selector-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 12px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            cursor: pointer;
-            transition: all 0.18s ease;
-
-            &:hover {
-                background: rgba(255, 255, 255, 0.06);
-                border-color: rgba(255, 255, 255, 0.12);
-            }
-
-            &.is-selected {
-                background: rgba(59, 130, 246, 0.12);
-                border-color: rgba(59, 130, 246, 0.35);
-
-                .acc-selector-item__loginid {
-                    color: #60a5fa;
-                    font-weight: 700;
-                }
-            }
-
-            &__left {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-
-                .acc-type-dot {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 50%;
-
-                    &.demo {
-                        background: #fbbf24;
-                        box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
-                    }
-
-                    &.real {
-                        background: #34d399;
-                        box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
-                    }
-                }
-
-                .acc-selector-item__loginid {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: var(--text-prominent, #f8fafc);
-                    font-family: 'SF Mono', Consolas, monospace;
-
-                    .acc-selected-badge {
-                        font-size: 9px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        padding: 1px 5px;
-                        border-radius: 4px;
-                        background: #2563eb;
-                        color: #ffffff;
-                    }
-                }
-
-                .acc-selector-item__type {
-                    font-size: 10px;
-
-                    &.demo {
-                        color: #fbbf24;
-                    }
-                    &.real {
-                        color: #34d399;
-                    }
-                }
-            }
-
-            &__right {
-                display: flex;
-                align-items: baseline;
-                gap: 6px;
-
-                .acc-selector-item__balance {
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: #38bdf8;
-                    font-family: monospace;
-                }
-
-                .acc-selector-item__curr {
-                    font-size: 10px;
-                    color: var(--text-less-prominent, #64748b);
-                }
-            }
-        }
-
-        .acc-selector-empty {
-            font-size: 12px;
-            color: var(--text-less-prominent, #64748b);
-            padding: 12px;
-            text-align: center;
-        }
-    }
-
-    /* --------------------------------------------------------------------------
-       4. Reports & Financial Workspace Card
-       -------------------------------------------------------------------------- */
-    .acc-reports-card {
-        background: var(--general-section-1, #0e1526);
-        border: 1px solid var(--border-normal, rgba(255, 255, 255, 0.08));
-        border-radius: 20px;
-        padding: 24px;
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-
-        .acc-tabs-header {
+        .acc-workspace-nav {
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 12px;
 
-            @media (min-width: 992px) {
+            @media (min-width: 768px) {
                 flex-direction: row;
                 align-items: center;
                 justify-content: space-between;
             }
 
-            .acc-nav-segments {
+            .acc-tab-pills {
                 display: flex;
                 align-items: center;
                 gap: 4px;
                 background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 12px;
-                padding: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 10px;
+                padding: 3px;
                 overflow-x: auto;
 
-                .acc-segment-btn {
+                .acc-tab-pill {
                     display: inline-flex;
                     align-items: center;
-                    gap: 8px;
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    font-size: 13px;
+                    gap: 6px;
+                    padding: 6px 12px;
+                    border-radius: 7px;
+                    font-size: 12px;
                     font-weight: 600;
                     color: var(--text-less-prominent, #94a3b8);
                     background: transparent;
                     border: none;
                     cursor: pointer;
                     white-space: nowrap;
-                    transition: all 0.18s ease;
+                    transition: all 0.16s ease;
 
                     &:hover {
-                        color: var(--text-prominent, #f8fafc);
+                        color: var(--text-prominent, #ffffff);
                     }
 
-                    &.active {
+                    &.is-active {
                         background: #2563eb;
                         color: #ffffff;
-                        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
 
-                        .acc-segment-badge {
+                        .acc-tab-count {
                             background: rgba(255, 255, 255, 0.25);
                             color: #ffffff;
                         }
                     }
 
-                    .acc-segment-badge {
+                    .acc-tab-count {
                         font-size: 10px;
                         font-weight: 700;
-                        padding: 2px 6px;
-                        border-radius: 10px;
-                        background: rgba(255, 255, 255, 0.08);
+                        padding: 1px 5px;
+                        border-radius: 8px;
+                        background: rgba(255, 255, 255, 0.06);
                         color: #cbd5e1;
 
-                        &--highlight {
-                            background: rgba(59, 130, 246, 0.25);
+                        &.highlight {
+                            background: rgba(59, 130, 246, 0.2);
                             color: #93c5fd;
                         }
-
-                        &--live {
-                            background: rgba(16, 185, 129, 0.25);
+                        &.live {
+                            background: rgba(16, 185, 129, 0.2);
                             color: #34d399;
                         }
                     }
                 }
             }
 
-            .acc-export-btn {
+            .acc-btn-export {
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                padding: 8px 16px;
-                border-radius: 10px;
+                padding: 6px 12px;
+                border-radius: 8px;
                 background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.08);
                 color: var(--text-prominent, #f8fafc);
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.18s ease;
+                transition: all 0.16s ease;
 
                 &:hover:not(:disabled) {
-                    background: rgba(255, 255, 255, 0.1);
+                    background: rgba(255, 255, 255, 0.08);
                     color: #38bdf8;
                 }
 
@@ -926,91 +549,37 @@
             }
         }
 
-        .acc-tab-content {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        /* 4-KPI Metric Strip */
-        .acc-kpi-chips-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-
-            @media (min-width: 768px) {
-                grid-template-columns: repeat(4, 1fr);
-            }
-
-            .acc-kpi-chip {
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: 14px;
-                padding: 12px 14px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                transition: background 0.18s ease;
-
-                &:hover {
-                    background: rgba(255, 255, 255, 0.05);
-                }
-
-                &__label {
-                    font-size: 11px;
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                    color: var(--text-less-prominent, #94a3b8);
-                    white-space: nowrap;
-                }
-
-                &__val {
-                    font-size: 16px;
-                    font-weight: 800;
-                    color: var(--text-prominent, #f8fafc);
-                    font-family: -apple-system, BlinkMacSystemFont, monospace;
-                    white-space: nowrap;
-                }
-            }
-        }
-
         /* Filter Toolbar */
-        .acc-filter-bar {
+        .acc-toolbar {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex-wrap: wrap;
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.06);
 
-            .acc-search-box {
+            .acc-search-field {
                 position: relative;
-                min-width: 220px;
                 flex: 1;
+                min-width: 220px;
                 max-width: 320px;
 
                 .acc-search-icon {
                     position: absolute;
-                    left: 12px;
+                    left: 10px;
                     top: 50%;
                     transform: translateY(-50%);
                     color: var(--text-less-prominent, #64748b);
                     pointer-events: none;
                 }
 
-                .acc-search-input {
+                input {
                     width: 100%;
-                    padding: 8px 30px 8px 34px;
-                    border-radius: 10px;
-                    background: rgba(255, 255, 255, 0.04);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    padding: 6px 26px 6px 30px;
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
                     color: var(--text-prominent, #f8fafc);
-                    font-size: 13px;
+                    font-size: 12px;
                     outline: none;
-                    transition: border-color 0.18s ease;
 
                     &:focus {
                         border-color: #3b82f6;
@@ -1021,43 +590,31 @@
                     }
                 }
 
-                .acc-clear-search-btn {
+                .acc-clear-btn {
                     position: absolute;
-                    right: 10px;
+                    right: 8px;
                     top: 50%;
                     transform: translateY(-50%);
                     background: transparent;
                     border: none;
-                    color: var(--text-less-prominent, #64748b);
-                    font-size: 16px;
+                    color: #94a3b8;
                     cursor: pointer;
-
-                    &:hover {
-                        color: #ffffff;
-                    }
+                    font-size: 14px;
                 }
             }
 
-            .acc-filter-select-group {
-                position: relative;
+            .acc-filter-selects {
                 display: flex;
                 align-items: center;
+                gap: 8px;
 
-                .acc-select-icon {
-                    position: absolute;
-                    left: 10px;
-                    pointer-events: none;
-                    color: var(--text-less-prominent, #64748b);
-                }
-
-                .acc-custom-select {
-                    padding: 8px 12px 8px 30px;
-                    border-radius: 10px;
-                    background: rgba(255, 255, 255, 0.04);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                .acc-select {
+                    padding: 6px 10px;
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
                     color: var(--text-prominent, #f8fafc);
                     font-size: 12px;
-                    font-weight: 500;
                     outline: none;
                     cursor: pointer;
 
@@ -1069,325 +626,181 @@
             }
         }
 
-        /* Tables & Empty/Loading States */
-        .acc-table-loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 60px 20px;
-            gap: 16px;
-            color: var(--text-less-prominent, #94a3b8);
-        }
-
-        .acc-table-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 60px 20px;
-            gap: 10px;
-            text-align: center;
-
-            h4 {
-                font-size: 15px;
-                font-weight: 700;
-                color: var(--text-prominent, #f8fafc);
-                margin: 0;
-            }
-
-            p {
-                font-size: 13px;
-                color: var(--text-less-prominent, #94a3b8);
-                margin: 0;
-            }
-        }
-
-        .acc-table-responsive {
+        /* Modern Data Table */
+        .acc-table-wrapper {
             position: relative;
             overflow-x: auto;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            background: rgba(255, 255, 255, 0.015);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.01);
 
             &::-webkit-scrollbar {
-                height: 6px;
+                height: 5px;
             }
             &::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.12);
-                border-radius: 4px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
             }
         }
 
-        .acc-data-table {
+        .acc-table {
             width: 100%;
             border-collapse: collapse;
             text-align: left;
-            font-size: 13px;
+            font-size: 12px;
 
             thead {
-                background: rgba(255, 255, 255, 0.03);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.02);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 
                 th {
-                    padding: 12px 16px;
+                    padding: 10px 14px;
                     font-size: 11px;
-                    font-weight: 700;
+                    font-weight: 600;
                     text-transform: uppercase;
-                    letter-spacing: 0.04em;
+                    letter-spacing: 0.03em;
                     color: var(--text-less-prominent, #94a3b8);
                     white-space: nowrap;
-
-                    &.text-right {
-                        text-align: right;
-                    }
                 }
             }
 
             tbody {
                 tr {
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-                    transition: background 0.15s ease;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+                    transition: background 0.12s ease;
 
                     &:last-child {
                         border-bottom: none;
                     }
 
                     &:hover {
-                        background: rgba(255, 255, 255, 0.035);
+                        background: rgba(255, 255, 255, 0.025);
                     }
 
                     td {
-                        padding: 13px 16px;
+                        padding: 10px 14px;
                         color: var(--text-general, #cbd5e1);
                         vertical-align: middle;
-                        white-space: nowrap;
-
-                        &.text-right {
-                            text-align: right;
-                        }
-
-                        &.text-nowrap {
-                            white-space: nowrap;
-                        }
-
-                        &.font-bold {
-                            font-weight: 700;
-                        }
                     }
                 }
             }
 
-            tfoot {
-                background: rgba(255, 255, 255, 0.03);
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-
-                td {
-                    padding: 12px 16px;
-                    font-size: 13px;
-                }
-            }
-
-            .acc-action-pill {
-                display: inline-flex;
+            .acc-cell-contract {
+                display: flex;
                 align-items: center;
-                gap: 5px;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                padding: 3px 8px;
-                border-radius: 6px;
-
-                &--buy {
-                    background: rgba(239, 68, 68, 0.12);
-                    border: 1px solid rgba(239, 68, 68, 0.25);
-                    color: #f87171;
-                }
-
-                &--sell {
-                    background: rgba(16, 185, 129, 0.12);
-                    border: 1px solid rgba(16, 185, 129, 0.25);
-                    color: #34d399;
-                }
-
-                &--deposit {
-                    background: rgba(59, 130, 246, 0.12);
-                    border: 1px solid rgba(59, 130, 246, 0.25);
-                    color: #60a5fa;
-                }
-
-                &--withdrawal {
-                    background: rgba(245, 158, 11, 0.12);
-                    border: 1px solid rgba(245, 158, 11, 0.25);
-                    color: #fbbf24;
-                }
-            }
-
-            .acc-datetime-cell {
-                display: flex;
-                flex-direction: column;
-
-                &__date {
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: var(--text-prominent, #f8fafc);
-                }
-
-                &__time {
-                    font-size: 11px;
-                    color: var(--text-less-prominent, #64748b);
-                    font-family: monospace;
-                }
-            }
-
-            .acc-contract-cell {
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-                max-width: 320px;
+                gap: 8px;
+                max-width: 300px;
                 overflow: hidden;
 
-                .acc-contract-id-pill {
-                    font-size: 11px;
-                    font-family: 'SF Mono', Consolas, monospace;
-                    color: #60a5fa;
-                }
-
-                .acc-contract-desc {
-                    font-size: 11px;
+                .acc-cell-desc {
                     color: var(--text-less-prominent, #94a3b8);
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
+                    font-size: 11px;
                 }
-            }
-
-            .acc-details-text {
-                max-width: 250px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                font-size: 12px;
-                color: var(--text-less-prominent, #94a3b8);
             }
         }
 
-        /* Stream Feed Head */
-        .acc-stream-feed-head {
+        .acc-empty-state {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
-            padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            justify-content: center;
+            padding: 48px 20px;
+            gap: 8px;
+            text-align: center;
 
-            .acc-stream-feed-title {
-                font-size: 15px;
-                font-weight: 700;
+            h4 {
+                font-size: 14px;
+                font-weight: 600;
                 color: var(--text-prominent, #f8fafc);
                 margin: 0;
             }
 
-            .acc-stream-feed-sub {
+            p {
                 font-size: 12px;
                 color: var(--text-less-prominent, #94a3b8);
-                margin: 2px 0 0;
+                margin: 0;
             }
+        }
 
-            .acc-live-pulse-badge {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                font-size: 11px;
-                font-weight: 700;
-                color: #34d399;
+        /* Action Badge Pills */
+        .acc-action-pill {
+            display: inline-flex;
+            align-items: center;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 4px;
+
+            &--buy {
+                background: rgba(239, 68, 68, 0.12);
+                color: #f87171;
+            }
+            &--sell {
                 background: rgba(16, 185, 129, 0.12);
-                border: 1px solid rgba(16, 185, 129, 0.25);
-                padding: 4px 10px;
-                border-radius: 8px;
-
-                &__dot {
-                    width: 7px;
-                    height: 7px;
-                    border-radius: 50%;
-                    background: #10b981;
-                    box-shadow: 0 0 6px #10b981;
-                }
+                color: #34d399;
+            }
+            &--deposit {
+                background: rgba(59, 130, 246, 0.12);
+                color: #60a5fa;
+            }
+            &--withdrawal {
+                background: rgba(245, 158, 11, 0.12);
+                color: #fbbf24;
             }
         }
     }
 
     /* --------------------------------------------------------------------------
-       5. Session Security Footer
+       5. Compact Footer
        -------------------------------------------------------------------------- */
-    .acc-session-footer {
+    .acc-footer {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 14px 20px;
-        border-radius: 14px;
+        padding: 12px 16px;
+        border-radius: 12px;
         background: rgba(255, 255, 255, 0.02);
-        border: 1px solid rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 11px;
+        color: var(--text-less-prominent, #94a3b8);
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 10px;
 
-        &__left {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        &__status-indicator {
+        &-left {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-prominent, #f8fafc);
-        }
 
-        &__id {
-            font-size: 11px;
-            font-family: monospace;
-            color: var(--text-less-prominent, #94a3b8);
-            background: rgba(255, 255, 255, 0.04);
-            padding: 3px 8px;
-            border-radius: 6px;
-        }
-
-        &__right {
-            display: flex;
-            align-items: center;
-        }
-
-        .acc-logout-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 7px 14px;
-            border-radius: 8px;
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-            color: #f87171;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.18s ease;
-
-            &:hover {
-                background: rgba(239, 68, 68, 0.2);
-                border-color: rgba(239, 68, 68, 0.35);
-                transform: translateY(-1px);
+            .acc-footer-id {
+                font-family: 'SF Mono', Consolas, monospace;
+                background: rgba(255, 255, 255, 0.04);
+                padding: 2px 6px;
+                border-radius: 4px;
             }
         }
-    }
-}
 
-/* Animations */
-@keyframes radar-ping {
-    75%, 100% {
-        transform: scale(2.4);
-        opacity: 0;
+        .acc-btn-logout {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            border-radius: 6px;
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.16s ease;
+
+            &:hover {
+                background: rgba(239, 68, 68, 0.16);
+            }
+        }
     }
 }

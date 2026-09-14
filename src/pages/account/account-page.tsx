@@ -25,6 +25,7 @@ import {
     CheckCircle2,
     Copy,
     CreditCard,
+    DollarSign,
     Download,
     ExternalLink,
     FileSpreadsheet,
@@ -32,12 +33,13 @@ import {
     Filter,
     Layers,
     LogOut,
+    Percent,
     Radio,
     RefreshCw,
     RotateCcw,
     Search,
     Shield,
-    Sparkles,
+    TrendingDown,
     TrendingUp,
     User,
     Wallet,
@@ -105,10 +107,10 @@ const AccountPage = observer(() => {
         }
 
         return {
-            loginid: selectedLoginId,
-            currency: curr,
-            balance,
-            isDemo,
+            loginid: selectedLoginId || '',
+            currency: curr || 'USD',
+            balance: isNaN(balance) ? 0 : balance,
+            isDemo: Boolean(isDemo),
         };
     }, [selectedLoginId, accountList, activeLoginid, client?.balance]);
 
@@ -250,7 +252,7 @@ const AccountPage = observer(() => {
     const filteredTransactions = useMemo(() => {
         let list = transactions;
         if (actionFilter !== 'all') {
-            list = list.filter(t => t.action_type.toLowerCase() === actionFilter.toLowerCase());
+            list = list.filter(t => (t.action_type || '').toLowerCase() === actionFilter.toLowerCase());
         }
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase().trim();
@@ -276,18 +278,13 @@ const AccountPage = observer(() => {
             else totalDebits += Math.abs(amt);
         });
 
-        const netCashFlow = totalCredits - totalDebits;
-        const currentBalance =
-            filteredTransactions.length > 0 ? Number(filteredTransactions[0].balance_after) || 0 : activeAccountData.balance;
-
         return {
             totalCredits,
             totalDebits,
-            netCashFlow,
-            currentBalance,
+            netCashFlow: totalCredits - totalDebits,
             count: filteredTransactions.length,
         };
-    }, [filteredTransactions, activeAccountData.balance]);
+    }, [filteredTransactions]);
 
     // Portfolio metrics
     const portfolioMetrics = useMemo(() => {
@@ -295,51 +292,58 @@ const AccountPage = observer(() => {
         let totalPotentialPayout = 0;
 
         portfolioPositions.forEach(p => {
-            totalStake += p.buy_price || 0;
-            totalPotentialPayout += p.payout || 0;
+            totalStake += Number(p.buy_price) || 0;
+            totalPotentialPayout += Number(p.payout) || 0;
         });
 
         return {
-            count: portfolioPositions.length,
             totalStake,
             totalPotentialPayout,
+            count: portfolioPositions.length,
         };
     }, [portfolioPositions]);
 
-    // Profit table metrics
+    // Profit Table metrics
     const profitMetrics = useMemo(() => {
         let totalBuy = 0;
         let totalSell = 0;
+        let netProfit = 0;
         let winCount = 0;
 
         profitEntries.forEach(p => {
-            totalBuy += p.buy_price || 0;
-            totalSell += p.sell_price || 0;
-            if (p.profit_loss > 0) winCount++;
+            const buy = Number(p.buy_price) || 0;
+            const sell = Number(p.sell_price) || 0;
+            const pl = Number(p.profit_loss) || 0;
+            totalBuy += buy;
+            totalSell += sell;
+            netProfit += pl;
+            if (pl > 0) winCount += 1;
         });
 
-        const netProfit = totalSell - totalBuy;
         const count = profitEntries.length;
         const winRate = count > 0 ? (winCount / count) * 100 : 0;
 
         return {
-            count,
-            winCount,
-            winRate,
             totalBuy,
             totalSell,
             netProfit,
+            winCount,
+            count,
+            winRate,
         };
     }, [profitEntries]);
 
+    // Copy login ID
     const handleCopyId = () => {
         if (!selectedLoginId) return;
-        navigator.clipboard?.writeText(selectedLoginId);
+        navigator.clipboard.writeText(selectedLoginId);
         setCopiedId(true);
         setTimeout(() => setCopiedId(false), 2000);
     };
 
+    // Reset Demo Balance
     const handleResetDemoBalance = async () => {
+        if (!activeAccountData.isDemo || isResetting) return;
         setIsResetting(true);
         setResetMsg(null);
         try {
@@ -375,7 +379,7 @@ const AccountPage = observer(() => {
                 t.transaction_id,
                 t.contract_id || '',
                 new Date(t.transaction_time * 1000).toISOString(),
-                t.action_type.toUpperCase(),
+                (t.action_type || '').toUpperCase(),
                 t.symbol || t.shortcode || '',
                 t.amount,
                 t.currency || 'USD',
@@ -435,7 +439,7 @@ const AccountPage = observer(() => {
 
     return (
         <div className='account-page-v2'>
-            {/* 1. TOP INSTITUTIONAL HEADER BAR */}
+            {/* 1. COMPACT BALANCED HEADER BAR */}
             <header className='acc-topbar'>
                 <div className='acc-topbar__left'>
                     <button
@@ -444,802 +448,576 @@ const AccountPage = observer(() => {
                         onClick={() => navigate(-1)}
                         title={localize('Go Back')}
                     >
-                        <ArrowLeft size={18} />
+                        <ArrowLeft size={16} />
                         <span>{localize('Back')}</span>
                     </button>
                     <div className='acc-title-group'>
                         <div className='acc-title-row'>
-                            <div className='acc-brand-badge'>
-                                <Shield size={18} />
-                            </div>
-                            <h1 className='acc-title'>{localize('Account Overview & Reports')}</h1>
-                            <span className='acc-version-tag'>Deriv Live Gateway</span>
+                            <h1 className='acc-title'>{localize('Account & Reports')}</h1>
+                            <span className='acc-live-indicator'>
+                                <span className='acc-live-dot' />
+                                Deriv Gateway
+                            </span>
                         </div>
-                        <p className='acc-subtitle'>
-                            {localize('Multi-account financial ledger, active portfolio, and live trade analytics.')}
-                        </p>
                     </div>
                 </div>
 
                 <div className='acc-topbar__right'>
-                    {/* Active Account Pill Switcher */}
-                    <div className='acc-topbar__account-pill'>
-                        <span className={`acc-type-badge ${activeAccountData.isDemo ? 'demo' : 'real'}`}>
-                            {activeAccountData.isDemo ? 'DEMO' : 'REAL'}
-                        </span>
-                        <span className='acc-topbar__loginid'>{activeAccountData.loginid}</span>
-                        <span className='acc-topbar__balance'>
-                            ${activeAccountData.balance.toLocaleString('en-US', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                            })}
-                        </span>
-                    </div>
+                    {/* Account Switcher Dropdown */}
+                    {accountList && accountList.length > 0 && (
+                        <div className='acc-selector-wrap'>
+                            <select
+                                className='acc-header-select'
+                                value={selectedLoginId}
+                                onChange={e => setSelectedLoginId(e.target.value)}
+                            >
+                                {accountList.map(acc => {
+                                    const isDemo = isDemoAccount(acc.loginid);
+                                    const bal = Number(acc.balance ?? 0).toFixed(2);
+                                    return (
+                                        <option key={acc.loginid} value={acc.loginid}>
+                                            {isDemo ? '🟢 Demo' : '🔵 Real'} • {acc.loginid} (${bal} {acc.currency || 'USD'})
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                        </div>
+                    )}
 
                     <button
                         type='button'
-                        className='acc-action-btn acc-action-btn--refresh'
+                        className='acc-btn-refresh'
                         onClick={handleRefreshCurrentTab}
                         disabled={isCurrentTabLoading}
-                        title={localize('Refresh reports data')}
+                        title={localize('Refresh data')}
                     >
-                        <RefreshCw size={15} className={isCurrentTabLoading ? 'animate-spin' : ''} />
+                        <RefreshCw size={14} className={isCurrentTabLoading ? 'animate-spin' : ''} />
                         <span>{localize('Refresh')}</span>
                     </button>
+
+                    <a
+                        href='https://app.deriv.com/cashier/deposit'
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='acc-btn-deposit'
+                    >
+                        <span>{localize('Deposit')}</span>
+                        <ExternalLink size={13} />
+                    </a>
                 </div>
             </header>
 
-            {/* 2. REAL-TIME TRANSACTION STREAM TICKER */}
-            <div className='acc-stream-ticker'>
-                <div className='acc-stream-ticker__indicator'>
-                    <span className={`acc-pulse-dot ${isStreamSubscribed ? 'active' : ''}`} />
-                    <span className='acc-stream-ticker__label'>{localize('LIVE FEED')}</span>
-                </div>
-                {latestTransaction ? (
-                    <div className='acc-stream-ticker__event'>
-                        <span className={`acc-stream-ticker__badge ${Number(latestTransaction.amount || 0) >= 0 ? 'credit' : 'debit'}`}>
-                            {String(latestTransaction.action || 'transaction').toUpperCase()}
-                        </span>
-                        <span className='acc-stream-ticker__amount'>
-                            {formatAmount(latestTransaction.amount, latestTransaction.currency || activeAccountData.currency)}
-                        </span>
-                        <span className='acc-stream-ticker__dot'>•</span>
-                        <span className='acc-stream-ticker__meta'>
-                            {localize('Balance')}: ${addComma((Number(latestTransaction.balance || 0)).toFixed(2))} {latestTransaction.currency || activeAccountData.currency}
-                        </span>
-                        {latestTransaction.symbol && (
-                            <>
-                                <span className='acc-stream-ticker__dot'>•</span>
-                                <span className='acc-stream-ticker__symbol'>{latestTransaction.symbol}</span>
-                            </>
-                        )}
-                    </div>
-                ) : (
-                    <span className='acc-stream-ticker__idle'>
-                        {localize('Listening for real-time WebSocket transactions and balance updates...')}
-                    </span>
-                )}
-            </div>
-
-            {/* 3. CREATIVE BENTO CARDS HERO GRID */}
-            <section className='acc-bento-grid'>
-                {/* CARD 1: Creative VIP Glass Credit Card */}
-                <div className={`acc-glass-card ${activeAccountData.isDemo ? 'acc-glass-card--demo' : 'acc-glass-card--real'}`}>
-                    <div className='acc-glass-card__mesh' />
-                    
-                    <div className='acc-glass-card__top'>
-                        <div className='acc-glass-card__chip-row'>
-                            {/* EMV Chip & Contactless Icons */}
-                            <div className='acc-emv-chip'>
-                                <div className='acc-emv-line' />
-                                <div className='acc-emv-line' />
-                            </div>
-                            <Radio size={20} className='acc-nfc-icon' />
+            {/* 2. BALANCED 4-CARD HERO METRICS STRIP */}
+            <section className='acc-hero-grid'>
+                {/* CARD 1: Available Balance */}
+                <div className={`acc-summary-card ${activeAccountData.isDemo ? 'demo-accent' : 'real-accent'}`}>
+                    <div className='acc-card-head'>
+                        <div className='acc-card-icon-wrap'>
+                            <Wallet size={16} />
                         </div>
-                        <div className='acc-glass-card__badge-row'>
+                        <span className='acc-card-label'>{localize('Available Funds')}</span>
+                        <span className={`acc-tag ${activeAccountData.isDemo ? 'demo' : 'real'}`}>
+                            {activeAccountData.isDemo ? 'DEMO' : 'REAL'}
+                        </span>
+                    </div>
+                    <div className='acc-card-body'>
+                        <div className='acc-card-val'>
+                            {formatAmount(activeAccountData.balance, activeAccountData.currency)}
+                        </div>
+                        <div className='acc-card-sub'>
                             <button
                                 type='button'
-                                className='acc-glass-card__copy-btn'
+                                className='acc-inline-id-btn'
                                 onClick={handleCopyId}
                                 title={localize('Copy Login ID')}
                             >
-                                {copiedId ? <CheckCircle2 size={13} className='text-success' /> : <Copy size={13} />}
                                 <span>{activeAccountData.loginid}</span>
+                                {copiedId ? <CheckCircle2 size={12} className='text-win' /> : <Copy size={12} />}
                             </button>
-                            <span className={`acc-pill-badge ${activeAccountData.isDemo ? 'demo' : 'real'}`}>
-                                {activeAccountData.isDemo ? 'VIRTUAL DEMO' : 'REAL MONEY'}
-                            </span>
+                            {activeAccountData.isDemo && (
+                                <button
+                                    type='button'
+                                    className='acc-inline-action-btn'
+                                    onClick={handleResetDemoBalance}
+                                    disabled={isResetting}
+                                >
+                                    <RotateCcw size={11} className={isResetting ? 'animate-spin' : ''} />
+                                    <span>{localize('Top-up $10k')}</span>
+                                </button>
+                            )}
                         </div>
                     </div>
-
-                    <div className='acc-glass-card__mid'>
-                        <span className='acc-glass-card__label'>{localize('Available Funds')}</span>
-                        <div className='acc-glass-card__balance'>
-                            {formatAmount(activeAccountData.balance, activeAccountData.currency)}
-                        </div>
-                        {displayCurrency === 'KES' && activeAccountData.currency === 'USD' && (
-                            <div className='acc-glass-card__converted'>
-                                &asymp; KES {addComma((activeAccountData.balance * rate).toFixed(2))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className='acc-glass-card__footer'>
-                        <button
-                            type='button'
-                            className='acc-card-btn acc-card-btn--primary'
-                            onClick={() => window.open('https://app.deriv.com/cashier/deposit', '_blank')}
-                        >
-                            <span>{localize('Deposit / Cashier')}</span>
-                            <ExternalLink size={13} />
-                        </button>
-
-                        <button
-                            type='button'
-                            className='acc-card-btn acc-card-btn--secondary'
-                            onClick={() => window.dispatchEvent(new Event('open_wallet_management'))}
-                        >
-                            <Wallet size={14} />
-                            <span>{localize('Wallets')}</span>
-                        </button>
-
-                        {activeAccountData.isDemo && (
-                            <button
-                                type='button'
-                                className='acc-card-btn acc-card-btn--reset'
-                                onClick={handleResetDemoBalance}
-                                disabled={isResetting}
-                                title='Reset demo funds to $10,000'
-                            >
-                                <RotateCcw size={13} className={isResetting ? 'animate-spin' : ''} />
-                                <span>{isResetting ? localize('Resetting...') : localize('Top-up $10k')}</span>
-                            </button>
-                        )}
-                    </div>
-
-                    {resetMsg && <div className='acc-glass-card__toast'>{resetMsg}</div>}
+                    {resetMsg && <div className='acc-card-toast'>{resetMsg}</div>}
                 </div>
 
-                {/* CARD 2: Financial Performance Pulse Card */}
-                <div className='acc-stat-bento-card'>
-                    <div className='acc-stat-bento-card__head'>
-                        <div className='acc-stat-bento-card__title-group'>
-                            <TrendingUp size={18} className='text-cyan' />
-                            <h3 className='acc-stat-bento-card__title'>{localize('Performance Pulse')}</h3>
+                {/* CARD 2: Net Closed P&L */}
+                <div className='acc-summary-card'>
+                    <div className='acc-card-head'>
+                        <div className='acc-card-icon-wrap'>
+                            {profitMetrics.netProfit >= 0 ? (
+                                <TrendingUp size={16} className='text-win' />
+                            ) : (
+                                <TrendingDown size={16} className='text-loss' />
+                            )}
                         </div>
-                        <span className='acc-stat-bento-card__tag'>{localize('Session Stats')}</span>
+                        <span className='acc-card-label'>{localize('Net Closed P&L')}</span>
+                        <span className='acc-tag neutral'>{localize('Settled')}</span>
                     </div>
-
-                    <div className='acc-stat-bento-card__metrics'>
-                        <div className='acc-metric-cell'>
-                            <span className='acc-metric-cell__label'>{localize('Trading Win Rate')}</span>
-                            <div className='acc-metric-cell__val-group'>
-                                <span className={`acc-metric-cell__val ${profitMetrics.winRate >= 50 ? 'text-win' : 'text-loss'}`}>
-                                    {profitMetrics.winRate.toFixed(1)}%
-                                </span>
-                                <span className='acc-metric-cell__sub'>
-                                    ({profitMetrics.winCount}/{profitMetrics.count} {localize('Won')})
-                                </span>
-                            </div>
+                    <div className='acc-card-body'>
+                        <div className={`acc-card-val ${profitMetrics.netProfit >= 0 ? 'text-win' : 'text-loss'}`}>
+                            {profitMetrics.netProfit >= 0 ? '+' : ''}
+                            {formatAmount(profitMetrics.netProfit, activeAccountData.currency)}
                         </div>
-
-                        <div className='acc-metric-cell'>
-                            <span className='acc-metric-cell__label'>{localize('Net Closed P&L')}</span>
-                            <span className={`acc-metric-cell__val ${profitMetrics.netProfit >= 0 ? 'text-win' : 'text-loss'}`}>
-                                {profitMetrics.netProfit >= 0 ? '+' : ''}
-                                {formatAmount(profitMetrics.netProfit, activeAccountData.currency)}
-                            </span>
-                        </div>
-
-                        <div className='acc-metric-cell'>
-                            <span className='acc-metric-cell__label'>{localize('Net Cash Flow')}</span>
-                            <span className={`acc-metric-cell__val ${statementMetrics.netCashFlow >= 0 ? 'text-win' : 'text-loss'}`}>
-                                {statementMetrics.netCashFlow >= 0 ? '+' : ''}
-                                {formatAmount(statementMetrics.netCashFlow, activeAccountData.currency)}
-                            </span>
-                        </div>
-
-                        <div className='acc-metric-cell'>
-                            <span className='acc-metric-cell__label'>{localize('Open Exposure')}</span>
-                            <span className='acc-metric-cell__val text-cyan'>
-                                {formatAmount(portfolioMetrics.totalStake, activeAccountData.currency)}
-                            </span>
+                        <div className='acc-card-sub text-muted'>
+                            {profitMetrics.count} {localize('closed contracts total')}
                         </div>
                     </div>
                 </div>
 
-                {/* CARD 3: Linked Accounts Switcher & Multi-Wallet Hub */}
-                <div className='acc-stat-bento-card acc-stat-bento-card--accounts'>
-                    <div className='acc-stat-bento-card__head'>
-                        <div className='acc-stat-bento-card__title-group'>
-                            <Layers size={18} className='text-indigo' />
-                            <h3 className='acc-stat-bento-card__title'>{localize('Connected Accounts')}</h3>
+                {/* CARD 3: Win Rate */}
+                <div className='acc-summary-card'>
+                    <div className='acc-card-head'>
+                        <div className='acc-card-icon-wrap'>
+                            <Percent size={16} className='text-cyan' />
                         </div>
-                        <span className='acc-stat-bento-card__tag'>{accountList?.length || 0} {localize('Active')}</span>
+                        <span className='acc-card-label'>{localize('Trade Win Rate')}</span>
+                        <span className='acc-tag neutral'>{profitMetrics.winCount}/{profitMetrics.count}</span>
                     </div>
+                    <div className='acc-card-body'>
+                        <div className={`acc-card-val ${profitMetrics.winRate >= 50 ? 'text-win' : 'text-loss'}`}>
+                            {profitMetrics.winRate.toFixed(1)}%
+                        </div>
+                        <div className='acc-card-sub text-muted'>
+                            {localize('Overall contract win ratio')}
+                        </div>
+                    </div>
+                </div>
 
-                    <div className='acc-account-selector-list'>
-                        {accountList && accountList.length > 0 ? (
-                            accountList.map(acc => {
-                                const isDemo = isDemoAccount(acc.loginid);
-                                const isSelected = acc.loginid === selectedLoginId;
-                                const accCurr = acc.currency || 'USD';
-                                const balanceVal = Number(acc.balance ?? 0);
-
-                                return (
-                                    <div
-                                        key={acc.loginid}
-                                        className={`acc-selector-item ${isSelected ? 'is-selected' : ''}`}
-                                        onClick={() => setSelectedLoginId(acc.loginid)}
-                                    >
-                                        <div className='acc-selector-item__left'>
-                                            <span className={`acc-type-dot ${isDemo ? 'demo' : 'real'}`} />
-                                            <div>
-                                                <div className='acc-selector-item__loginid'>
-                                                    {acc.loginid}
-                                                    {isSelected && <span className='acc-selected-badge'>{localize('Viewing')}</span>}
-                                                </div>
-                                                <span className={`acc-selector-item__type ${isDemo ? 'demo' : 'real'}`}>
-                                                    {isDemo ? 'Demo Account' : 'Real Money'}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className='acc-selector-item__right'>
-                                            <span className='acc-selector-item__balance'>
-                                                ${balanceVal.toLocaleString('en-US', {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                })}
-                                            </span>
-                                            <span className='acc-selector-item__curr'>{accCurr}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <div className='acc-selector-empty'>
-                                {localize('No additional accounts detected in session.')}
-                            </div>
-                        )}
+                {/* CARD 4: Open Market Exposure */}
+                <div className='acc-summary-card'>
+                    <div className='acc-card-head'>
+                        <div className='acc-card-icon-wrap'>
+                            <Briefcase size={16} className='text-indigo' />
+                        </div>
+                        <span className='acc-card-label'>{localize('Open Exposure')}</span>
+                        <span className='acc-tag neutral'>{portfolioPositions.length} {localize('Active')}</span>
+                    </div>
+                    <div className='acc-card-body'>
+                        <div className='acc-card-val text-cyan'>
+                            {formatAmount(portfolioMetrics.totalStake, activeAccountData.currency)}
+                        </div>
+                        <div className='acc-card-sub text-muted'>
+                            {portfolioPositions.length > 0
+                                ? localize('Potential: +%{payout}', {
+                                      payout: formatAmount(portfolioMetrics.totalPotentialPayout, activeAccountData.currency),
+                                  })
+                                : localize('No live contracts currently open')}
+                        </div>
                     </div>
                 </div>
             </section>
 
+            {/* 3. SUBTLE REAL-TIME TICKER BANNER */}
+            <div className='acc-live-ticker'>
+                <div className='acc-ticker-head'>
+                    <span className='acc-live-dot' />
+                    <span className='acc-ticker-label'>{localize('LIVE TICKER')}</span>
+                </div>
+                {latestTransaction ? (
+                    <div className='acc-ticker-body'>
+                        <span className={`acc-action-pill acc-action-pill--${String(latestTransaction.action || 'buy').toLowerCase()}`}>
+                            {String(latestTransaction.action || 'transaction').toUpperCase()}
+                        </span>
+                        <span className='acc-ticker-amount font-bold'>
+                            {formatAmount(latestTransaction.amount, latestTransaction.currency || activeAccountData.currency)}
+                        </span>
+                        <span className='acc-ticker-divider'>•</span>
+                        <span className='acc-ticker-balance'>
+                            {localize('Balance')}: ${addComma((Number(latestTransaction.balance || 0)).toFixed(2))}
+                        </span>
+                        {latestTransaction.symbol && (
+                            <>
+                                <span className='acc-ticker-divider'>•</span>
+                                <span className='acc-ticker-symbol'>{latestTransaction.symbol}</span>
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <div className='acc-ticker-idle'>
+                        {localize('Listening for live transaction broadcasts from Deriv WebSocket feed...')}
+                    </div>
+                )}
+            </div>
+
             {/* 4. MAIN REPORTS & ANALYTICS WORKSPACE */}
-            <section className='acc-reports-card'>
-                {/* Tab Navigation Segments */}
-                <div className='acc-tabs-header'>
-                    <div className='acc-nav-segments'>
+            <main className='acc-workspace'>
+                {/* Clean Segmented Tab Controls & CSV Export */}
+                <div className='acc-workspace-nav'>
+                    <div className='acc-tab-pills'>
                         <button
                             type='button'
-                            className={`acc-segment-btn ${activeTab === 'statement' ? 'active' : ''}`}
+                            className={`acc-tab-pill ${activeTab === 'statement' ? 'is-active' : ''}`}
                             onClick={() => setActiveTab('statement')}
                         >
-                            <FileText size={15} />
+                            <FileText size={14} />
                             <span>{localize('Statement & Ledger')}</span>
-                            <span className='acc-segment-badge'>{filteredTransactions.length}</span>
+                            <span className='acc-tab-count'>{filteredTransactions.length}</span>
                         </button>
 
                         <button
                             type='button'
-                            className={`acc-segment-btn ${activeTab === 'portfolio' ? 'active' : ''}`}
+                            className={`acc-tab-pill ${activeTab === 'portfolio' ? 'is-active' : ''}`}
                             onClick={() => setActiveTab('portfolio')}
                         >
-                            <Briefcase size={15} />
+                            <Briefcase size={14} />
                             <span>{localize('Open Positions')}</span>
                             {portfolioPositions.length > 0 && (
-                                <span className='acc-segment-badge acc-segment-badge--highlight'>
-                                    {portfolioPositions.length}
-                                </span>
+                                <span className='acc-tab-count highlight'>{portfolioPositions.length}</span>
                             )}
                         </button>
 
                         <button
                             type='button'
-                            className={`acc-segment-btn ${activeTab === 'profit_table' ? 'active' : ''}`}
+                            className={`acc-tab-pill ${activeTab === 'profit_table' ? 'is-active' : ''}`}
                             onClick={() => setActiveTab('profit_table')}
                         >
-                            <TrendingUp size={15} />
+                            <TrendingUp size={14} />
                             <span>{localize('Profit & Loss Table')}</span>
-                            <span className='acc-segment-badge'>{profitEntries.length}</span>
+                            <span className='acc-tab-count'>{profitEntries.length}</span>
                         </button>
 
                         <button
                             type='button'
-                            className={`acc-segment-btn ${activeTab === 'transactions' ? 'active' : ''}`}
+                            className={`acc-tab-pill ${activeTab === 'transactions' ? 'is-active' : ''}`}
                             onClick={() => setActiveTab('transactions')}
                         >
-                            <Radio size={15} />
-                            <span>{localize('Live Stream')}</span>
+                            <Radio size={14} />
+                            <span>{localize('Live Feed')}</span>
                             {streamEvents.length > 0 && (
-                                <span className='acc-segment-badge acc-segment-badge--live'>
-                                    {streamEvents.length}
-                                </span>
+                                <span className='acc-tab-count live'>{streamEvents.length}</span>
                             )}
                         </button>
                     </div>
 
                     <button
                         type='button'
-                        className='acc-export-btn'
+                        className='acc-btn-export'
                         onClick={handleExportCSV}
                         disabled={
                             (activeTab === 'statement' && filteredTransactions.length === 0) ||
                             (activeTab === 'portfolio' && portfolioPositions.length === 0) ||
                             (activeTab === 'profit_table' && profitEntries.length === 0)
                         }
-                        title={localize('Export active report as CSV')}
                     >
-                        <Download size={14} />
+                        <Download size={13} />
                         <span>{localize('Export CSV')}</span>
                     </button>
                 </div>
 
-                {/* TAB 1: STATEMENT & FINANCIAL LEDGER */}
+                {/* Filter & Search Toolbar */}
                 {activeTab === 'statement' && (
-                    <div className='acc-tab-content'>
-                        {/* KPI Metrics Chips */}
-                        <div className='acc-kpi-chips-grid'>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Entries')}</span>
-                                <span className='acc-kpi-chip__val'>{statementMetrics.count}</span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Net Cash Flow')}</span>
-                                <span className={`acc-kpi-chip__val ${statementMetrics.netCashFlow >= 0 ? 'text-win' : 'text-loss'}`}>
-                                    {statementMetrics.netCashFlow >= 0 ? '+' : ''}
-                                    {formatAmount(statementMetrics.netCashFlow, activeAccountData.currency)}
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Inflow')}</span>
-                                <span className='acc-kpi-chip__val text-win'>
-                                    +{formatAmount(statementMetrics.totalCredits, activeAccountData.currency)}
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Outflow')}</span>
-                                <span className='acc-kpi-chip__val text-loss'>
-                                    -{formatAmount(statementMetrics.totalDebits, activeAccountData.currency)}
-                                </span>
-                            </div>
+                    <div className='acc-toolbar'>
+                        <div className='acc-search-field'>
+                            <Search size={14} className='acc-search-icon' />
+                            <input
+                                type='text'
+                                placeholder={localize('Filter by ID, action, contract or market...')}
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                            />
+                            {searchQuery && (
+                                <button
+                                    type='button'
+                                    className='acc-clear-btn'
+                                    onClick={() => setSearchQuery('')}
+                                >
+                                    &times;
+                                </button>
+                            )}
                         </div>
 
-                        {/* Filter Bar */}
-                        <div className='acc-filter-bar'>
-                            <div className='acc-search-box'>
-                                <Search size={14} className='acc-search-icon' />
-                                <input
-                                    type='text'
-                                    placeholder={localize('Search by ID, contract, symbol, action...')}
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    className='acc-search-input'
-                                />
-                                {searchQuery && (
-                                    <button
-                                        type='button'
-                                        className='acc-clear-search-btn'
-                                        onClick={() => setSearchQuery('')}
-                                    >
-                                        &times;
-                                    </button>
-                                )}
-                            </div>
+                        <div className='acc-filter-selects'>
+                            <select
+                                value={actionFilter}
+                                onChange={e => setActionFilter(e.target.value)}
+                                className='acc-select'
+                            >
+                                <option value='all'>{localize('All Actions')}</option>
+                                <option value='buy'>{localize('Buy Contracts')}</option>
+                                <option value='sell'>{localize('Sell / Payouts')}</option>
+                                <option value='deposit'>{localize('Deposits')}</option>
+                                <option value='withdrawal'>{localize('Withdrawals')}</option>
+                                <option value='transfer'>{localize('Transfers')}</option>
+                            </select>
 
-                            <div className='acc-filter-select-group'>
-                                <Filter size={13} className='acc-select-icon' />
-                                <select
-                                    value={actionFilter}
-                                    onChange={e => setActionFilter(e.target.value)}
-                                    className='acc-custom-select'
-                                >
-                                    <option value='all'>{localize('All Actions')}</option>
-                                    <option value='buy'>{localize('Buy Contracts')}</option>
-                                    <option value='sell'>{localize('Sell / Payouts')}</option>
-                                    <option value='deposit'>{localize('Deposits')}</option>
-                                    <option value='withdrawal'>{localize('Withdrawals')}</option>
-                                    <option value='transfer'>{localize('Transfers')}</option>
-                                    <option value='adjustment'>{localize('Adjustments')}</option>
-                                </select>
-                            </div>
-
-                            <div className='acc-filter-select-group'>
-                                <Calendar size={13} className='acc-select-icon' />
-                                <select
-                                    value={dateRangeFilter}
-                                    onChange={e => setDateRangeFilter(e.target.value as any)}
-                                    className='acc-custom-select'
-                                >
-                                    <option value='all'>{localize('All Time')}</option>
-                                    <option value='today'>{localize('Today')}</option>
-                                    <option value='7d'>{localize('Last 7 Days')}</option>
-                                    <option value='30d'>{localize('Last 30 Days')}</option>
-                                </select>
-                            </div>
+                            <select
+                                value={dateRangeFilter}
+                                onChange={e => setDateRangeFilter(e.target.value as any)}
+                                className='acc-select'
+                            >
+                                <option value='all'>{localize('All Time')}</option>
+                                <option value='today'>{localize('Today')}</option>
+                                <option value='7d'>{localize('Last 7 Days')}</option>
+                                <option value='30d'>{localize('Last 30 Days')}</option>
+                            </select>
                         </div>
+                    </div>
+                )}
 
-                        {/* Statement Table */}
+                {/* ─── TAB 1: STATEMENT ─── */}
+                {activeTab === 'statement' && (
+                    <div className='acc-table-wrapper'>
                         {isLoadingStatement ? (
-                            <div className='acc-table-loading'>
+                            <div className='acc-empty-state'>
                                 <RefreshCw size={24} className='animate-spin text-cyan' />
-                                <p>{localize('Fetching statement ledger from Deriv Gateway...')}</p>
+                                <p>{localize('Fetching statement ledger...')}</p>
                             </div>
                         ) : filteredTransactions.length === 0 ? (
-                            <div className='acc-table-empty'>
-                                <FileSpreadsheet size={36} className='text-muted' />
+                            <div className='acc-empty-state'>
+                                <FileSpreadsheet size={32} className='text-muted' />
                                 <h4>{localize('No transactions found')}</h4>
-                                <p>{localize('No transaction records match the current filter criteria.')}</p>
+                                <p>{localize('Try adjusting your search query or date range filters.')}</p>
                             </div>
                         ) : (
-                            <div className='acc-table-responsive'>
-                                <table className='acc-data-table'>
-                                    <thead>
-                                        <tr>
-                                            <th>{localize('Transaction ID')}</th>
-                                            <th>{localize('Date & Time')}</th>
-                                            <th>{localize('Action')}</th>
-                                            <th>{localize('Market / Contract')}</th>
-                                            <th className='text-right'>{localize('Amount')}</th>
-                                            <th className='text-right'>{localize('Balance After')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredTransactions.map(tx => {
-                                            const isCredit = Number(tx.amount) >= 0;
-                                            const date = new Date(tx.transaction_time * 1000);
-                                            const formattedDate = date.toLocaleDateString(undefined, {
-                                                month: 'short',
-                                                day: '2-digit',
-                                                year: 'numeric',
-                                            });
-                                            const formattedTime = date.toLocaleTimeString(undefined, {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                second: '2-digit',
-                                            });
-
-                                            return (
-                                                <tr key={String(tx.transaction_id)}>
-                                                    <td className='acc-mono text-muted'>
-                                                        #{String(tx.transaction_id)}
-                                                    </td>
-                                                    <td className='text-nowrap'>
-                                                        <div className='acc-datetime-cell'>
-                                                            <span className='acc-datetime-cell__date'>{formattedDate}</span>
-                                                            <span className='acc-datetime-cell__time'>{formattedTime}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`acc-action-pill acc-action-pill--${String(tx.action_type || 'transaction').toLowerCase()}`}>
-                                                            {String(tx.action_type || 'transaction').toUpperCase()}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <div className='acc-contract-cell'>
-                                                            {tx.contract_id && (
-                                                                <span className='acc-contract-id-pill'>ID: {tx.contract_id}</span>
-                                                            )}
-                                                            <span className='acc-contract-desc' title={tx.longcode || tx.shortcode}>
-                                                                {tx.longcode || tx.shortcode || '—'}
+                            <table className='acc-table'>
+                                <thead>
+                                    <tr>
+                                        <th>{localize('Transaction ID')}</th>
+                                        <th>{localize('Date & Time')}</th>
+                                        <th>{localize('Action')}</th>
+                                        <th>{localize('Market / Contract')}</th>
+                                        <th className='text-right'>{localize('Amount')}</th>
+                                        <th className='text-right'>{localize('Balance After')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredTransactions.map(tx => {
+                                        const isCredit = Number(tx.amount || 0) >= 0;
+                                        const date = new Date(tx.transaction_time * 1000);
+                                        const actionType = String(tx.action_type || 'transaction');
+                                        return (
+                                            <tr key={String(tx.transaction_id)}>
+                                                <td className='acc-mono text-muted'>#{tx.transaction_id}</td>
+                                                <td className='text-nowrap'>
+                                                    {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                                <td>
+                                                    <span className={`acc-action-pill acc-action-pill--${actionType.toLowerCase()}`}>
+                                                        {actionType.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div className='acc-cell-contract'>
+                                                        {tx.symbol && <span className='font-bold'>{tx.symbol}</span>}
+                                                        {tx.contract_id && (
+                                                            <span className='acc-mono text-muted'>#{tx.contract_id}</span>
+                                                        )}
+                                                        {tx.longcode && !tx.symbol && (
+                                                            <span className='acc-cell-desc' title={tx.longcode}>
+                                                                {tx.longcode}
                                                             </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className={`text-right acc-mono font-bold ${isCredit ? 'text-win' : 'text-loss'}`}>
-                                                        {formatAmount(tx.amount, tx.currency || activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='text-right acc-mono font-bold'>
-                                                        ${addComma(Number(tx.balance_after).toFixed(2))} {tx.currency || activeAccountData.currency}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                    <tfoot>
-                                        <tr className='acc-table-footer-row'>
-                                            <td colSpan={4} className='text-right font-bold'>
-                                                {localize('Net Total (%{count} transactions):', { count: filteredTransactions.length })}
-                                            </td>
-                                            <td className={`text-right acc-mono font-bold ${statementMetrics.netCashFlow >= 0 ? 'text-win' : 'text-loss'}`}>
-                                                {formatAmount(statementMetrics.netCashFlow, activeAccountData.currency)}
-                                            </td>
-                                            <td className='text-right acc-mono text-muted'>—</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className={`text-right font-bold acc-mono ${isCredit ? 'text-win' : 'text-loss'}`}>
+                                                    {formatAmount(tx.amount, tx.currency || activeAccountData.currency)}
+                                                </td>
+                                                <td className='text-right acc-mono'>
+                                                    ${addComma((Number(tx.balance_after || 0)).toFixed(2))}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         )}
                     </div>
                 )}
 
-                {/* TAB 2: OPEN POSITIONS (PORTFOLIO) */}
+                {/* ─── TAB 2: PORTFOLIO (OPEN POSITIONS) ─── */}
                 {activeTab === 'portfolio' && (
-                    <div className='acc-tab-content'>
-                        {/* KPI Metrics Chips */}
-                        <div className='acc-kpi-chips-grid'>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Open Positions')}</span>
-                                <span className='acc-kpi-chip__val'>{portfolioMetrics.count}</span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Active Stake')}</span>
-                                <span className='acc-kpi-chip__val text-cyan'>
-                                    {formatAmount(portfolioMetrics.totalStake, activeAccountData.currency)}
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Potential Payout')}</span>
-                                <span className='acc-kpi-chip__val text-win'>
-                                    +{formatAmount(portfolioMetrics.totalPotentialPayout, activeAccountData.currency)}
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Potential Net Profit')}</span>
-                                <span className='acc-kpi-chip__val text-win'>
-                                    +{formatAmount(portfolioMetrics.totalPotentialPayout - portfolioMetrics.totalStake, activeAccountData.currency)}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Portfolio Table */}
+                    <div className='acc-table-wrapper'>
                         {isLoadingPortfolio ? (
-                            <div className='acc-table-loading'>
+                            <div className='acc-empty-state'>
                                 <RefreshCw size={24} className='animate-spin text-cyan' />
-                                <p>{localize('Fetching live market positions...')}</p>
+                                <p>{localize('Fetching live positions...')}</p>
                             </div>
                         ) : portfolioPositions.length === 0 ? (
-                            <div className='acc-table-empty'>
-                                <Briefcase size={36} className='text-muted' />
+                            <div className='acc-empty-state'>
+                                <Briefcase size={32} className='text-muted' />
                                 <h4>{localize('No active open positions')}</h4>
-                                <p>{localize('Contracts placed manually or by automated bots will show here in real time.')}</p>
+                                <p>{localize('Active contracts from manual or bot trades will appear here.')}</p>
                             </div>
                         ) : (
-                            <div className='acc-table-responsive'>
-                                <table className='acc-data-table'>
-                                    <thead>
-                                        <tr>
-                                            <th>{localize('Contract ID')}</th>
-                                            <th>{localize('Market / Symbol')}</th>
-                                            <th>{localize('Contract Type')}</th>
-                                            <th className='text-right'>{localize('Stake')}</th>
-                                            <th className='text-right'>{localize('Potential Payout')}</th>
-                                            <th>{localize('Purchase Time')}</th>
-                                            <th>{localize('Expiry Time')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {portfolioPositions.map(p => {
-                                            const pDate = new Date(p.purchase_time * 1000).toLocaleTimeString();
-                                            const eDate = p.expiry_time ? new Date(p.expiry_time * 1000).toLocaleTimeString() : '—';
-                                            return (
-                                                <tr key={String(p.contract_id)}>
-                                                    <td className='acc-mono text-muted'>#{p.contract_id}</td>
-                                                    <td className='font-bold'>{p.symbol}</td>
-                                                    <td>
-                                                        <span className='acc-action-pill acc-action-pill--buy'>
-                                                            {p.contract_type}
-                                                        </span>
-                                                    </td>
-                                                    <td className='text-right acc-mono font-bold'>
-                                                        {formatAmount(p.buy_price, p.currency || activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='text-right acc-mono font-bold text-win'>
-                                                        +{formatAmount(p.payout, p.currency || activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='text-muted'>{pDate}</td>
-                                                    <td className='text-muted'>{eDate}</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <table className='acc-table'>
+                                <thead>
+                                    <tr>
+                                        <th>{localize('Contract ID')}</th>
+                                        <th>{localize('Market / Symbol')}</th>
+                                        <th>{localize('Contract Type')}</th>
+                                        <th className='text-right'>{localize('Stake')}</th>
+                                        <th className='text-right'>{localize('Potential Payout')}</th>
+                                        <th>{localize('Purchase Time')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {portfolioPositions.map(p => {
+                                        const pDate = new Date(p.purchase_time * 1000).toLocaleTimeString();
+                                        return (
+                                            <tr key={String(p.contract_id)}>
+                                                <td className='acc-mono text-muted'>#{p.contract_id}</td>
+                                                <td className='font-bold'>{p.symbol}</td>
+                                                <td>
+                                                    <span className='acc-action-pill acc-action-pill--buy'>
+                                                        {p.contract_type}
+                                                    </span>
+                                                </td>
+                                                <td className='text-right font-bold acc-mono'>
+                                                    {formatAmount(p.buy_price, p.currency || activeAccountData.currency)}
+                                                </td>
+                                                <td className='text-right font-bold acc-mono text-win'>
+                                                    +{formatAmount(p.payout, p.currency || activeAccountData.currency)}
+                                                </td>
+                                                <td className='text-muted'>{pDate}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         )}
                     </div>
                 )}
 
-                {/* TAB 3: PROFIT & LOSS TABLE */}
+                {/* ─── TAB 3: PROFIT & LOSS ─── */}
                 {activeTab === 'profit_table' && (
-                    <div className='acc-tab-content'>
-                        {/* KPI Metrics Chips */}
-                        <div className='acc-kpi-chips-grid'>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Trades')}</span>
-                                <span className='acc-kpi-chip__val'>{profitMetrics.count}</span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Win Rate')}</span>
-                                <span className={`acc-kpi-chip__val ${profitMetrics.winRate >= 50 ? 'text-win' : 'text-loss'}`}>
-                                    {profitMetrics.winRate.toFixed(1)}% ({profitMetrics.winCount}/{profitMetrics.count})
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Net Return')}</span>
-                                <span className={`acc-kpi-chip__val ${profitMetrics.netProfit >= 0 ? 'text-win' : 'text-loss'}`}>
-                                    {profitMetrics.netProfit >= 0 ? '+' : ''}
-                                    {formatAmount(profitMetrics.netProfit, activeAccountData.currency)}
-                                </span>
-                            </div>
-                            <div className='acc-kpi-chip'>
-                                <span className='acc-kpi-chip__label'>{localize('Total Turnover')}</span>
-                                <span className='acc-kpi-chip__val'>
-                                    {formatAmount(profitMetrics.totalBuy, activeAccountData.currency)}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Date Filter Bar */}
-                        <div className='acc-filter-bar'>
-                            <div className='acc-filter-select-group'>
-                                <Calendar size={13} className='acc-select-icon' />
-                                <select
-                                    value={dateRangeFilter}
-                                    onChange={e => setDateRangeFilter(e.target.value as any)}
-                                    className='acc-custom-select'
-                                >
-                                    <option value='all'>{localize('All Time')}</option>
-                                    <option value='today'>{localize('Today')}</option>
-                                    <option value='7d'>{localize('Last 7 Days')}</option>
-                                    <option value='30d'>{localize('Last 30 Days')}</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Profit Table */}
+                    <div className='acc-table-wrapper'>
                         {isLoadingProfitTable ? (
-                            <div className='acc-table-loading'>
+                            <div className='acc-empty-state'>
                                 <RefreshCw size={24} className='animate-spin text-cyan' />
-                                <p>{localize('Fetching closed contracts...')}</p>
+                                <p>{localize('Fetching profit/loss history...')}</p>
                             </div>
                         ) : profitEntries.length === 0 ? (
-                            <div className='acc-table-empty'>
-                                <TrendingUp size={36} className='text-muted' />
-                                <h4>{localize('No closed contracts found')}</h4>
-                                <p>{localize('Completed contracts will appear here with calculated P&L results.')}</p>
+                            <div className='acc-empty-state'>
+                                <TrendingUp size={32} className='text-muted' />
+                                <h4>{localize('No settled contracts')}</h4>
+                                <p>{localize('Closed contracts and trading performance will appear here.')}</p>
                             </div>
                         ) : (
-                            <div className='acc-table-responsive'>
-                                <table className='acc-data-table'>
-                                    <thead>
-                                        <tr>
-                                            <th>{localize('Contract ID')}</th>
-                                            <th>{localize('Purchase Time')}</th>
-                                            <th>{localize('Sell Time')}</th>
-                                            <th className='text-right'>{localize('Buy Price')}</th>
-                                            <th className='text-right'>{localize('Sell Price')}</th>
-                                            <th className='text-right'>{localize('Profit / Loss')}</th>
-                                            <th>{localize('Summary')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {profitEntries.map(p => {
-                                            const isWon = p.profit_loss > 0;
-                                            const pTime = new Date(p.purchase_time * 1000).toLocaleString();
-                                            const sTime = new Date(p.sell_time * 1000).toLocaleTimeString();
-                                            return (
-                                                <tr key={String(p.contract_id)}>
-                                                    <td className='acc-mono text-muted'>#{p.contract_id}</td>
-                                                    <td className='text-nowrap'>{pTime}</td>
-                                                    <td className='text-nowrap'>{sTime}</td>
-                                                    <td className='text-right acc-mono'>
-                                                        {formatAmount(p.buy_price, activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='text-right acc-mono font-bold'>
-                                                        {formatAmount(p.sell_price, activeAccountData.currency)}
-                                                    </td>
-                                                    <td className={`text-right acc-mono font-bold ${isWon ? 'text-win' : 'text-loss'}`}>
-                                                        {isWon ? '+' : ''}{formatAmount(p.profit_loss, activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='acc-details-text' title={p.longcode || p.shortcode}>
-                                                        {p.shortcode || p.longcode || '—'}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                    <tfoot>
-                                        <tr className='acc-table-footer-row'>
-                                            <td colSpan={5} className='text-right font-bold'>
-                                                {localize('Net Profit/Loss Total (%{count} trades):', { count: profitEntries.length })}
-                                            </td>
-                                            <td className={`text-right acc-mono font-bold ${profitMetrics.netProfit >= 0 ? 'text-win' : 'text-loss'}`}>
-                                                {profitMetrics.netProfit >= 0 ? '+' : ''}{formatAmount(profitMetrics.netProfit, activeAccountData.currency)}
-                                            </td>
-                                            <td className='text-muted'>—</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
+                            <table className='acc-table'>
+                                <thead>
+                                    <tr>
+                                        <th>{localize('Contract ID')}</th>
+                                        <th>{localize('Purchase Time')}</th>
+                                        <th>{localize('Sell Time')}</th>
+                                        <th className='text-right'>{localize('Buy Price')}</th>
+                                        <th className='text-right'>{localize('Sell Price')}</th>
+                                        <th className='text-right'>{localize('Profit / Loss')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {profitEntries.map(p => {
+                                        const isWon = (Number(p.profit_loss) || 0) > 0;
+                                        const pTime = new Date(p.purchase_time * 1000).toLocaleString([], {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                        });
+                                        const sTime = new Date(p.sell_time * 1000).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                        });
+                                        return (
+                                            <tr key={String(p.contract_id)}>
+                                                <td className='acc-mono text-muted'>#{p.contract_id}</td>
+                                                <td className='text-nowrap'>{pTime}</td>
+                                                <td className='text-nowrap'>{sTime}</td>
+                                                <td className='text-right acc-mono'>
+                                                    {formatAmount(p.buy_price, activeAccountData.currency)}
+                                                </td>
+                                                <td className='text-right acc-mono font-bold'>
+                                                    {formatAmount(p.sell_price, activeAccountData.currency)}
+                                                </td>
+                                                <td className={`text-right acc-mono font-bold ${isWon ? 'text-win' : 'text-loss'}`}>
+                                                    {isWon ? '+' : ''}{formatAmount(p.profit_loss, activeAccountData.currency)}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         )}
                     </div>
                 )}
 
-                {/* TAB 4: LIVE TRANSACTION STREAM */}
+                {/* ─── TAB 4: LIVE STREAM ACTIVITY ─── */}
                 {activeTab === 'transactions' && (
-                    <div className='acc-tab-content'>
-                        <div className='acc-stream-feed-head'>
-                            <div>
-                                <h3 className='acc-stream-feed-title'>{localize('Real-Time Gateway Stream')}</h3>
-                                <p className='acc-stream-feed-sub'>
-                                    {localize('Instant push notifications streamed directly from Deriv WebSocket servers.')}
-                                </p>
-                            </div>
-                            <span className='acc-live-pulse-badge'>
-                                <span className='acc-live-pulse-badge__dot' />
-                                {localize('LISTENING LIVE')}
-                            </span>
-                        </div>
-
+                    <div className='acc-table-wrapper'>
                         {streamEvents.length === 0 ? (
-                            <div className='acc-table-empty'>
-                                <Activity size={36} className='text-cyan' />
+                            <div className='acc-empty-state'>
+                                <Activity size={32} className='text-cyan' />
                                 <h4>{localize('Stream connected and listening')}</h4>
-                                <p>{localize('Trade executions or balance shifts will populate this table instantaneously.')}</p>
+                                <p>{localize('New contract purchases or settlements will appear here in real-time.')}</p>
                             </div>
                         ) : (
-                            <div className='acc-table-responsive'>
-                                <table className='acc-data-table'>
-                                    <thead>
-                                        <tr>
-                                            <th>{localize('Time')}</th>
-                                            <th>{localize('Action')}</th>
-                                            <th>{localize('Contract ID')}</th>
-                                            <th>{localize('Market')}</th>
-                                            <th className='text-right'>{localize('Amount')}</th>
-                                            <th className='text-right'>{localize('Balance After')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {streamEvents.map((st, idx) => {
-                                            const isCredit = Number(st.amount || 0) >= 0;
-                                            const tDate = st.transaction_time ? new Date(st.transaction_time * 1000).toLocaleTimeString() : '—';
-                                            const actionStr = String(st.action || 'transaction');
-                                            return (
-                                                <tr key={`${st.transaction_id}-${idx}`}>
-                                                    <td className='text-nowrap acc-mono text-muted'>{tDate}</td>
-                                                    <td>
-                                                        <span className={`acc-action-pill acc-action-pill--${actionStr.toLowerCase()}`}>
-                                                            {actionStr.toUpperCase()}
-                                                        </span>
-                                                    </td>
-                                                    <td className='acc-mono'>
-                                                        {st.contract_id ? `#${st.contract_id}` : '—'}
-                                                    </td>
-                                                    <td className='font-bold'>{st.symbol || st.display_name || '—'}</td>
-                                                    <td className={`text-right acc-mono font-bold ${isCredit ? 'text-win' : 'text-loss'}`}>
-                                                        {formatAmount(st.amount, st.currency || activeAccountData.currency)}
-                                                    </td>
-                                                    <td className='text-right acc-mono font-bold'>
-                                                        ${addComma((Number(st.balance || 0)).toFixed(2))} {st.currency || activeAccountData.currency}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <table className='acc-table'>
+                                <thead>
+                                    <tr>
+                                        <th>{localize('Time')}</th>
+                                        <th>{localize('Action')}</th>
+                                        <th>{localize('Contract ID')}</th>
+                                        <th>{localize('Symbol')}</th>
+                                        <th className='text-right'>{localize('Amount')}</th>
+                                        <th className='text-right'>{localize('Balance After')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {streamEvents.map((st, idx) => {
+                                        const isCredit = Number(st.amount || 0) >= 0;
+                                        const tDate = st.transaction_time
+                                            ? new Date(st.transaction_time * 1000).toLocaleTimeString()
+                                            : '—';
+                                        const actionStr = String(st.action || 'transaction');
+                                        return (
+                                            <tr key={`${st.transaction_id}-${idx}`}>
+                                                <td className='acc-mono text-muted text-nowrap'>{tDate}</td>
+                                                <td>
+                                                    <span className={`acc-action-pill acc-action-pill--${actionStr.toLowerCase()}`}>
+                                                        {actionStr.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td className='acc-mono'>
+                                                    {st.contract_id ? `#${st.contract_id}` : '—'}
+                                                </td>
+                                                <td className='font-bold'>{st.symbol || st.display_name || '—'}</td>
+                                                <td className={`text-right acc-mono font-bold ${isCredit ? 'text-win' : 'text-loss'}`}>
+                                                    {formatAmount(st.amount, st.currency || activeAccountData.currency)}
+                                                </td>
+                                                <td className='text-right acc-mono font-bold'>
+                                                    ${addComma((Number(st.balance || 0)).toFixed(2))}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         )}
                     </div>
                 )}
-            </section>
+            </main>
 
             {/* 5. SESSION SECURITY & PROTOCOL FOOTER */}
-            <footer className='acc-session-footer'>
-                <div className='acc-session-footer__left'>
-                    <div className='acc-session-footer__status-indicator'>
-                        <Shield size={16} className='text-win' />
-                        <span>{localize('Session Active & Encrypted via Deriv WebSocket v3')}</span>
-                    </div>
-                    <span className='acc-session-footer__id'>
-                        {selectedLoginId} ({isDemoAccount(selectedLoginId) ? 'Virtual Demo' : 'Real Account'})
-                    </span>
+            <footer className='acc-footer'>
+                <div className='acc-footer-left'>
+                    <Shield size={14} className='text-win' />
+                    <span>{localize('Secure Deriv Gateway Session Active')}</span>
+                    <span className='acc-footer-id'>{selectedLoginId}</span>
                 </div>
 
-                <div className='acc-session-footer__right'>
+                <div className='acc-footer-right'>
                     <button
                         type='button'
-                        className='acc-logout-btn'
+                        className='acc-btn-logout'
                         onClick={() => {
                             if (client?.logout) client.logout();
                             else {
@@ -1249,8 +1027,8 @@ const AccountPage = observer(() => {
                             }
                         }}
                     >
-                        <LogOut size={14} />
-                        <span>{localize('Log Out of Deriv')}</span>
+                        <LogOut size={13} />
+                        <span>{localize('Log Out')}</span>
                     </button>
                 </div>
             </footer>
