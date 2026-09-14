@@ -1,4 +1,5 @@
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
+import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';
 import { assertApiTokenScope } from '@/utils/api-token-permissions';
 import { safeSubscribe } from '@/utils/websocket-handler';
 import type { Buy } from '@deriv/api-types';
@@ -126,7 +127,29 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
                 id: 'contract.purchase_received',
                 data: buy.transaction_id,
                 buy,
+                parameters: normalized_parameters,
+                source,
             });
+
+            // Universal Copy Trading: Replicate trade to active follower accounts
+            try {
+                copyTradingService.replicateFromAnySource(
+                    {
+                        symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
+                        contract_type: (normalized_parameters.contract_type || 'CALL').toString(),
+                        stake: ask_price,
+                        duration: Number(normalized_parameters.duration || 1),
+                        duration_unit: (normalized_parameters.duration_unit || 't').toString(),
+                        barrier: normalized_parameters.barrier,
+                        prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
+                        currency: normalized_parameters.currency || 'USD',
+                    },
+                    source,
+                    (api_base as any)?.account_info?.loginid
+                );
+            } catch (copyErr) {
+                console.warn('[CopyTrading] Universal mirror notice:', copyErr);
+            }
 
             return buy;
         }
@@ -159,7 +182,29 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
         id: 'contract.purchase_received',
         data: buy.transaction_id,
         buy,
+        parameters: normalized_parameters,
+        source,
     });
+
+    // Universal Copy Trading: Replicate trade to active follower accounts
+    try {
+        copyTradingService.replicateFromAnySource(
+            {
+                symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
+                contract_type: (normalized_parameters.contract_type || 'CALL').toString(),
+                stake: price,
+                duration: Number(normalized_parameters.duration || 1),
+                duration_unit: (normalized_parameters.duration_unit || 't').toString(),
+                barrier: normalized_parameters.barrier,
+                prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
+                currency: normalized_parameters.currency || 'USD',
+            },
+            source,
+            (api_base as any)?.account_info?.loginid
+        );
+    } catch (copyErr) {
+        console.warn('[CopyTrading] Universal mirror notice:', copyErr);
+    }
 
     return buy;
 };

@@ -17,6 +17,7 @@ import { observer as globalObserver } from '@/external/bot-skeleton/utils/observ
 export interface CopierAccount {
     id: string; // Unique identifier (UUID or loginid)
     token: string; // Deriv PAT token
+    app_id?: string; // Verified Deriv App ID (e.g. 1089)
     loginid: string; // e.g. CR1234567 or VRTC7654321
     is_virtual: boolean; // true = DEMO (Virtual), false = REAL
     currency: string; // e.g. USD, EUR, BTC
@@ -42,6 +43,7 @@ export interface CopierTradeLog {
     is_virtual: boolean;
     symbol: string;
     contract_type: string;
+    source_tab?: string;
     master_stake: number;
     copier_stake: number;
     buy_price?: number;
@@ -75,6 +77,8 @@ export interface MasterAccountConfig {
     currency: string;
     alias: string;
     is_active: boolean; // Global master copier switch
+    max_stake_guard?: number; // Single trade maximum stake cap
+    daily_loss_limit?: number; // Daily loss cutoff
 }
 
 type SubscriberCallback = () => void;
@@ -95,6 +99,7 @@ class CopyTradingEngine {
     private isInitialized = false;
     private botObserverAttached = false;
     private wsConnections: Map<string, WebSocket> = new Map();
+    private recentReplications: Map<string, number> = new Map();
 
     constructor() {
         this.loadFromStorage();
@@ -195,6 +200,10 @@ class CopyTradingEngine {
      * - currency: string
      * - scopes: string[]
      */
+    /**
+     * Connects to Deriv WebSocket and validates an API PAT token with multiple candidate App IDs.
+     * Tries official Deriv API App ID (1089) first, then app-specific IDs.
+     */
     public async validateToken(token: string): Promise<{
         valid: boolean;
         loginid: string;
@@ -204,6 +213,7 @@ class CopyTradingEngine {
         scopes: string[];
         fullname: string;
         email: string;
+        app_id?: string;
         error?: string;
     }> {
         if (!token || typeof token !== 'string' || token.trim().length < 4) {
@@ -220,8 +230,48 @@ class CopyTradingEngine {
             };
         }
 
-        const trimmed = token.trim();
-        const appId = getAppId() || '66723';
+        const trimmed = token.trim().replace(/^['"]+|['"]+$/g, '');
+        // 1089 is the universal Deriv API ID for PAT tokens; also try platform IDs
+        const candidateAppIds = Array.from(new Set(['1089', getAppId() || '121856', '66723']));
+
+        let lastError = 'The token is invalid. Please verify token permissions on Deriv.';
+        for (const appId of candidateAppIds) {
+            const res = await this.tryAuthorizeWithAppId(trimmed, appId);
+            if (res.valid) {
+                return { ...res, app_id: appId };
+            }
+            if (res.error) {
+                lastError = res.error;
+            }
+        }
+
+        return {
+            valid: false,
+            loginid: '',
+            is_virtual: false,
+            balance: 0,
+            currency: 'USD',
+            scopes: [],
+            fullname: '',
+            email: '',
+            error: lastError,
+        };
+    }
+
+    private async tryAuthorizeWithAppId(
+        token: string,
+        appId: string
+    ): Promise<{
+        valid: boolean;
+        loginid: string;
+        is_virtual: boolean;
+        balance: number;
+        currency: string;
+        scopes: string[];
+        fullname: string;
+        email: string;
+        error?: string;
+    }> {
         const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
 
         return new Promise(resolve => {
@@ -253,15 +303,15 @@ class CopyTradingEngine {
                     scopes: [],
                     fullname: '',
                     email: '',
-                    error: 'Connection timed out validating token. Please check network and try again.',
+                    error: 'Connection timed out validating token.',
                 });
-            }, 12000);
+            }, 7000);
 
             try {
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
-                    ws?.send(JSON.stringify({ authorize: trimmed }));
+                    ws?.send(JSON.stringify({ authorize: token }));
                 };
 
                 ws.onmessage = event => {
@@ -328,7 +378,7 @@ class CopyTradingEngine {
                         scopes: [],
                         fullname: '',
                         email: '',
-                        error: 'WebSocket connection failure to Deriv endpoint.',
+                        error: 'WebSocket connection failure.',
                     });
                 };
             } catch (e: any) {
@@ -368,7 +418,8 @@ class CopyTradingEngine {
         const existingIndex = this.accounts.findIndex(acc => acc.loginid === validation.loginid);
         const newAccount: CopierAccount = {
             id: validation.loginid || `acc_${Date.now()}`,
-            token: params.token.trim(),
+            token: params.token.trim().replace(/^['"]+|['"]+$/g, ''),
+            app_id: validation.app_id || '1089',
             loginid: validation.loginid,
             is_virtual: validation.is_virtual,
             currency: validation.currency,
@@ -532,17 +583,36 @@ class CopyTradingEngine {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Executes the trade on all active copier accounts in parallel.
+     * Executes trade replication across all active follower accounts.
      */
     public async replicateTradeToCopiers(
         trade: TradeParameters,
-        masterLoginid: string
+        masterLoginid: string,
+        source = 'Trading Engine'
     ): Promise<CopierTradeLog[]> {
+        if (!this.masterConfig.is_active) return [];
         const activeCopiers = this.accounts.filter(acc => acc.is_active);
         if (activeCopiers.length === 0) return [];
 
+        // Deduplicate rapid dual-emits within 1200ms
+        const barrierKey = trade.barrier ?? trade.prediction ?? '';
+        const sig = `${trade.symbol}_${trade.contract_type}_${trade.stake}_${barrierKey}_${Math.floor(Date.now() / 1200)}`;
+        if (this.recentReplications.has(sig)) {
+            return [];
+        }
+        this.recentReplications.set(sig, Date.now());
+
+        // Housekeeping: clean expired sigs
+        if (this.recentReplications.size > 80) {
+            const now = Date.now();
+            this.recentReplications.forEach((ts, k) => {
+                if (now - ts > 10000) this.recentReplications.delete(k);
+            });
+        }
+
         const timestamp = new Date().toLocaleTimeString();
         const logs: CopierTradeLog[] = [];
+        const maxStakeGuard = this.masterConfig.max_stake_guard || 100;
 
         // Execute concurrently on all active follower accounts
         await Promise.all(
@@ -555,6 +625,11 @@ class CopyTradingEngine {
                     copierStake = Math.max(0.35, Math.round(trade.stake * account.multiplier * 100) / 100);
                 }
 
+                // Apply max stake risk guard
+                if (copierStake > maxStakeGuard) {
+                    copierStake = maxStakeGuard;
+                }
+
                 const logEntry: CopierTradeLog = {
                     id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                     time: timestamp,
@@ -563,6 +638,7 @@ class CopyTradingEngine {
                     is_virtual: account.is_virtual,
                     symbol: trade.symbol,
                     contract_type: trade.contract_type,
+                    source_tab: source,
                     master_stake: trade.stake,
                     copier_stake: copierStake,
                     status: 'pending',
@@ -603,6 +679,19 @@ class CopyTradingEngine {
     }
 
     /**
+     * Universal endpoint for trade replication from ANY tab/bot
+     */
+    public async replicateFromAnySource(
+        trade: TradeParameters,
+        source = 'Active Tab',
+        masterLoginid?: string
+    ): Promise<CopierTradeLog[]> {
+        if (!this.masterConfig.is_active) return [];
+        const loginid = masterLoginid || this.masterConfig.loginid || 'MASTER_ACCOUNT';
+        return this.replicateTradeToCopiers(trade, loginid, source);
+    }
+
+    /**
      * Executes a single contract on a specific Deriv account via WebSocket.
      * Flow:
      * 1. Connect WS & Authorize with PAT token.
@@ -620,7 +709,7 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
-        const appId = getAppId() || '66723';
+        const appId = account.app_id || '1089';
         const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
 
         return new Promise(resolve => {
@@ -681,11 +770,15 @@ class CopyTradingEngine {
                                 duration_unit: trade.duration_unit || 't',
                             };
 
-                            if (trade.barrier !== undefined) {
-                                proposalReq.barrier = String(trade.barrier);
+                            const rawBarrier =
+                                trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
+                                    ? trade.barrier
+                                    : trade.prediction;
+                            if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+                                proposalReq.barrier = String(rawBarrier);
                             }
-                            if (trade.prediction !== undefined) {
-                                proposalReq.selected_tick = trade.prediction;
+                            if (trade.selected_tick !== undefined) {
+                                proposalReq.selected_tick = trade.selected_tick;
                             }
 
                             ws?.send(JSON.stringify(proposalReq));

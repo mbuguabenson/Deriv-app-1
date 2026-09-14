@@ -67,6 +67,7 @@ const OverlordAiPage = lazyRetry(() => import('../overlord-ai'), 'overlord_ai');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
+import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';
 import { initNetworkInterceptor } from '@/services/network-interceptor';
 import { initWebSocketMonitor } from '@/services/websocket-monitor';
 
@@ -159,6 +160,12 @@ const AppWrapper = observer(() => {
                     setActiveTab(targetIdx);
                 }
             }
+        }
+        // Initialize institutional copy trading engine globally across all tabs
+        try {
+            copyTradingService.init();
+        } catch (e) {
+            console.warn('[CopyTrading] Global init notice:', e);
         }
     }, []);
 
