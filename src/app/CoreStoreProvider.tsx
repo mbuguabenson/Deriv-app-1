@@ -184,6 +184,16 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                 if (buy && typeof buy.balance_after === 'number') {
                     client.setBalance(buy.balance_after.toString(), client.loginid);
                 }
+            } else if (msg_type === 'sell' && data && !error) {
+                const sell = data.sell;
+                if (sell && typeof sell.balance_after === 'number') {
+                    client.setBalance(sell.balance_after.toString(), client.loginid);
+                }
+            } else if (msg_type === 'proposal_open_contract' && data && !error) {
+                const poc = data.proposal_open_contract;
+                if (poc && poc.is_sold === 1 && typeof poc.balance_after === 'number') {
+                    client.setBalance(poc.balance_after.toString(), client.loginid);
+                }
             }
         },
         // Fixed memory leak: removed handleLogout from deps as it's not used in function body

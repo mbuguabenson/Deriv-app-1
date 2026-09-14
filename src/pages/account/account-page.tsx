@@ -560,8 +560,8 @@ const AccountPage = observer(() => {
                                 <TrendingDown size={16} className='text-loss' />
                             )}
                         </div>
-                        <span className='acc-card-label'>{localize('Net Closed P&L')}</span>
-                        <span className='acc-tag neutral'>{localize('Settled')}</span>
+                        <span className='acc-card-label'>{localize('Closed P&L')}</span>
+                        <span className='acc-tag neutral'>{profitMetrics.count} {localize('Trades')}</span>
                     </div>
                     <div className='acc-card-body'>
                         <div className={`acc-card-val ${profitMetrics.netProfit >= 0 ? 'text-win' : 'text-loss'}`}>
@@ -569,7 +569,7 @@ const AccountPage = observer(() => {
                             {formatAmount(profitMetrics.netProfit, activeAccountData.currency)}
                         </div>
                         <div className='acc-card-sub text-muted'>
-                            {profitMetrics.count} {localize('closed contracts total')}
+                            {localize('Settled net return')}
                         </div>
                     </div>
                 </div>
@@ -580,7 +580,7 @@ const AccountPage = observer(() => {
                         <div className='acc-card-icon-wrap'>
                             <Percent size={16} className='text-cyan' />
                         </div>
-                        <span className='acc-card-label'>{localize('Trade Win Rate')}</span>
+                        <span className='acc-card-label'>{localize('Win Rate')}</span>
                         <span className='acc-tag neutral'>{profitMetrics.winCount}/{profitMetrics.count}</span>
                     </div>
                     <div className='acc-card-body'>
@@ -588,7 +588,7 @@ const AccountPage = observer(() => {
                             {profitMetrics.winRate.toFixed(1)}%
                         </div>
                         <div className='acc-card-sub text-muted'>
-                            {localize('Overall contract win ratio')}
+                            {profitMetrics.winCount}W • {Math.max(0, profitMetrics.count - profitMetrics.winCount)}L
                         </div>
                     </div>
                 </div>
@@ -599,8 +599,8 @@ const AccountPage = observer(() => {
                         <div className='acc-card-icon-wrap'>
                             <Briefcase size={16} className='text-indigo' />
                         </div>
-                        <span className='acc-card-label'>{localize('Open Exposure')}</span>
-                        <span className='acc-tag neutral'>{portfolioPositions.length} {localize('Active')}</span>
+                        <span className='acc-card-label'>{localize('Active Exposure')}</span>
+                        <span className='acc-tag neutral'>{portfolioPositions.length} {localize('Open')}</span>
                     </div>
                     <div className='acc-card-body'>
                         <div className='acc-card-val text-cyan'>
@@ -608,10 +608,8 @@ const AccountPage = observer(() => {
                         </div>
                         <div className='acc-card-sub text-muted'>
                             {portfolioPositions.length > 0
-                                ? localize('Potential: +%{payout}', {
-                                      payout: formatAmount(portfolioMetrics.totalPotentialPayout, activeAccountData.currency),
-                                  })
-                                : localize('No live contracts currently open')}
+                                ? `+${formatAmount(portfolioMetrics.totalPotentialPayout, activeAccountData.currency)} ${localize('max')}`
+                                : localize('0 open contracts')}
                         </div>
                     </div>
                 </div>

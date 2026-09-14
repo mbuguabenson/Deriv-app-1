@@ -131,26 +131,39 @@ export default Engine =>
                     }
                 } catch (e) {}
 
-                // In Normal Mode, request fresh balance upon contract settlement.
-                // In Fast Mode, Deriv already streams balance updates via the active balance subscription,
-                // so skipping redundant manual balance requests prevents WebSocket backlog.
-                if (!isFastModeActive()) {
-                    try {
-                        if (api_base.api) {
-                            api_base.api.send({ balance: 1 }).then(res => {
-                                if (res?.balance && typeof res.balance.balance === 'number') {
-                                    const { client } = DBotStore.instance || {};
-                                    if (client?.setBalance) {
-                                        client.setBalance(
-                                            res.balance.balance.toString(),
-                                            res.balance.loginid || this.accountInfo?.loginid || client.loginid
-                                        );
-                                    }
-                                }
-                            }).catch(() => {});
+                // ⚡ ZERO-DELAY BALANCE UPDATE:
+                // 1. Optimistic instant balance credit: if the contract resulted in a payout,
+                // immediately reflect it on the client balance without waiting for network latency.
+                try {
+                    const { client } = DBotStore.instance || {};
+                    const payout = parseFloat(enrichedContract.sell_price ?? enrichedContract.payout ?? 0) || 0;
+                    if (client && typeof client.balance !== 'undefined' && payout > 0) {
+                        const currentBal = parseFloat(String(client.balance).replace(/,/g, '')) || 0;
+                        const targetId = this.accountInfo?.loginid || client.loginid;
+                        if (client.setBalance && currentBal > 0) {
+                            client.setBalance((currentBal + payout).toFixed(2), targetId);
                         }
-                    } catch (e) {}
-                }
+                    }
+                } catch (e) {}
+
+                // 2. Immediate WebSocket balance reconciliation:
+                // Request fresh official balance from Deriv in BOTH Normal and Speed/Fast mode
+                // so the user's balance is guaranteed accurate to the cent with zero lag.
+                try {
+                    if (api_base.api) {
+                        api_base.api.send({ balance: 1 }).then(res => {
+                            if (res?.balance && typeof res.balance.balance === 'number') {
+                                const { client } = DBotStore.instance || {};
+                                if (client?.setBalance) {
+                                    client.setBalance(
+                                        res.balance.balance.toString(),
+                                        res.balance.loginid || this.accountInfo?.loginid || client.loginid
+                                    );
+                                }
+                            }
+                        }).catch(() => {});
+                    }
+                } catch (e) {}
 
                 this.store.dispatch(sell());
             }

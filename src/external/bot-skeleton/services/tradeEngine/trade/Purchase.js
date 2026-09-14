@@ -289,6 +289,20 @@ export default Engine =>
                             });
                         });
 
+                        // ⚡ Instant balance update for bulk purchases:
+                        const lastBuy = validResponses[validResponses.length - 1]?.buy;
+                        if (lastBuy && typeof lastBuy.balance_after === 'number') {
+                            try {
+                                const { client } = DBotStore.instance || {};
+                                if (client?.setBalance) {
+                                    client.setBalance(
+                                        lastBuy.balance_after.toString(),
+                                        this.accountInfo?.loginid || client.loginid
+                                    );
+                                }
+                            } catch (e) {}
+                        }
+
                         this.store.dispatch(purchaseSuccessful());
 
                         if (this.is_proposal_subscription_required) {
