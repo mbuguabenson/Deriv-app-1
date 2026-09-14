@@ -610,43 +610,47 @@ const AutoXEo: React.FC = observer(() => {
         const last15EvenPassed = last15Even >= 10;
         const last15OddPassed = last15Odd >= 10;
 
-        // Consecutive pattern check: Wait for 2+ consecutive odd then 1 even (for Even signal)
+        // Canonical Auto X 3-Tick Stream Synchronization (Prev 2, Prev 1, Current)
         const last3Digits = currentMarket.digits.slice(-3);
-        let evenPatternTriggered = false;
-        let oddPatternTriggered = false;
+        const prevTick2 = last3Digits.length >= 3 ? last3Digits[0] : null;
+        const prevTick1 = last3Digits.length >= 2 ? last3Digits[last3Digits.length - 2] : null;
+        const currentTick = last3Digits.length >= 1 ? last3Digits[last3Digits.length - 1] : null;
 
-        if (last3Digits.length >= 3) {
-            // [odd, odd, even]
-            if (last3Digits[0] % 2 !== 0 && last3Digits[1] % 2 !== 0 && last3Digits[2] % 2 === 0) {
-                evenPatternTriggered = true;
-            }
-            // [even, even, odd]
-            if (last3Digits[0] % 2 === 0 && last3Digits[1] % 2 === 0 && last3Digits[2] % 2 !== 0) {
-                oddPatternTriggered = true;
-            }
+        // Pattern 1: [Odd, Odd, Even] -> BUY DIGITEVEN
+        const evenPatternTriggered =
+            last3Digits.length >= 3 &&
+            last3Digits[0] % 2 !== 0 &&
+            last3Digits[1] % 2 !== 0 &&
+            last3Digits[2] % 2 === 0;
+
+        // Pattern 2: [Even, Even, Odd] -> BUY DIGITODD
+        const oddPatternTriggered =
+            last3Digits.length >= 3 &&
+            last3Digits[0] % 2 === 0 &&
+            last3Digits[1] % 2 === 0 &&
+            last3Digits[2] % 2 !== 0;
+
+        // Pre-reversal setup watch states
+        const isAwaitingEven =
+            last3Digits.length >= 2 &&
+            last3Digits[last3Digits.length - 2] % 2 !== 0 &&
+            last3Digits[last3Digits.length - 1] % 2 !== 0;
+
+        const isAwaitingOdd =
+            last3Digits.length >= 2 &&
+            last3Digits[last3Digits.length - 2] % 2 === 0 &&
+            last3Digits[last3Digits.length - 1] % 2 === 0;
+
+        // Canonical Auto X Active Signal
+        let activeSignal: 'EVEN' | 'ODD' | 'NONE' = 'NONE';
+        if (evenPatternTriggered) {
+            activeSignal = 'EVEN';
+        } else if (oddPatternTriggered) {
+            activeSignal = 'ODD';
         }
 
-        // Final Even signal readiness
-        const evenSignalReady =
-            evenPct >= targetProbabilityThreshold &&
-            isEvenIncreasing &&
-            (mostIsEven || secondIsEven) &&
-            leastIsOdd &&
-            last15EvenPassed &&
-            evenDigitsAbove10_5 >= 3;
-
-        // Final Odd signal readiness
-        const oddSignalReady =
-            oddPct >= targetProbabilityThreshold &&
-            isOddIncreasing &&
-            (mostIsOdd || secondIsOdd) &&
-            leastIsEven &&
-            last15OddPassed &&
-            oddDigitsAbove10_5 >= 3;
-
-        let activeSignal: 'EVEN' | 'ODD' | 'NONE' = 'NONE';
-        if (evenSignalReady) activeSignal = 'EVEN';
-        else if (oddSignalReady) activeSignal = 'ODD';
+        const evenSignalReady = evenPatternTriggered || (evenPct >= targetProbabilityThreshold && isEvenIncreasing);
+        const oddSignalReady = oddPatternTriggered || (oddPct >= targetProbabilityThreshold && isOddIncreasing);
 
         return {
             evenCount,
@@ -661,6 +665,11 @@ const AutoXEo: React.FC = observer(() => {
             last15Odd,
             last15EvenPassed,
             last15OddPassed,
+            prevTick2,
+            prevTick1,
+            currentTick,
+            isAwaitingEven,
+            isAwaitingOdd,
             evenPatternTriggered,
             oddPatternTriggered,
             evenSignalReady,
@@ -1051,61 +1060,52 @@ const AutoXEo: React.FC = observer(() => {
                 const last15Odd = last15.filter(d => d % 2 !== 0).length;
                 const prev15Odd = prev15.filter(d => d % 2 !== 0).length;
 
-                const isEvenAdvantaged = evenPct >= 52 && evenCount > oddCount && (last15Even >= prev15Even || last15Even >= 8);
-                const isOddAdvantaged = oddPct >= 52 && oddCount > evenCount && (last15Odd >= prev15Odd || last15Odd >= 8);
-
                 const last3 = digits.slice(-3);
-                const isEvenTrigger =
-                    (last3.length >= 3 && last3[0] % 2 !== 0 && last3[1] % 2 !== 0 && last3[2] % 2 === 0) ||
-                    (last3.length >= 2 && last3[last3.length - 2] % 2 === 0 && lastDigit % 2 === 0) ||
-                    (scanningCycles >= 3 && lastDigit % 2 === 0);
+                // Canonical Auto X Reversal Patterns
+                const isOddOddEven =
+                    last3.length >= 3 && last3[0] % 2 !== 0 && last3[1] % 2 !== 0 && last3[2] % 2 === 0;
+                const isEvenEvenOdd =
+                    last3.length >= 3 && last3[0] % 2 === 0 && last3[1] % 2 === 0 && last3[2] % 2 !== 0;
 
-                const isOddTrigger =
-                    (last3.length >= 3 && last3[0] % 2 === 0 && last3[1] % 2 === 0 && last3[2] % 2 !== 0) ||
-                    (last3.length >= 2 && last3[last3.length - 2] % 2 !== 0 && lastDigit % 2 !== 0) ||
-                    (scanningCycles >= 3 && lastDigit % 2 !== 0);
+                // Watch states (waiting for final confirmation tick)
+                const isAwaitingEvenTick =
+                    last3.length >= 2 && last3[last3.length - 2] % 2 !== 0 && last3[last3.length - 1] % 2 !== 0;
+                const isAwaitingOddTick =
+                    last3.length >= 2 && last3[last3.length - 2] % 2 === 0 && last3[last3.length - 1] % 2 === 0;
 
-                if (isEvenAdvantaged) {
-                    if (isEvenTrigger) {
-                        setBotStateSync('TRADING');
-                        scanningCycles = 0;
-                        try {
-                            await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITEVEN', undefined, currentStakeRef.current);
-                        } catch (e) {
-                            console.error('Auto X Even trade error:', e);
-                        }
-                        if (botStateRef.current === 'TRADING') {
-                            setBotStateSync('SCANNING');
-                        }
-                        await new Promise(r => setTimeout(r, 500));
-                    } else {
-                        scanningCycles++;
-                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                        await new Promise(r => setTimeout(r, 100));
+                if (isOddOddEven) {
+                    setBotStateSync('TRADING');
+                    scanningCycles = 0;
+                    try {
+                        await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITEVEN', undefined, currentStakeRef.current);
+                    } catch (e) {
+                        console.error('Auto X Even trade error:', e);
                     }
-                } else if (isOddAdvantaged) {
-                    if (isOddTrigger) {
-                        setBotStateSync('TRADING');
-                        scanningCycles = 0;
-                        try {
-                            await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITODD', undefined, currentStakeRef.current);
-                        } catch (e) {
-                            console.error('Auto X Odd trade error:', e);
-                        }
-                        if (botStateRef.current === 'TRADING') {
-                            setBotStateSync('SCANNING');
-                        }
-                        await new Promise(r => setTimeout(r, 500));
-                    } else {
-                        scanningCycles++;
-                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                        await new Promise(r => setTimeout(r, 100));
+                    if (botStateRef.current === 'TRADING') {
+                        setBotStateSync('SCANNING');
                     }
+                    await new Promise(r => setTimeout(r, 500));
+                } else if (isEvenEvenOdd) {
+                    setBotStateSync('TRADING');
+                    scanningCycles = 0;
+                    try {
+                        await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITODD', undefined, currentStakeRef.current);
+                    } catch (e) {
+                        console.error('Auto X Odd trade error:', e);
+                    }
+                    if (botStateRef.current === 'TRADING') {
+                        setBotStateSync('SCANNING');
+                    }
+                    await new Promise(r => setTimeout(r, 500));
+                } else if (isAwaitingEvenTick || isAwaitingOddTick) {
+                    scanningCycles++;
+                    if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
+                    await new Promise(r => setTimeout(r, 80));
                 } else {
                     scanningCycles++;
                     if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
 
-                    // If current market is neutral, switch after 5 cycles if autoSwitchMarkets is enabled
+                    // If current market has no pattern forming, switch after 5 cycles if autoSwitchMarkets is enabled
                     if (autoSwitchMarkets && scanningCycles >= 5 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
@@ -1115,7 +1115,7 @@ const AutoXEo: React.FC = observer(() => {
                         continue;
                     }
 
-                    await new Promise(r => setTimeout(r, 350));
+                    await new Promise(r => setTimeout(r, 120));
                 }
             }
         };
@@ -1542,9 +1542,42 @@ const AutoXEo: React.FC = observer(() => {
                                     className={`badge-indicator ${eoAnalysis.activeSignal !== 'NONE' ? 'ready' : 'waiting'}`}
                                 >
                                     {eoAnalysis.activeSignal !== 'NONE'
-                                        ? `SIGNAL: ${eoAnalysis.activeSignal}`
-                                        : 'SCANNING MARKET'}
+                                        ? `REVERSAL: BUY ${eoAnalysis.activeSignal}`
+                                        : eoAnalysis.isAwaitingEven
+                                          ? 'AWAITING EVEN TICK'
+                                          : eoAnalysis.isAwaitingOdd
+                                            ? 'AWAITING ODD TICK'
+                                            : 'SCANNING PATTERNS'}
                                 </span>
+                            </div>
+
+                            {/* Live 3-Tick Reversal Buffer Stream */}
+                            <div style={{ margin: '10px 0', padding: '10px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255, 255, 255, 0.5)', marginBottom: '6px' }}>
+                                    Live 3-Tick Reversal Sequence Buffer
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }}>
+                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Prev 2</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.prevTick2 !== null ? (eoAnalysis.prevTick2 % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
+                                            {eoAnalysis.prevTick2 !== null ? `${eoAnalysis.prevTick2} (${eoAnalysis.prevTick2 % 2 === 0 ? 'E' : 'O'})` : '—'}
+                                        </div>
+                                    </div>
+                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>→</span>
+                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }}>
+                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Prev 1</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.prevTick1 !== null ? (eoAnalysis.prevTick1 % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
+                                            {eoAnalysis.prevTick1 !== null ? `${eoAnalysis.prevTick1} (${eoAnalysis.prevTick1 % 2 === 0 ? 'E' : 'O'})` : '—'}
+                                        </div>
+                                    </div>
+                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>→</span>
+                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: eoAnalysis.activeSignal !== 'NONE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.06)', border: eoAnalysis.activeSignal !== 'NONE' ? '1px solid #10b981' : 'none' }}>
+                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Current</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.currentTick !== null ? (eoAnalysis.currentTick % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
+                                            {eoAnalysis.currentTick !== null ? `${eoAnalysis.currentTick} (${eoAnalysis.currentTick % 2 === 0 ? 'E' : 'O'})` : '—'}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className='eo-progress-section'>
@@ -1564,30 +1597,30 @@ const AutoXEo: React.FC = observer(() => {
 
                             <div className='conditions-list'>
                                 <div
-                                    className={`condition-item ${eoAnalysis.evenPct >= targetProbabilityThreshold || eoAnalysis.oddPct >= targetProbabilityThreshold ? 'passed' : 'pending'}`}
+                                    className={`condition-item ${eoAnalysis.prevTick2 !== null && eoAnalysis.prevTick1 !== null && eoAnalysis.currentTick !== null ? 'passed' : 'pending'}`}
+                                >
+                                    <CheckCircle2 size={14} />
+                                    <span>3-Tick Real-Time Stream Synchronized (Prev 2, Prev 1, Current)</span>
+                                </div>
+                                <div
+                                    className={`condition-item ${eoAnalysis.evenPatternTriggered || eoAnalysis.oddPatternTriggered ? 'passed' : eoAnalysis.isAwaitingEven || eoAnalysis.isAwaitingOdd ? 'pending' : 'pending'}`}
                                 >
                                     <CheckCircle2 size={14} />
                                     <span>
-                                        Target Probability &ge; {targetProbabilityThreshold}% &amp; Gaining Power
+                                        Reversal Sequence: {eoAnalysis.evenPatternTriggered ? 'Odd-Odd-Even -> BUY DIGITEVEN' : eoAnalysis.oddPatternTriggered ? 'Even-Even-Odd -> BUY DIGITODD' : eoAnalysis.isAwaitingEven ? 'Awaiting Even Tick to Trigger' : eoAnalysis.isAwaitingOdd ? 'Awaiting Odd Tick to Trigger' : 'Waiting for 2 consecutive matching parity'}
                                     </span>
                                 </div>
                                 <div
-                                    className={`condition-item ${eoAnalysis.last15EvenPassed || eoAnalysis.last15OddPassed ? 'passed' : 'pending'}`}
+                                    className={`condition-item ${eoAnalysis.evenPct >= 50 || eoAnalysis.oddPct >= 50 ? 'passed' : 'pending'}`}
                                 >
                                     <CheckCircle2 size={14} />
-                                    <span>Last 15 Ticks: &ge; 10 Digits Matching Direction</span>
+                                    <span>Parity Distribution: {eoAnalysis.evenPct >= eoAnalysis.oddPct ? `Even Advantage (${eoAnalysis.evenPct}%)` : `Odd Advantage (${eoAnalysis.oddPct}%)`}</span>
                                 </div>
                                 <div
-                                    className={`condition-item ${eoAnalysis.evenDigitsAbove10_5 >= 3 || eoAnalysis.oddDigitsAbove10_5 >= 3 ? 'passed' : 'pending'}`}
+                                    className={`condition-item ${eoAnalysis.activeSignal !== 'NONE' ? 'passed' : 'pending'}`}
                                 >
                                     <CheckCircle2 size={14} />
-                                    <span>&ge; 3 Target Digits &gt; 10.5% in Last 60 Ticks</span>
-                                </div>
-                                <div
-                                    className={`condition-item ${eoAnalysis.evenPatternTriggered || eoAnalysis.oddPatternTriggered ? 'passed' : 'pending'}`}
-                                >
-                                    <CheckCircle2 size={14} />
-                                    <span>Reversal Trigger: 2+ Opposite then 1 Target Tick</span>
+                                    <span>Auto Execution: {eoAnalysis.activeSignal !== 'NONE' ? `ORDER ACTIVE (${eoAnalysis.activeSignal})` : 'Standby for Reversal Entry'}</span>
                                 </div>
                             </div>
                         </div>

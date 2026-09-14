@@ -562,37 +562,19 @@ const PovertyHunter: React.FC = observer(() => {
         };
     }, [currentMarket.digits, digitStats]);
 
-    // ── Differs Candidate Auto-Selection (Digits 2 to 7 Only) ──
+    // ── Differs Candidate Auto-Selection (Safe Middle Digits 2 to 7) ──
     const autoDifferCandidate = useMemo(() => {
-        const last15 = currentMarket.digits.slice(-15);
-        const qualifying = digitStats.filter(s => {
-            // Must be between 2 and 7
-            if (s.digit < 2 || s.digit > 7) return false;
-            // Must NOT be edge digits 0, 1, 8, 9
-            if (EXCLUDED_DIGITS.includes(s.digit)) return false;
-            // Must NOT be Most appearing, 2nd Highest, or Least appearing
-            if (s.digit === mostAppearing || s.digit === secondHighest || s.digit === leastAppearing) return false;
-            // Must have < 10% in last 60 ticks
-            if (s.percentage >= 10) return false;
-            // Must NOT be gaining or increasing in power
-            if (s.isIncreasing) return false;
-            // Must not have appeared > 3 times in last 15 ticks
-            const countInLast15 = last15.filter(d => d === s.digit).length;
-            if (countInLast15 > 3) return false;
-
-            return true;
-        });
-
-        // Pick lowest frequency candidate
-        if (qualifying.length > 0) {
-            qualifying.sort((a, b) => a.percentage - b.percentage);
-            return qualifying[0].digit;
+        // Safe middle candidate pool: digits 2 to 7 (excluding edge digits 0, 1, 8, 9)
+        const middleCandidates = digitStats.filter(
+            s => s.digit >= 2 && s.digit <= 7 && s.digit !== mostAppearing
+        );
+        if (middleCandidates.length > 0) {
+            // Pick lowest frequency safe digit
+            middleCandidates.sort((a, b) => a.count - b.count);
+            return middleCandidates[0].digit;
         }
-
-        // Fallback to safest middle digit (3, 4, 5, or 6)
-        const safeCandidates = [3, 4, 5, 6].filter(d => !EXCLUDED_DIGITS.includes(d) && d !== mostAppearing);
-        return safeCandidates[0] ?? 4;
-    }, [digitStats, mostAppearing, secondHighest, leastAppearing, currentMarket.digits]);
+        return 4;
+    }, [digitStats, mostAppearing]);
 
     // Auto update differ target digit
     useEffect(() => {
@@ -766,6 +748,10 @@ const PovertyHunter: React.FC = observer(() => {
                         } else {
                             setAccumulatedLoss(newAccLoss);
                         }
+                    } else {
+                        const baseStk = parseFloat(initialStake) || 0.5;
+                        currentStakeRef.current = baseStk;
+                        setCurrentStake(baseStk);
                     }
                 } else {
                     setLossesCount(l => l + count);
@@ -823,7 +809,7 @@ const PovertyHunter: React.FC = observer(() => {
 
         let waitingForCandidate = true;
         let ticksRemaining = 3;
-        let lastSeenDigit = -1;
+        let lastProcessedTickCount = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -904,12 +890,12 @@ const PovertyHunter: React.FC = observer(() => {
                 // 2. PRIMARY STRATEGY: Differs Strategy
                 const targetDiff = differTargetDigit ?? autoDifferCandidate;
 
-                // Wait for tick change
-                if (currLastDigit === lastSeenDigit) {
-                    await new Promise(r => setTimeout(r, 80));
+                // Wait for a new tick to arrive in the stream
+                if (digits.length === lastProcessedTickCount) {
+                    await new Promise(r => setTimeout(r, 60));
                     continue;
                 }
-                lastSeenDigit = currLastDigit;
+                lastProcessedTickCount = digits.length;
 
                 if (waitingForCandidate) {
                     if (currLastDigit === targetDiff) {
@@ -920,7 +906,7 @@ const PovertyHunter: React.FC = observer(() => {
                     }
                 } else if (ticksRemaining > 0) {
                     if (currLastDigit === targetDiff) {
-                        // Target candidate appeared during verification -> Reset
+                        // Target candidate appeared during verification -> Reset countdown back to 3
                         waitingForCandidate = true;
                         setWaitingForAppear(true);
                         ticksRemaining = 3;
@@ -946,9 +932,11 @@ const PovertyHunter: React.FC = observer(() => {
                 } else {
                     waitingForCandidate = true;
                     setWaitingForAppear(true);
+                    ticksRemaining = 3;
+                    setConfirmationTicksRemaining(3);
                 }
 
-                await new Promise(r => setTimeout(r, 80));
+                await new Promise(r => setTimeout(r, 60));
             }
         };
 

@@ -566,8 +566,8 @@ const evaluateOverlordAnalysis = (
     if (mode === 'ALL_AUTO') {
         const scores = [
             { mode: 'OVER_1_UNDER_8' as OverlordStrategyMode, edge: Math.max(under8Pct, over1Pct) },
-            { mode: 'OVER_2_UNDER_7' as OverlordStrategyMode, edge: Math.max(under7Pct, over2Pct) * 1.05 },
-            { mode: 'OVER_3_UNDER_6' as OverlordStrategyMode, edge: Math.max(under6Pct, over3Pct) * 1.15 },
+            { mode: 'OVER_2_UNDER_7' as OverlordStrategyMode, edge: Math.max(under7Pct, over2Pct) },
+            { mode: 'OVER_3_UNDER_6' as OverlordStrategyMode, edge: Math.max(under6Pct, over3Pct) },
         ];
         scores.sort((a, b) => b.edge - a.edge);
         chosenStrategy = scores[0].mode;
@@ -580,46 +580,49 @@ const evaluateOverlordAnalysis = (
     let triggerDigits: number[] = [];
 
     if (chosenStrategy === 'OVER_1_UNDER_8') {
-        if (under8Pct >= 82 || (under8Pct >= 78 && last10Low >= 6)) {
+        const isUnderFavored = under8Count >= over1Count;
+        if (isUnderFavored) {
             signal = 'UNDER';
             targetBarrier = 8;
-            signalConfidence = Math.min(98, Math.round(under8Pct * 0.9 + last10Low * 2));
+            signalConfidence = Math.min(99, Math.round(under8Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
-            isTriggerReady = triggerDigits.includes(lastDigit);
-        } else if (over1Pct >= 82 || (over1Pct >= 78 && last10High >= 6)) {
+            isTriggerReady = lastDigit <= 7;
+        } else {
             signal = 'OVER';
             targetBarrier = 1;
-            signalConfidence = Math.min(98, Math.round(over1Pct * 0.9 + last10High * 2));
+            signalConfidence = Math.min(99, Math.round(over1Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
             triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = triggerDigits.includes(lastDigit);
+            isTriggerReady = lastDigit >= 2;
         }
     } else if (chosenStrategy === 'OVER_2_UNDER_7') {
-        if (under7Pct >= 72 || (under7Pct >= 68 && last10Low >= 6)) {
+        const isUnderFavored = under7Count >= over2Count;
+        if (isUnderFavored) {
             signal = 'UNDER';
             targetBarrier = 7;
-            signalConfidence = Math.min(95, Math.round(under7Pct * 0.9 + last10Low * 2.5));
+            signalConfidence = Math.min(95, Math.round(under7Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6];
-            isTriggerReady = triggerDigits.includes(lastDigit);
-        } else if (over2Pct >= 72 || (over2Pct >= 68 && last10High >= 6)) {
+            isTriggerReady = lastDigit <= 6;
+        } else {
             signal = 'OVER';
             targetBarrier = 2;
-            signalConfidence = Math.min(95, Math.round(over2Pct * 0.9 + last10High * 2.5));
+            signalConfidence = Math.min(95, Math.round(over2Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
             triggerDigits = [3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = triggerDigits.includes(lastDigit);
+            isTriggerReady = lastDigit >= 3;
         }
     } else if (chosenStrategy === 'OVER_3_UNDER_6') {
-        if (under6Pct >= 62 || (under6Pct >= 58 && under6Count > over3Count && last10Low >= 6)) {
+        const isUnderFavored = under6Count >= over3Count;
+        if (isUnderFavored) {
             signal = 'UNDER';
             targetBarrier = 6;
-            signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + last10Low * 3));
+            signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5];
-            isTriggerReady = triggerDigits.includes(lastDigit);
-        } else if (over3Pct >= 62 || (over3Pct >= 58 && over3Count > under6Count && last10High >= 6)) {
+            isTriggerReady = lastDigit <= 5;
+        } else {
             signal = 'OVER';
             targetBarrier = 3;
-            signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + last10High * 3));
+            signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
             triggerDigits = [4, 5, 6, 7, 8, 9];
-            isTriggerReady = triggerDigits.includes(lastDigit);
+            isTriggerReady = lastDigit >= 4;
         }
     }
 

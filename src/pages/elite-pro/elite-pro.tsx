@@ -480,11 +480,16 @@ const ElitePro = observer(() => {
         };
     }, []);
 
-    // ── Check entry signal based on exact user trading conditions ──
+    // ── Canonical Elite Pro Strategy State (Over 3 / Under 6 momentum engine) ──
+    const targetStrategyRef = useRef<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+    const [activeTargetStrategy, setActiveTargetStrategy] = useState<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+
+    // ── Check entry signal based on canonical Elite Pro XML conditions ──
     const checkEntrySignal = useCallback(
         (
             digits: number[],
-            waitCycles = 0
+            waitCycles = 0,
+            forcedStrategy?: 'UNDER_6' | 'OVER_3'
         ): {
             direction: 'UNDER' | 'OVER';
             prediction: number;
@@ -492,62 +497,40 @@ const ElitePro = observer(() => {
             reason: string;
             status: 'WAITING' | 'TRIGGERED';
         } | null => {
-            if (digits.length < 25) return null;
+            if (digits.length < 15) return null;
             const a = computeAnalysis(digits);
             const currentLastDigit = digits[digits.length - 1];
-            const prevDigit = digits.length >= 2 ? digits[digits.length - 2] : null;
 
-            // 1. UNDER 6 Conditions (Digits 0-5 win on DIGITUNDER 6)
-            // Dominant under bias: under05 > over49 AND under05 >= 29 (58%+)
-            const underRatioMet = a.under05 >= 29 && a.under05 > a.over49;
-            const underRecentTicksMet = a.last10UnderCount >= 6;
-            const isUnderValid =
-                underRatioMet &&
-                underRecentTicksMet &&
-                !a.isUnderTrendFlipped &&
-                !a.recentTrendFlip &&
-                currentLastDigit < 7;
+            // Determine active direction according to Elite Pro strategy state or momentum
+            const activeStrat: 'UNDER_6' | 'OVER_3' =
+                forcedStrategy ||
+                (targetStrategyRef.current !== 'AUTO'
+                    ? targetStrategyRef.current
+                    : a.under05 >= a.over49
+                      ? 'UNDER_6'
+                      : 'OVER_3');
 
-            if (isUnderValid) {
-                const isExactTrigger = currentLastDigit === a.highestUnderDigit;
-                const isMomentumTrigger = currentLastDigit <= 5 && prevDigit !== null && prevDigit <= 5;
-                const isFallbackTrigger = currentLastDigit <= 4 || (waitCycles >= 3 && currentLastDigit <= 5);
-                const isTriggered = isExactTrigger || isMomentumTrigger || isFallbackTrigger;
+            if (activeStrat === 'UNDER_6') {
+                // Canonical Elite Pro Under 6 (ep_cmp_under_trigger: last_digit <= 5)
+                const isTriggered = currentLastDigit <= 5;
                 return {
                     direction: 'UNDER',
                     prediction: 6,
                     triggerDigit: a.highestUnderDigit,
-                    reason: `Under 6 qualified (U0-5: ${a.under05}/50 vs O4-9: ${a.over49}). Trigger: [${a.highestUnderDigit}]`,
+                    reason: `Under 6 Momentum (U0-5: ${a.under05}/50 vs O4-9: ${a.over49}). Trigger (Digit <= 5): [${currentLastDigit}]`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
-            }
-
-            // 2. OVER 3 Conditions (Digits 4-9 win on DIGITOVER 3)
-            // Dominant over bias: over49 > under05 AND over49 >= 29 (58%+)
-            const overRatioMet = a.over49 >= 29 && a.over49 > a.under05;
-            const overRecentTicksMet = a.last10OverCount >= 6;
-            const isOverValid =
-                overRatioMet &&
-                overRecentTicksMet &&
-                !a.isOverTrendFlipped &&
-                !a.recentTrendFlip &&
-                currentLastDigit > 2;
-
-            if (isOverValid) {
-                const isExactTrigger = currentLastDigit === a.highestOverDigit;
-                const isMomentumTrigger = currentLastDigit >= 4 && prevDigit !== null && prevDigit >= 4;
-                const isFallbackTrigger = currentLastDigit >= 5 || (waitCycles >= 3 && currentLastDigit >= 4);
-                const isTriggered = isExactTrigger || isMomentumTrigger || isFallbackTrigger;
+            } else {
+                // Canonical Elite Pro Over 3 (ep_cmp_over_trigger: last_digit >= 4)
+                const isTriggered = currentLastDigit >= 4;
                 return {
                     direction: 'OVER',
                     prediction: 3,
                     triggerDigit: a.highestOverDigit,
-                    reason: `Over 3 qualified (O4-9: ${a.over49}/50 vs U0-5: ${a.under05}). Trigger: [${a.highestOverDigit}]`,
+                    reason: `Over 3 Momentum (O4-9: ${a.over49}/50 vs U0-5: ${a.under05}). Trigger (Digit >= 4): [${currentLastDigit}]`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
             }
-
-            return null;
         },
         [computeAnalysis]
     );
@@ -1123,6 +1106,8 @@ const ElitePro = observer(() => {
             winsRef.current = 0;
             setLosses(0);
             lossesRef.current = 0;
+            targetStrategyRef.current = 'AUTO';
+            setActiveTargetStrategy('AUTO');
         }
 
         const tp = parseFloat(takeProfit) || 999;
@@ -1283,10 +1268,30 @@ const ElitePro = observer(() => {
                             winsRef.current++;
                             setWins(winsRef.current);
                             currentStakeRef.current = baseStake;
+
+                            // Canonical Elite Pro Momentum Adaptation on Win
+                            const lastD = currentData.lastDigit;
+                            const nextStrat: 'UNDER_6' | 'OVER_3' = lastD <= 4 ? 'UNDER_6' : 'OVER_3';
+                            targetStrategyRef.current = nextStrat;
+                            setActiveTargetStrategy(nextStrat);
                         } else {
                             lossesRef.current++;
                             setLosses(lossesRef.current);
                             currentStakeRef.current = Number((currentStakeRef.current * mgMultiplier).toFixed(2));
+
+                            // Canonical Elite Pro Adaptive Martingale Reversal on Loss (Under 6 -> Over 3, Over 3 -> Under 6)
+                            const prevDirection = entrySignal.direction;
+                            const nextStrat: 'UNDER_6' | 'OVER_3' = prevDirection === 'UNDER' ? 'OVER_3' : 'UNDER_6';
+                            targetStrategyRef.current = nextStrat;
+                            setActiveTargetStrategy(nextStrat);
+
+                            addLogEntry(
+                                'ADAPTIVE REVERSAL',
+                                currentData.label,
+                                'PENDING',
+                                0,
+                                `🔄 [ELITE PRO REVERSAL] Switching to ${nextStrat.replace('_', ' ')} for Martingale Recovery (Stake: ${currentStakeRef.current.toFixed(2)} ${currency})`
+                            );
                         }
 
                         // Check Take Profit or Stop Loss immediately after trade settlement
@@ -1563,16 +1568,20 @@ const ElitePro = observer(() => {
 
     // Determine current trade type & prediction to display
     const currentTradeType = useMemo(() => {
+        if (activeTargetStrategy === 'UNDER_6') return 'DIGITUNDER';
+        if (activeTargetStrategy === 'OVER_3') return 'DIGITOVER';
         if (activeSignal) return activeSignal.direction === 'UNDER' ? 'DIGITUNDER' : 'DIGITOVER';
         if (analysis?.bias === 'over') return 'DIGITOVER';
         return 'DIGITUNDER';
-    }, [activeSignal, analysis?.bias]);
+    }, [activeTargetStrategy, activeSignal, analysis?.bias]);
 
     const currentPrediction = useMemo(() => {
+        if (activeTargetStrategy === 'UNDER_6') return 6;
+        if (activeTargetStrategy === 'OVER_3') return 3;
         if (activeSignal) return activeSignal.prediction;
         if (analysis?.bias === 'over') return 3;
         return 6;
-    }, [activeSignal, analysis?.bias]);
+    }, [activeTargetStrategy, activeSignal, analysis?.bias]);
 
     return (
         <div className='elite-pro'>
@@ -1976,61 +1985,49 @@ const ElitePro = observer(() => {
                                 </div>
                             </div>
 
-                            {/* Market Dynamics & Trend Recognition Checklist */}
+                            {/* Market Dynamics & Canonical Elite Pro Checklist */}
                             <div className='ep-checklist-grid'>
                                 <div className='ep-checklist-col'>
-                                    <span className='col-title'>Under 6 Entry Checklist</span>
+                                    <span className='col-title'>Under 6 Strategy Execution Matrix</span>
                                     <div
-                                        className={`check-row ${analysis.under05 > analysis.over49 && analysis.under05 >= 29 ? 'valid' : ''}`}
+                                        className={`check-row ${activeTargetStrategy === 'UNDER_6' || (activeTargetStrategy === 'AUTO' && analysis.under05 >= analysis.over49) ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Dominant Under Bias ({analysis.under05} U vs {analysis.over49} O)
+                                        <span className='mark'>✓</span> Strategy Active: UNDER 6 ({analysis.under05} U0-5 vs {analysis.over49} O4-9)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.under05 >= 29 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.under05 >= 25 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Under 0-5 Frequency &gt;= 29 ({analysis.pctUnder05.toFixed(1)}%)
+                                        <span className='mark'>✓</span> 50-Ticks Momentum Advantage: {analysis.pctUnder05.toFixed(1)}% Under 0-5
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.last10UnderCount >= 6 ? 'valid' : ''}`}
+                                        className={`check-row ${activeData?.lastDigit !== undefined && activeData.lastDigit <= 5 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Last 10 Ticks Favoring Under (
-                                        {analysis.last10UnderCount}/10 under)
+                                        <span className='mark'>✓</span> Canonical Trigger: Last Digit &le; 5 (Current: {activeData?.lastDigit})
                                     </div>
-                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isUnderTrendFlipped && (activeData ? activeData.lastDigit < 7 : true) ? 'valid' : ''}`}>
-                                        <span className='mark'>✓</span> Trend Stabilized (No contrary reversal)
-                                    </div>
-                                    <div
-                                        className={`check-row ${activeData?.lastDigit === analysis.highestUnderDigit || (activeData?.lastDigit !== undefined && activeData.lastDigit <= 5) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Trigger Digit Aligned [{analysis.highestUnderDigit} or Zone 0-5] (Current: {activeData?.lastDigit})
+                                    <div className='check-row valid'>
+                                        <span className='mark'>✓</span> Loss Recovery: Auto-Reverses to OVER 3 on loss with Martingale
                                     </div>
                                 </div>
 
                                 <div className='ep-checklist-col'>
-                                    <span className='col-title'>Over 3 Entry Checklist</span>
+                                    <span className='col-title'>Over 3 Strategy Execution Matrix</span>
                                     <div
-                                        className={`check-row ${analysis.over49 > analysis.under05 && analysis.over49 >= 29 ? 'valid' : ''}`}
+                                        className={`check-row ${activeTargetStrategy === 'OVER_3' || (activeTargetStrategy === 'AUTO' && analysis.over49 > analysis.under05) ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Dominant Over Bias ({analysis.over49} O vs {analysis.under05} U)
+                                        <span className='mark'>✓</span> Strategy Active: OVER 3 ({analysis.over49} O4-9 vs {analysis.under05} U0-5)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.over49 >= 29 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.over49 >= 25 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Over 4-9 Frequency &gt;= 29 ({analysis.pctOver49.toFixed(1)}%)
+                                        <span className='mark'>✓</span> 50-Ticks Momentum Advantage: {analysis.pctOver49.toFixed(1)}% Over 4-9
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.last10OverCount >= 6 ? 'valid' : ''}`}
+                                        className={`check-row ${activeData?.lastDigit !== undefined && activeData.lastDigit >= 4 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Last 10 Ticks Favoring Over (
-                                        {analysis.last10OverCount}/10 over)
+                                        <span className='mark'>✓</span> Canonical Trigger: Last Digit &ge; 4 (Current: {activeData?.lastDigit})
                                     </div>
-                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isOverTrendFlipped ? 'valid' : ''}`}>
-                                        <span className='mark'>✓</span> Trend Stabilized (No contrary reversal)
-                                    </div>
-                                    <div
-                                        className={`check-row ${activeData?.lastDigit === analysis.highestOverDigit || (activeData?.lastDigit !== undefined && activeData.lastDigit >= 4) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Trigger Digit Aligned [{analysis.highestOverDigit} or Zone 4-9] (Current: {activeData?.lastDigit})
+                                    <div className='check-row valid'>
+                                        <span className='mark'>✓</span> Loss Recovery: Auto-Reverses to UNDER 6 on loss with Martingale
                                     </div>
                                 </div>
                             </div>
