@@ -15,7 +15,7 @@ import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe } from '@/utils/websocket-handler';
+import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import './elite-pro.scss';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -604,6 +604,7 @@ const ElitePro = observer(() => {
 
         const handleVisibility = () => {
             if (!document.hidden) {
+                derivTickManager.healStalledStreams();
                 setStreamRefreshKey(k => k + 1);
             }
         };
@@ -685,9 +686,8 @@ const ElitePro = observer(() => {
 
                 if (activeSubs.has(sym)) return;
 
-                // Always establish / renew live tick observable
-                const tickObservable = api_base.api.subscribe({ ticks: sym });
-                const sub = safeSubscribe(tickObservable, (data: Record<string, unknown>) => {
+                // Always establish / renew live tick observable via centralized multiplexer
+                const sub = subscribeTicks(sym, (data: Record<string, unknown>) => {
                     if (unmountedRef.current) return;
 
                     const activeMarket = marketsRef.current.get(sym);

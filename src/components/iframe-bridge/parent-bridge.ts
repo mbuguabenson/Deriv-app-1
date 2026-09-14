@@ -110,16 +110,17 @@ export class ParentBridgeClient {
     ) {
         if (!targetWindow || targetWindow === window) return;
         try {
-            // Guard: Deriv Legacy DTrader iframe strictly rejects OAuth 2.0 PKCE JWTs (starting with 'ey')
-            const isDTrader = this.iframeOrigin && this.iframeOrigin.includes('deriv-dtrader');
+            // For Deriv DTrader iframe, if OAuth JWT is passed, fallback to legacy token if available
+            const isDTrader = Boolean(this.iframeOrigin && this.iframeOrigin.includes('deriv-dtrader'));
+            let tokenToUse = tok;
             if (isDTrader && tok && tok.startsWith('ey')) {
-                return;
+                tokenToUse = getLegacyDTraderToken(loginid) || localStorage.getItem('token1') || '';
             }
 
             const hasToken =
-                Boolean(tok && tok !== 'null' && tok !== 'undefined' && tok !== 'a1-guest' && tok !== 'dummy_token');
+                Boolean(tokenToUse && tokenToUse !== 'null' && tokenToUse !== 'undefined' && tokenToUse !== 'a1-guest' && tokenToUse !== 'dummy_token');
             const authMode = hasToken ? 'derivws_otp' : 'none';
-            const effectiveToken = hasToken ? tok : '';
+            const effectiveToken = hasToken ? tokenToUse : '';
 
             const accountsList = getAccountsList();
             const isDemo =
@@ -209,9 +210,14 @@ export class ParentBridgeClient {
                 embedBase: 'https://deriv-dtrader.vercel.app',
             };
 
+            const rawClientAccounts = localStorage.getItem('client.accounts');
+            const activeLoginId = localStorage.getItem('active_loginid') || activeAccId;
+
             const payloadData = {
                 ...payloadInner,
                 payload: payloadInner,
+                'client.accounts': rawClientAccounts,
+                active_loginid: activeLoginId,
             };
 
             const structuredMsg = createMessage('NEWDTRADER_BRIDGE_AUTH', appIdStr, 'parent', payloadInner);
@@ -255,6 +261,8 @@ export class ParentBridgeClient {
                 accountName: activeAccId,
                 appId: appIdStr || '121856',
                 currency: currency || 'USD',
+                'client.accounts': rawClientAccounts,
+                active_loginid: activeLoginId,
                 ...payloadData,
             });
             // 2. Dispatch legacy authorize fallback
@@ -262,6 +270,13 @@ export class ParentBridgeClient {
                 action: 'authorize',
                 token: effectiveToken,
                 loginid: activeAccId,
+                'client.accounts': rawClientAccounts,
+                active_loginid: activeLoginId,
+            });
+            postBoth({
+                type: 'SYNC_CREDENTIALS',
+                'client.accounts': rawClientAccounts,
+                active_loginid: activeLoginId,
             });
             postBoth({ action: 'NEWDTRADER_BRIDGE_AUTH', msg_type: 'authorization', ...payloadData });
             postBoth({ type: 'NEWDTRADER_BRIDGE_AUTH_RESPONSE', ...payloadData });

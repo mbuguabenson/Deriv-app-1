@@ -31,6 +31,7 @@ type TTabsProps = {
     is_full_width?: boolean;
     is_overflow_hidden?: boolean;
     is_scrollable?: boolean;
+    keep_alive?: boolean;
     onTabItemClick?: (active_tab_index: number) => void;
     should_update_hash?: boolean;
     single_tab_has_no_label?: boolean;
@@ -56,6 +57,7 @@ const Tabs = ({
     is_full_width = false,
     is_overflow_hidden = false,
     is_scrollable = false,
+    keep_alive = false,
     onTabItemClick,
     should_update_hash = false,
     single_tab_has_no_label = false,
@@ -123,6 +125,20 @@ const Tabs = ({
     });
 
     const [active_tab_index, setActiveTabIndex] = React.useState(initial_index_to_show);
+    const [renderedTabs, setRenderedTabs] = React.useState<Set<number>>(
+        () => new Set(keep_alive ? [initial_index_to_show] : [])
+    );
+
+    React.useEffect(() => {
+        if (keep_alive && active_tab_index >= 0) {
+            setRenderedTabs(prev => {
+                if (prev.has(active_tab_index)) return prev;
+                const next = new Set(prev);
+                next.add(active_tab_index);
+                return next;
+            });
+        }
+    }, [active_tab_index, keep_alive]);
 
     React.useEffect(() => {
         if (active_tab_index >= 0 && active_index !== active_tab_index) {
@@ -238,7 +254,23 @@ const Tabs = ({
             >
                 {React.Children.map(children, (child, index) => {
                     if (!child) return null;
-                    if (index !== active_tab_index) {
+                    const isActive = index === active_tab_index;
+                    if (keep_alive) {
+                        if (!renderedTabs.has(index)) return null;
+                        return (
+                            <div
+                                key={child.props.id || child.props.label || index}
+                                className={classNames('dc-tabs__pane', {
+                                    'dc-tabs__pane--active': isActive,
+                                    'dc-tabs__pane--hidden': !isActive,
+                                })}
+                                style={isActive ? undefined : { display: 'none' }}
+                            >
+                                {child.props.children}
+                            </div>
+                        );
+                    }
+                    if (!isActive) {
                         return undefined;
                     }
                     return child.props.children;

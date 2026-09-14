@@ -1,7 +1,5 @@
-/**
- * Centralized WebSocket handler for safely subscribing to observables.
- * Wraps event listeners in try/catch and logs errors with stack traces to prevent unhandled exceptions.
- */
+export { derivTickManager, subscribeTicks } from '@/services/deriv-tick-manager.service';
+export type { TTickHandler } from '@/services/deriv-tick-manager.service';
 
 export const safeSubscribe = (
     observable: any,

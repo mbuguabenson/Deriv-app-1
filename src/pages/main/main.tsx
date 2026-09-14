@@ -749,6 +749,7 @@ const AppWrapper = observer(() => {
                         onTabItemClick={handleFilteredTabChange}
                         history={window.history as any}
                         top
+                        keep_alive={true}
                     >
                         {activeTabsList.map(tab => (
                             <div key={tab.key} label={tab.label} id={tab.id}>

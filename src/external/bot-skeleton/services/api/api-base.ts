@@ -196,6 +196,8 @@ class APIBase {
             currentClientStore.setIsAccountRegenerating(false);
         }
 
+        globalObserver.emit('ws.opened');
+
         this.handleTokenExchangeIfNeeded();
     }
 
@@ -453,13 +455,17 @@ class APIBase {
         if (readyState === 1) {
             try {
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Ping probe timeout')), 3000)
+                    setTimeout(() => reject(new Error('Ping probe timeout')), 8000)
                 );
                 const pingPromise = (this.api as any).send({ ping: 1 });
                 await Promise.race([pingPromise, timeoutPromise]);
             } catch (err) {
-                console.warn('[APIBase] Probed socket failed after page resume, re-initializing:', err);
-                this.reconnectIfNotConnected(true);
+                if (this.api?.connection?.readyState !== 1) {
+                    console.warn('[APIBase] Probed socket failed after page resume, re-initializing:', err);
+                    this.reconnectIfNotConnected(true);
+                } else {
+                    console.log('[APIBase] Ping probe timed out but socket readyState is OPEN; skipping aggressive reconnect.');
+                }
             }
         }
     };
