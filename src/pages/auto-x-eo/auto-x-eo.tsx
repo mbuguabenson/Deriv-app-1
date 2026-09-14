@@ -294,7 +294,7 @@ const AutoXEo: React.FC = observer(() => {
     const [sessionProfit, setSessionProfit] = useState<number>(0);
     const [winsCount, setWinsCount] = useState<number>(0);
     const [lossesCount, setLossesCount] = useState<number>(0);
-    const [consecutiveRuns, setConsecutiveRuns] = useState<number>(0);
+    const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
     const [accumulatedLoss, setAccumulatedLoss] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
@@ -302,6 +302,32 @@ const AutoXEo: React.FC = observer(() => {
         isOpen: false,
         type: null,
     });
+
+    // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
+    const botStateRef = useRef<AutoRunState>('IDLE');
+    const autoAbortRef = useRef<AbortController | null>(null);
+    const selectedSymbolRef = useRef<string>(selectedSymbol);
+    const sessionProfitRef = useRef<number>(0);
+    const consecutiveRunsRef = useRef<number>(0);
+    const currentStakeRef = useRef<number>(0.5);
+    const isInRecoveryRef = useRef<boolean>(false);
+
+    useEffect(() => {
+        selectedSymbolRef.current = selectedSymbol;
+    }, [selectedSymbol]);
+
+    useEffect(() => {
+        currentStakeRef.current = currentStake;
+    }, [currentStake]);
+
+    useEffect(() => {
+        isInRecoveryRef.current = isInRecovery;
+    }, [isInRecovery]);
+
+    const setBotStateSync = useCallback((state: AutoRunState) => {
+        botStateRef.current = state;
+        setBotState(state);
+    }, []);
 
     // ── Active Market Data Map & Subscriptions ──
     const marketsDataRef = useRef<Map<string, MarketDigitState>>(new Map());
@@ -851,44 +877,58 @@ const AutoXEo: React.FC = observer(() => {
                     playSoundCue('win');
                     updateLogResult(logId, 'WIN', profitVal);
                     setWinsCount(w => w + 1);
-                    setSessionProfit(p => p + profitVal);
+                    const nextP = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextP;
+                    setSessionProfit(nextP);
 
-                    if (isInRecovery) {
+                    if (isInRecoveryRef.current) {
                         // Recovered! Reset back to initial stake and exit recovery
                         setIsInRecovery(false);
+                        isInRecoveryRef.current = false;
                         setAccumulatedLoss(0);
-                        setCurrentStake(parseFloat(initialStake) || 0.5);
+                        const baseStk = parseFloat(initialStake) || 0.5;
+                        currentStakeRef.current = baseStk;
+                        setCurrentStake(baseStk);
                     } else {
                         // Normal win -> reset stake
-                        setCurrentStake(parseFloat(initialStake) || 0.5);
+                        const baseStk = parseFloat(initialStake) || 0.5;
+                        currentStakeRef.current = baseStk;
+                        setCurrentStake(baseStk);
                     }
                 } else {
                     playSoundCue('loss');
                     updateLogResult(logId, 'LOSS', profitVal);
                     setLossesCount(l => l + 1);
-                    setSessionProfit(p => p + profitVal);
+                    const nextP = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextP;
+                    setSessionProfit(nextP);
 
                     if (autoRecoveryMode) {
                         setIsInRecovery(true);
+                        isInRecoveryRef.current = true;
                         const martMult = parseFloat(martingale) || 2.6;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
+                        currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
                         setAccumulatedLoss(prev => prev + Math.abs(profitVal));
                     } else {
                         // Standard martingale
                         const martMult = parseFloat(martingale) || 2.0;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
+                        currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
                     }
                 }
 
-                setConsecutiveRuns(r => r + 1);
-                executionLockRef.current = false;
+                consecutiveRunsRef.current += 1;
+                setConsecutiveRuns(consecutiveRunsRef.current);
+                return profitVal;
             } catch (err: any) {
                 console.error('AUTO X E/O Trade execution failed:', err);
                 updateLogResult(logId, 'LOSS', -stake);
+                return -stake;
+            } finally {
                 executionLockRef.current = false;
-                setBotState('SCANNING');
             }
         },
         [
@@ -897,129 +937,232 @@ const AutoXEo: React.FC = observer(() => {
             tickDuration,
             currency,
             pushContractToDrawer,
-            isInRecovery,
             initialStake,
             autoRecoveryMode,
             martingale,
         ]
     );
 
-    // ── Main Automated AI Loop ──
-    useEffect(() => {
-        if (botState === 'IDLE' || botState === 'PAUSED' || executionLockRef.current) return;
+    // ── Dedicated Asynchronous Trading Engine Loop ──
+    const startAutoTradingLoop = useCallback(async () => {
+        autoAbortRef.current?.abort();
+        const abortCtrl = new AbortController();
+        autoAbortRef.current = abortCtrl;
+        const signal = abortCtrl.signal;
 
-        // Check TP / SL Limits
         const tpVal = parseFloat(takeProfit) || 10;
         const slVal = parseFloat(stopLoss) || 25;
 
-        if (sessionProfit >= tpVal) {
-            setBotState('IDLE');
-            setMilestone({ isOpen: true, type: 'tp' });
-            return;
-        }
-        if (sessionProfit <= -slVal) {
-            setBotState('IDLE');
-            setMilestone({ isOpen: true, type: 'sl' });
-            return;
-        }
+        setBotStateSync('SCANNING');
+        let scanningCycles = 0;
 
-        // Market Auto-Switch Check after max consecutive runs
-        if (autoSwitchMarkets && consecutiveRuns >= maxRunsBeforeCheck) {
-            if (bestMarketCandidate && bestMarketCandidate !== selectedSymbol) {
-                setSelectedSymbol(bestMarketCandidate);
-                setConsecutiveRuns(0);
-                return;
-            }
-            setConsecutiveRuns(0);
-        }
-
-        // Recovery Mode Branch
-        if (isInRecovery) {
-            // Evaluate Over/Under recovery conditions
-            const bias = ouAnalysis.bias;
-
-            if (bias === 'UNDER') {
-                const barrier = recoveryType === 'OVER_2_UNDER_8' ? 8 : 6;
-                // Wait for high entry digit in Under to appear or last 7 ticks favor Under
-                if (
-                    currentMarket.digits.slice(-7).filter(d => d <= 4).length >= 5 ||
-                    currentMarket.lastDigit === ouAnalysis.highestUnderEntryDigit
-                ) {
-                    executeTradeOrder(selectedSymbol, 'RECOVERY_UNDER', 'DIGITUNDER', barrier, currentStake);
+        const loop = async () => {
+            while (!signal.aborted && botStateRef.current !== 'IDLE') {
+                if (botStateRef.current === 'PAUSED') {
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
                 }
-            } else if (bias === 'OVER') {
-                const barrier = recoveryType === 'OVER_2_UNDER_8' ? 2 : 3;
-                // Wait for high entry digit in Over to appear or last 7 ticks favor Over
-                if (
-                    currentMarket.digits.slice(-7).filter(d => d >= 5).length >= 5 ||
-                    currentMarket.lastDigit === ouAnalysis.highestOverEntryDigit
-                ) {
-                    executeTradeOrder(selectedSymbol, 'RECOVERY_OVER', 'DIGITOVER', barrier, currentStake);
+
+                // Check TP / SL Limits
+                if (sessionProfitRef.current >= tpVal && tpVal > 0) {
+                    setBotStateSync('IDLE');
+                    setMilestone({ isOpen: true, type: 'tp' });
+                    break;
                 }
-            } else {
-                // Neutral fallback -> use safe Under 8
-                executeTradeOrder(selectedSymbol, 'RECOVERY_UNDER', 'DIGITUNDER', 8, currentStake);
-            }
-            return;
-        }
+                if (sessionProfitRef.current <= -slVal && slVal > 0) {
+                    setBotStateSync('IDLE');
+                    setMilestone({ isOpen: true, type: 'sl' });
+                    break;
+                }
 
-        // Base Even / Odd Strategy Branch
-        if (eoAnalysis.evenSignalReady) {
-            // Signal matches! Now wait for Consecutive reversal pattern: 2+ consecutive odds followed by 1 even
-            if (eoAnalysis.evenPatternTriggered) {
-                executeTradeOrder(selectedSymbol, 'EVEN_ODD', 'DIGITEVEN', undefined, currentStake);
-            } else {
-                setBotState('WAITING_TRIGGER');
-            }
-        } else if (eoAnalysis.oddSignalReady) {
-            // Odd Signal matches! Wait for 2+ consecutive evens followed by 1 odd
-            if (eoAnalysis.oddPatternTriggered) {
-                executeTradeOrder(selectedSymbol, 'EVEN_ODD', 'DIGITODD', undefined, currentStake);
-            } else {
-                setBotState('WAITING_TRIGGER');
-            }
-        } else {
-            setBotState('SCANNING');
+                let targetSym = selectedSymbolRef.current;
 
-            // If auto-switch is on and active market is weak, auto switch to best candidate
-            if (autoSwitchMarkets && bestMarketCandidate !== selectedSymbol) {
-                setSelectedSymbol(bestMarketCandidate);
+                // Market Auto-Switch Check after max consecutive runs
+                if (autoSwitchMarkets && consecutiveRunsRef.current >= maxRunsBeforeCheck) {
+                    consecutiveRunsRef.current = 0;
+                    setConsecutiveRuns(0);
+                    if (bestMarketCandidate && bestMarketCandidate !== targetSym) {
+                        targetSym = bestMarketCandidate;
+                        selectedSymbolRef.current = targetSym;
+                        setSelectedSymbol(targetSym);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+                }
+
+                const mData = marketsDataRef.current.get(targetSym);
+                if (!mData || mData.digits.length < 15) {
+                    if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
+                }
+
+                const digits = mData.digits;
+                const lastDigit = mData.lastDigit;
+
+                // 1. Recovery Mode Branch
+                if (isInRecoveryRef.current) {
+                    const last50 = digits.slice(-50);
+                    const under05 = last50.filter(d => d <= 5).length;
+                    const over49 = last50.filter(d => d >= 4).length;
+                    const isUnderFavored = under05 >= over49;
+
+                    const barrier = isUnderFavored
+                        ? (recoveryType === 'OVER_2_UNDER_8' ? 8 : 6)
+                        : (recoveryType === 'OVER_2_UNDER_8' ? 2 : 3);
+                    const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
+                    const strategyType = isUnderFavored ? 'RECOVERY_UNDER' : 'RECOVERY_OVER';
+
+                    const isTrigger = isUnderFavored
+                        ? (lastDigit <= (barrier === 8 ? 6 : 4) || (scanningCycles >= 3 && lastDigit <= (barrier === 8 ? 7 : 5)))
+                        : (lastDigit >= (barrier === 2 ? 3 : 5) || (scanningCycles >= 3 && lastDigit >= (barrier === 2 ? 2 : 4)));
+
+                    if (isTrigger) {
+                        setBotStateSync('TRADING');
+                        scanningCycles = 0;
+                        try {
+                            await executeTradeOrder(targetSym, strategyType, contractType, barrier, currentStakeRef.current);
+                        } catch (e) {
+                            console.error('Auto X Recovery trade error:', e);
+                        }
+                        if (botStateRef.current === 'TRADING') {
+                            setBotStateSync('SCANNING');
+                        }
+                        await new Promise(r => setTimeout(r, 500));
+                    } else {
+                        scanningCycles++;
+                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    continue;
+                }
+
+                // 2. Base Even / Odd Strategy Branch
+                const last60 = digits.slice(-60);
+                const t60 = last60.length || 1;
+                const evenCount = last60.filter(d => d % 2 === 0).length;
+                const oddCount = last60.filter(d => d % 2 !== 0).length;
+                const evenPct = Math.round((evenCount / t60) * 100);
+                const oddPct = Math.round((oddCount / t60) * 100);
+
+                const last15 = digits.slice(-15);
+                const prev15 = digits.slice(-30, -15);
+                const last15Even = last15.filter(d => d % 2 === 0).length;
+                const prev15Even = prev15.filter(d => d % 2 === 0).length;
+                const last15Odd = last15.filter(d => d % 2 !== 0).length;
+                const prev15Odd = prev15.filter(d => d % 2 !== 0).length;
+
+                const isEvenAdvantaged = evenPct >= 52 && evenCount > oddCount && (last15Even >= prev15Even || last15Even >= 8);
+                const isOddAdvantaged = oddPct >= 52 && oddCount > evenCount && (last15Odd >= prev15Odd || last15Odd >= 8);
+
+                const last3 = digits.slice(-3);
+                const isEvenTrigger =
+                    (last3.length >= 3 && last3[0] % 2 !== 0 && last3[1] % 2 !== 0 && last3[2] % 2 === 0) ||
+                    (last3.length >= 2 && last3[last3.length - 2] % 2 === 0 && lastDigit % 2 === 0) ||
+                    (scanningCycles >= 3 && lastDigit % 2 === 0);
+
+                const isOddTrigger =
+                    (last3.length >= 3 && last3[0] % 2 === 0 && last3[1] % 2 === 0 && last3[2] % 2 !== 0) ||
+                    (last3.length >= 2 && last3[last3.length - 2] % 2 !== 0 && lastDigit % 2 !== 0) ||
+                    (scanningCycles >= 3 && lastDigit % 2 !== 0);
+
+                if (isEvenAdvantaged) {
+                    if (isEvenTrigger) {
+                        setBotStateSync('TRADING');
+                        scanningCycles = 0;
+                        try {
+                            await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITEVEN', undefined, currentStakeRef.current);
+                        } catch (e) {
+                            console.error('Auto X Even trade error:', e);
+                        }
+                        if (botStateRef.current === 'TRADING') {
+                            setBotStateSync('SCANNING');
+                        }
+                        await new Promise(r => setTimeout(r, 500));
+                    } else {
+                        scanningCycles++;
+                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                } else if (isOddAdvantaged) {
+                    if (isOddTrigger) {
+                        setBotStateSync('TRADING');
+                        scanningCycles = 0;
+                        try {
+                            await executeTradeOrder(targetSym, 'EVEN_ODD', 'DIGITODD', undefined, currentStakeRef.current);
+                        } catch (e) {
+                            console.error('Auto X Odd trade error:', e);
+                        }
+                        if (botStateRef.current === 'TRADING') {
+                            setBotStateSync('SCANNING');
+                        }
+                        await new Promise(r => setTimeout(r, 500));
+                    } else {
+                        scanningCycles++;
+                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                } else {
+                    scanningCycles++;
+                    if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
+
+                    // If current market is neutral, switch after 5 cycles if autoSwitchMarkets is enabled
+                    if (autoSwitchMarkets && scanningCycles >= 5 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
+                        targetSym = bestMarketCandidate;
+                        selectedSymbolRef.current = targetSym;
+                        setSelectedSymbol(targetSym);
+                        scanningCycles = 0;
+                        await new Promise(r => setTimeout(r, 300));
+                        continue;
+                    }
+
+                    await new Promise(r => setTimeout(r, 350));
+                }
             }
-        }
+        };
+
+        void loop();
     }, [
-        botState,
-        sessionProfit,
         takeProfit,
         stopLoss,
-        currency,
         autoSwitchMarkets,
-        consecutiveRuns,
         maxRunsBeforeCheck,
         bestMarketCandidate,
-        selectedSymbol,
-        isInRecovery,
-        ouAnalysis,
-        currentMarket,
         recoveryType,
-        currentStake,
+        setBotStateSync,
         executeTradeOrder,
-        eoAnalysis,
     ]);
 
     // ── Bot Start / Pause / Stop Handlers ──
-    const handleStartBot = () => {
-        setCurrentStake(parseFloat(initialStake) || 0.5);
-        setBotState('SCANNING');
-    };
+    const handleStartBot = useCallback(() => {
+        const baseStk = parseFloat(initialStake) || 0.5;
+        currentStakeRef.current = baseStk;
+        setCurrentStake(baseStk);
+        sessionProfitRef.current = 0;
+        setSessionProfit(0);
+        setWinsCount(0);
+        setLossesCount(0);
+        consecutiveRunsRef.current = 0;
+        setConsecutiveRuns(0);
+        isInRecoveryRef.current = false;
+        setIsInRecovery(false);
+        setAccumulatedLoss(0);
+        setBotStateSync('SCANNING');
+        void startAutoTradingLoop();
+    }, [initialStake, setBotStateSync, startAutoTradingLoop]);
 
-    const handlePauseBot = () => {
-        setBotState(prev => (prev === 'PAUSED' ? 'SCANNING' : 'PAUSED'));
-    };
+    const handlePauseBot = useCallback(() => {
+        if (botStateRef.current === 'PAUSED') {
+            setBotStateSync('SCANNING');
+        } else if (botStateRef.current !== 'IDLE') {
+            setBotStateSync('PAUSED');
+        }
+    }, [setBotStateSync]);
 
-    const handleStopBot = () => {
-        setBotState('IDLE');
+    const handleStopBot = useCallback(() => {
+        setBotStateSync('IDLE');
+        autoAbortRef.current?.abort();
         executionLockRef.current = false;
-    };
+    }, [setBotStateSync]);
 
     // TopBar controller integration
     useEffect(() => {

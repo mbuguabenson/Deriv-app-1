@@ -514,154 +514,161 @@ const OverlordAi: React.FC = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedSymbol, renderTrigger]);
 
+// ── Pure Overlord AI Statistical Analysis Function ──
+const evaluateOverlordAnalysis = (
+    digits: number[],
+    mode: OverlordStrategyMode,
+    lastDigit: number
+) => {
+    const totalTicks = digits.length;
+
+    const frequencies: Record<number, number> = {
+        0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0,
+    };
+
+    digits.forEach(d => {
+        if (frequencies[d] !== undefined) frequencies[d]++;
+    });
+
+    const sampleSize = Math.max(1, totalTicks);
+    const percentages: Record<number, number> = {};
+    for (let i = 0; i <= 9; i++) {
+        percentages[i] = Math.round((frequencies[i] / sampleSize) * 1000) / 10;
+    }
+
+    // Low Digits (0–4) vs High Digits (5–9)
+    const lowCount = [0, 1, 2, 3, 4].reduce((sum, d) => sum + frequencies[d], 0);
+    const lowRatio = Math.round((lowCount / sampleSize) * 100);
+    const highRatio = 100 - lowRatio;
+
+    // Specific Barriers Frequency
+    const under8Count = [0, 1, 2, 3, 4, 5, 6, 7].reduce((s, d) => s + frequencies[d], 0);
+    const over1Count = [2, 3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
+    const under7Count = [0, 1, 2, 3, 4, 5, 6].reduce((s, d) => s + frequencies[d], 0);
+    const over2Count = [3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
+    const under6Count = [0, 1, 2, 3, 4, 5].reduce((s, d) => s + frequencies[d], 0);
+    const over3Count = [4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
+
+    const under8Pct = Math.round((under8Count / sampleSize) * 100);
+    const over1Pct = Math.round((over1Count / sampleSize) * 100);
+    const under7Pct = Math.round((under7Count / sampleSize) * 100);
+    const over2Pct = Math.round((over2Count / sampleSize) * 100);
+    const under6Pct = Math.round((under6Count / sampleSize) * 100);
+    const over3Pct = Math.round((over3Count / sampleSize) * 100);
+
+    // Micro-momentum (last 10 & last 5 ticks)
+    const last10 = digits.slice(-10);
+    const last10Low = last10.filter(d => d <= 4).length;
+    const last10High = 10 - last10Low;
+
+    // Strategy Resolution
+    let chosenStrategy: OverlordStrategyMode = mode;
+    if (mode === 'ALL_AUTO') {
+        const scores = [
+            { mode: 'OVER_1_UNDER_8' as OverlordStrategyMode, edge: Math.max(under8Pct, over1Pct) },
+            { mode: 'OVER_2_UNDER_7' as OverlordStrategyMode, edge: Math.max(under7Pct, over2Pct) * 1.05 },
+            { mode: 'OVER_3_UNDER_6' as OverlordStrategyMode, edge: Math.max(under6Pct, over3Pct) * 1.15 },
+        ];
+        scores.sort((a, b) => b.edge - a.edge);
+        chosenStrategy = scores[0].mode;
+    }
+
+    let targetBarrier = 8;
+    let signal: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
+    let signalConfidence = 50;
+    let isTriggerReady = false;
+    let triggerDigits: number[] = [];
+
+    if (chosenStrategy === 'OVER_1_UNDER_8') {
+        if (under8Pct >= 82 || (under8Pct >= 78 && last10Low >= 6)) {
+            signal = 'UNDER';
+            targetBarrier = 8;
+            signalConfidence = Math.min(98, Math.round(under8Pct * 0.9 + last10Low * 2));
+            triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        } else if (over1Pct >= 82 || (over1Pct >= 78 && last10High >= 6)) {
+            signal = 'OVER';
+            targetBarrier = 1;
+            signalConfidence = Math.min(98, Math.round(over1Pct * 0.9 + last10High * 2));
+            triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        }
+    } else if (chosenStrategy === 'OVER_2_UNDER_7') {
+        if (under7Pct >= 72 || (under7Pct >= 68 && last10Low >= 6)) {
+            signal = 'UNDER';
+            targetBarrier = 7;
+            signalConfidence = Math.min(95, Math.round(under7Pct * 0.9 + last10Low * 2.5));
+            triggerDigits = [0, 1, 2, 3, 4, 5, 6];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        } else if (over2Pct >= 72 || (over2Pct >= 68 && last10High >= 6)) {
+            signal = 'OVER';
+            targetBarrier = 2;
+            signalConfidence = Math.min(95, Math.round(over2Pct * 0.9 + last10High * 2.5));
+            triggerDigits = [3, 4, 5, 6, 7, 8, 9];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        }
+    } else if (chosenStrategy === 'OVER_3_UNDER_6') {
+        if (under6Pct >= 62 || (under6Pct >= 58 && under6Count > over3Count && last10Low >= 6)) {
+            signal = 'UNDER';
+            targetBarrier = 6;
+            signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + last10Low * 3));
+            triggerDigits = [0, 1, 2, 3, 4, 5];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        } else if (over3Pct >= 62 || (over3Pct >= 58 && over3Count > under6Count && last10High >= 6)) {
+            signal = 'OVER';
+            targetBarrier = 3;
+            signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + last10High * 3));
+            triggerDigits = [4, 5, 6, 7, 8, 9];
+            isTriggerReady = triggerDigits.includes(lastDigit);
+        }
+    }
+
+    // Find Highest & Lowest Frequency Digits
+    let highestDigit = 0;
+    let highestFreq = -1;
+    let lowestDigit = 0;
+    let lowestFreq = 999999;
+
+    for (let i = 0; i <= 9; i++) {
+        if (frequencies[i] > highestFreq) {
+            highestFreq = frequencies[i];
+            highestDigit = i;
+        }
+        if (frequencies[i] < lowestFreq) {
+            lowestFreq = frequencies[i];
+            lowestDigit = i;
+        }
+    }
+
+    return {
+        totalTicks,
+        frequencies,
+        percentages,
+        lowRatio,
+        highRatio,
+        under8Pct,
+        over1Pct,
+        under7Pct,
+        over2Pct,
+        under6Pct,
+        over3Pct,
+        last10Low,
+        last10High,
+        chosenStrategy,
+        signal,
+        targetBarrier,
+        signalConfidence,
+        isTriggerReady,
+        triggerDigits,
+        highestDigit,
+        lowestDigit,
+    };
+};
+
     // ── Smart AI Pattern & Statistical Analysis Engine ──
     const patternEngine = useMemo(() => {
-        const digits = currentMarket.digits;
-        const totalTicks = digits.length;
-
-        const frequencies: Record<number, number> = {
-            0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0,
-        };
-
-        digits.forEach(d => {
-            if (frequencies[d] !== undefined) frequencies[d]++;
-        });
-
-        const sampleSize = Math.max(1, totalTicks);
-        const percentages: Record<number, number> = {};
-        for (let i = 0; i <= 9; i++) {
-            percentages[i] = Math.round((frequencies[i] / sampleSize) * 1000) / 10;
-        }
-
-        // Low Digits (0–4) vs High Digits (5–9)
-        const lowCount = [0, 1, 2, 3, 4].reduce((sum, d) => sum + frequencies[d], 0);
-        const lowRatio = Math.round((lowCount / sampleSize) * 100);
-        const highRatio = 100 - lowRatio;
-
-        // Specific Barriers Frequency
-        const under8Count = [0, 1, 2, 3, 4, 5, 6, 7].reduce((s, d) => s + frequencies[d], 0);
-        const over1Count = [2, 3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
-        const under7Count = [0, 1, 2, 3, 4, 5, 6].reduce((s, d) => s + frequencies[d], 0);
-        const over2Count = [3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
-        const under6Count = [0, 1, 2, 3, 4, 5].reduce((s, d) => s + frequencies[d], 0);
-        const over3Count = [4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
-
-        const under8Pct = Math.round((under8Count / sampleSize) * 100);
-        const over1Pct = Math.round((over1Count / sampleSize) * 100);
-        const under7Pct = Math.round((under7Count / sampleSize) * 100);
-        const over2Pct = Math.round((over2Count / sampleSize) * 100);
-        const under6Pct = Math.round((under6Count / sampleSize) * 100);
-        const over3Pct = Math.round((over3Count / sampleSize) * 100);
-
-        // Micro-momentum (last 10 & last 5 ticks)
-        const last10 = digits.slice(-10);
-        const last10Low = last10.filter(d => d <= 4).length;
-        const last10High = 10 - last10Low;
-
-        // Strategy Resolution
-        let chosenStrategy: OverlordStrategyMode = strategyMode;
-        if (strategyMode === 'ALL_AUTO') {
-            const scores = [
-                { mode: 'OVER_1_UNDER_8' as OverlordStrategyMode, edge: Math.max(under8Pct, over1Pct) },
-                { mode: 'OVER_2_UNDER_7' as OverlordStrategyMode, edge: Math.max(under7Pct, over2Pct) * 1.05 },
-                { mode: 'OVER_3_UNDER_6' as OverlordStrategyMode, edge: Math.max(under6Pct, over3Pct) * 1.15 },
-            ];
-            scores.sort((a, b) => b.edge - a.edge);
-            chosenStrategy = scores[0].mode;
-        }
-
-        let targetBarrier = 8;
-        let signal: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
-        let signalConfidence = 50;
-        let isTriggerReady = false;
-        let triggerDigits: number[] = [];
-
-        if (chosenStrategy === 'OVER_1_UNDER_8') {
-            if (under8Pct >= 78 || last10Low >= 6) {
-                signal = 'UNDER';
-                targetBarrier = 8;
-                signalConfidence = Math.min(98, Math.round(under8Pct * 0.9 + last10Low * 2));
-                triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            } else if (over1Pct >= 78 || last10High >= 6) {
-                signal = 'OVER';
-                targetBarrier = 1;
-                signalConfidence = Math.min(98, Math.round(over1Pct * 0.9 + last10High * 2));
-                triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            }
-        } else if (chosenStrategy === 'OVER_2_UNDER_7') {
-            if (under7Pct >= 68 || last10Low >= 6) {
-                signal = 'UNDER';
-                targetBarrier = 7;
-                signalConfidence = Math.min(95, Math.round(under7Pct * 0.9 + last10Low * 2.5));
-                triggerDigits = [0, 1, 2, 3, 4, 5, 6];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            } else if (over2Pct >= 68 || last10High >= 6) {
-                signal = 'OVER';
-                targetBarrier = 2;
-                signalConfidence = Math.min(95, Math.round(over2Pct * 0.9 + last10High * 2.5));
-                triggerDigits = [3, 4, 5, 6, 7, 8, 9];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            }
-        } else if (chosenStrategy === 'OVER_3_UNDER_6') {
-            if (under6Pct >= 58 || last10Low >= 6) {
-                signal = 'UNDER';
-                targetBarrier = 6;
-                signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + last10Low * 3));
-                triggerDigits = [0, 1, 2, 3, 4, 5];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            } else if (over3Pct >= 58 || last10High >= 6) {
-                signal = 'OVER';
-                targetBarrier = 3;
-                signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + last10High * 3));
-                triggerDigits = [4, 5, 6, 7, 8, 9];
-                isTriggerReady = triggerDigits.includes(currentMarket.lastDigit);
-            }
-        }
-
-        // Find Highest & Lowest Frequency Digits
-        let highestDigit = 0;
-        let highestFreq = -1;
-        let lowestDigit = 0;
-        let lowestFreq = 999999;
-
-        for (let i = 0; i <= 9; i++) {
-            if (frequencies[i] > highestFreq) {
-                highestFreq = frequencies[i];
-                highestDigit = i;
-            }
-            if (frequencies[i] < lowestFreq) {
-                lowestFreq = frequencies[i];
-                lowestDigit = i;
-            }
-        }
-
-        return {
-            totalTicks,
-            frequencies,
-            percentages,
-            lowRatio,
-            highRatio,
-            under8Pct,
-            over1Pct,
-            under7Pct,
-            over2Pct,
-            under6Pct,
-            over3Pct,
-            last10Low,
-            last10High,
-            chosenStrategy,
-            signal,
-            targetBarrier,
-            signalConfidence,
-            isTriggerReady,
-            triggerDigits,
-            highestDigit,
-            lowestDigit,
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentMarket, strategyMode, renderTrigger]);
+        return evaluateOverlordAnalysis(currentMarket.digits, strategyMode, currentMarket.lastDigit);
+    }, [currentMarket.digits, currentMarket.lastDigit, strategyMode, renderTrigger]);
 
     // ── Multi-Market Cross Scanner Ranking ──
     const rankedMarketCandidates = useMemo(() => {
@@ -975,11 +982,12 @@ const OverlordAi: React.FC = observer(() => {
                     continue;
                 }
 
-                // Evaluate entry conditions
-                const signal = patternEngine.signal;
-                const barrier = patternEngine.targetBarrier;
-                const isTriggerReady = patternEngine.isTriggerReady;
-                const confidence = patternEngine.signalConfidence;
+                // Evaluate entry conditions dynamically on live incoming digits
+                const liveAnalysis = evaluateOverlordAnalysis(mData.digits, strategyMode, mData.lastDigit);
+                const signal = liveAnalysis.signal;
+                const barrier = liveAnalysis.targetBarrier;
+                const isTriggerReady = liveAnalysis.isTriggerReady;
+                const confidence = liveAnalysis.signalConfidence;
 
                 if (signal === 'NEUTRAL' || confidence < 55) {
                     if (botStateRef.current !== 'WAITING_SIGNAL') {
@@ -1038,7 +1046,7 @@ const OverlordAi: React.FC = observer(() => {
                         );
 
                         if (burstRunRef.current < targetBurstSize && botStateRef.current === 'BURST_TRADING') {
-                            await new Promise(r => setTimeout(r, 450));
+                            await new Promise(r => setTimeout(r, 350));
                         }
                     } catch (tradeError) {
                         console.error('[Overlord AI] Error executing burst trade:', tradeError);
@@ -1075,9 +1083,9 @@ const OverlordAi: React.FC = observer(() => {
                         }
                     }
 
-                    await new Promise(r => setTimeout(r, 2200));
+                    await new Promise(r => setTimeout(r, 600));
                     if (!abortSignal.aborted && botStateRef.current === 'BURST_PAUSED') {
-                        setBotStateSync('WAITING_SIGNAL');
+                        setBotStateSync('SCANNING');
                     }
                 }
             }
@@ -1093,7 +1101,7 @@ const OverlordAi: React.FC = observer(() => {
         setBotStateSync,
         autoPickBestMarket,
         rankedMarketCandidates,
-        patternEngine,
+        strategyMode,
         burstRunSize,
         executeTradeOrder,
         isMarketRotationEnabled,

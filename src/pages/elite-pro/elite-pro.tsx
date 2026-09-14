@@ -407,11 +407,15 @@ const ElitePro = observer(() => {
         });
         const highestOverPct = (maxOverCount / total) * 100;
 
-        // Overall dominant side & market bias
+        // Overall dominant side & market bias (comparing true relative dominance)
         let bias: 'under' | 'over' | 'neutral' = 'neutral';
-        if (pctUnder05 > 55 || (under05 >= 30 && under05 > over49)) {
+        if (under05 > over49 && under05 >= 28) {
             bias = 'under';
-        } else if (pctOver49 > 55 || (over49 >= 30 && over49 > under05)) {
+        } else if (over49 > under05 && over49 >= 28) {
+            bias = 'over';
+        } else if (pctUnder04 >= 52 && pctUnder04 > pctOver59) {
+            bias = 'under';
+        } else if (pctOver59 >= 52 && pctOver59 > pctUnder04) {
             bias = 'over';
         }
 
@@ -434,10 +438,13 @@ const ElitePro = observer(() => {
         const last7Under = last7.length === 7 && last7.every(d => d < 6);
         const last7Over = last7.length === 7 && last7.every(d => d > 3);
 
-        // Trend flip detection
+        // Trend flip detection (dominant side losing majority in recent 25 ticks)
         const recent3 = slice.slice(-3);
         const recentTrendFlip =
             (bias === 'under' && recent3.every(d => d >= 7)) || (bias === 'over' && recent3.every(d => d <= 2));
+
+        const secondHalfHighDigits = secondHalf.filter(d => d >= 6).length;
+        const secondHalfLowDigits = secondHalf.filter(d => d <= 3).length;
 
         return {
             under04,
@@ -465,8 +472,8 @@ const ElitePro = observer(() => {
             underIncreasing,
             overIncreasing,
             recentTrendFlip,
-            isUnderTrendFlipped: secondHalf.filter(d => d >= 6).length >= 10,
-            isOverTrendFlipped: secondHalf.filter(d => d <= 3).length >= 10,
+            isUnderTrendFlipped: secondHalfHighDigits >= 14,
+            isOverTrendFlipped: secondHalfLowDigits >= 14,
             last15Under,
             last15Over,
             total,
@@ -488,53 +495,54 @@ const ElitePro = observer(() => {
             if (digits.length < 25) return null;
             const a = computeAnalysis(digits);
             const currentLastDigit = digits[digits.length - 1];
+            const prevDigit = digits.length >= 2 ? digits[digits.length - 2] : null;
 
-            // 1. UNDER 6 Conditions (Digits 0-5 win)
-            // Dominant under bias: >= 54% under or >= 27 ticks in 0-5
-            const underRatioMet = a.under05 >= 27 || a.pctUnder05 >= 54;
-            const underDominance = a.under05 >= a.over49;
+            // 1. UNDER 6 Conditions (Digits 0-5 win on DIGITUNDER 6)
+            // Dominant under bias: under05 > over49 AND under05 >= 29 (58%+)
+            const underRatioMet = a.under05 >= 29 && a.under05 > a.over49;
             const underRecentTicksMet = a.last10UnderCount >= 6;
             const isUnderValid =
                 underRatioMet &&
-                underDominance &&
                 underRecentTicksMet &&
                 !a.isUnderTrendFlipped &&
-                !a.recentTrendFlip;
+                !a.recentTrendFlip &&
+                currentLastDigit < 7;
 
             if (isUnderValid) {
                 const isExactTrigger = currentLastDigit === a.highestUnderDigit;
-                const isWinningZoneTrigger = currentLastDigit <= 5 && (a.pctUnder05 >= 56 || waitCycles >= 5);
-                const isTriggered = isExactTrigger || isWinningZoneTrigger;
+                const isMomentumTrigger = currentLastDigit <= 5 && prevDigit !== null && prevDigit <= 5;
+                const isFallbackTrigger = currentLastDigit <= 4 || (waitCycles >= 3 && currentLastDigit <= 5);
+                const isTriggered = isExactTrigger || isMomentumTrigger || isFallbackTrigger;
                 return {
                     direction: 'UNDER',
                     prediction: 6,
                     triggerDigit: a.highestUnderDigit,
-                    reason: `Under 6 setup aligned (U0-5: ${a.under05}/50, ${a.pctUnder05.toFixed(1)}%). Trigger: [${a.highestUnderDigit}]`,
+                    reason: `Under 6 qualified (U0-5: ${a.under05}/50 vs O4-9: ${a.over49}). Trigger: [${a.highestUnderDigit}]`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
             }
 
-            // 2. OVER 3 Conditions (Digits 4-9 win)
-            // Dominant over bias: >= 54% over or >= 27 ticks in 4-9
-            const overRatioMet = a.over49 >= 27 || a.pctOver49 >= 54;
-            const overDominance = a.over49 >= a.under05;
+            // 2. OVER 3 Conditions (Digits 4-9 win on DIGITOVER 3)
+            // Dominant over bias: over49 > under05 AND over49 >= 29 (58%+)
+            const overRatioMet = a.over49 >= 29 && a.over49 > a.under05;
             const overRecentTicksMet = a.last10OverCount >= 6;
             const isOverValid =
                 overRatioMet &&
-                overDominance &&
                 overRecentTicksMet &&
                 !a.isOverTrendFlipped &&
-                !a.recentTrendFlip;
+                !a.recentTrendFlip &&
+                currentLastDigit > 2;
 
             if (isOverValid) {
                 const isExactTrigger = currentLastDigit === a.highestOverDigit;
-                const isWinningZoneTrigger = currentLastDigit >= 4 && (a.pctOver49 >= 56 || waitCycles >= 5);
-                const isTriggered = isExactTrigger || isWinningZoneTrigger;
+                const isMomentumTrigger = currentLastDigit >= 4 && prevDigit !== null && prevDigit >= 4;
+                const isFallbackTrigger = currentLastDigit >= 5 || (waitCycles >= 3 && currentLastDigit >= 4);
+                const isTriggered = isExactTrigger || isMomentumTrigger || isFallbackTrigger;
                 return {
                     direction: 'OVER',
                     prediction: 3,
                     triggerDigit: a.highestOverDigit,
-                    reason: `Over 3 setup aligned (O4-9: ${a.over49}/50, ${a.pctOver49.toFixed(1)}%). Trigger: [${a.highestOverDigit}]`,
+                    reason: `Over 3 qualified (O4-9: ${a.over49}/50 vs U0-5: ${a.under05}). Trigger: [${a.highestOverDigit}]`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
             }
@@ -1152,7 +1160,7 @@ const ElitePro = observer(() => {
                     }
 
                     let targetSym = selectedSymbolRef.current;
-                    if (autoInputBestMarket) {
+                    if (autoInputBestMarket && scanningCycles === 0 && tradeRuns === 0) {
                         const liveRanked = getLiveRankedMarkets();
                         const top = liveRanked[0];
                         if (top && top.symbol && top.symbol !== selectedSymbolRef.current) {
@@ -1176,23 +1184,45 @@ const ElitePro = observer(() => {
                     if (!entrySignal || entrySignal.status === 'WAITING') {
                         scanningCycles++;
 
-                        // Smart Auto-Switch if current market has no trigger for a while and another market has a trigger/signal
-                        if (scanningCycles > 8 && autoSwitchMarkets) {
+                        // Smart Auto-Switch: check if any market has an immediate TRIGGERED signal or better setup
+                        if (autoSwitchMarkets) {
                             const liveRanked = getLiveRankedMarkets();
-                            const candidateWithSignal = liveRanked.find(m => m.symbol !== targetSym && m.hasSignal);
-                            if (candidateWithSignal) {
-                                setSelectedSymbol(candidateWithSignal.symbol);
-                                selectedSymbolRef.current = candidateWithSignal.symbol;
+                            // 1. If another market has an immediately triggered entry, switch to it and execute!
+                            const readyMarket = liveRanked.find(m => m.symbol !== targetSym && m.isTriggered);
+                            if (readyMarket) {
+                                setSelectedSymbol(readyMarket.symbol);
+                                selectedSymbolRef.current = readyMarket.symbol;
                                 addLogEntry(
                                     'SMART SWITCH',
-                                    candidateWithSignal.label,
+                                    readyMarket.label,
                                     'PENDING',
                                     0,
-                                    `Auto-switched to ${candidateWithSignal.label} (${candidateWithSignal.signalDirection || 'Setup'} active)`
+                                    `Instantly switched to ${readyMarket.label} (Triggered ${readyMarket.signalDirection})`
                                 );
                                 scanningCycles = 0;
-                                await new Promise(r => setTimeout(r, 500));
+                                await new Promise(r => setTimeout(r, 100));
                                 continue;
+                            }
+
+                            // 2. If current market has no qualified setup at all, rotate to top candidate after 3 cycles
+                            if (!entrySignal && scanningCycles >= 3) {
+                                const bestCandidate = liveRanked.find(
+                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 55)
+                                );
+                                if (bestCandidate) {
+                                    setSelectedSymbol(bestCandidate.symbol);
+                                    selectedSymbolRef.current = bestCandidate.symbol;
+                                    addLogEntry(
+                                        'SMART SWITCH',
+                                        bestCandidate.label,
+                                        'PENDING',
+                                        0,
+                                        `Switched to active setup on ${bestCandidate.label}`
+                                    );
+                                    scanningCycles = 0;
+                                    await new Promise(r => setTimeout(r, 300));
+                                    continue;
+                                }
                             }
                         }
 
@@ -1202,25 +1232,14 @@ const ElitePro = observer(() => {
                                 autoStateRef.current = 'WAITING_TRIGGER';
                             }
                         } else {
-                            const a = computeAnalysis(currentData.digits);
-                            const isUnderSetup = (a.pctUnder05 >= 54 || a.under05 >= 27) && a.under05 >= a.over49;
-                            const isOverSetup = (a.pctOver49 >= 54 || a.over49 >= 27) && a.over49 >= a.under05;
-
-                            if (isUnderSetup || isOverSetup) {
-                                if (autoStateRef.current !== 'WAITING_TRIGGER') {
-                                    setAutoState('WAITING_TRIGGER');
-                                    autoStateRef.current = 'WAITING_TRIGGER';
-                                }
-                            } else {
-                                if (autoStateRef.current !== 'SCANNING') {
-                                    setAutoState('SCANNING');
-                                    autoStateRef.current = 'SCANNING';
-                                }
+                            if (autoStateRef.current !== 'SCANNING') {
+                                setAutoState('SCANNING');
+                                autoStateRef.current = 'SCANNING';
                             }
                         }
 
                         // Poll fast when waiting for trigger to execute tick immediately
-                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 60 : 500;
+                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 60 : 400;
                         await new Promise(r => setTimeout(r, delay));
                         continue;
                     }
@@ -1289,34 +1308,39 @@ const ElitePro = observer(() => {
                             tradeRuns = 0;
                             if (autoSwitchMarkets) {
                                 const liveRanked = getLiveRankedMarkets();
-                                const nextBest = liveRanked.find(
-                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 52)
-                                );
-                                if (nextBest) {
-                                    setSelectedSymbol(nextBest.symbol);
-                                    selectedSymbolRef.current = nextBest.symbol;
+                                const currentRank = liveRanked.find(m => m.symbol === targetSym);
+                                const bestCandidate = liveRanked[0];
+                                if (
+                                    bestCandidate &&
+                                    bestCandidate.symbol !== targetSym &&
+                                    (bestCandidate.isTriggered || bestCandidate.hasSignal || bestCandidate.strength > (currentRank?.strength || 50))
+                                ) {
+                                    setSelectedSymbol(bestCandidate.symbol);
+                                    selectedSymbolRef.current = bestCandidate.symbol;
                                     addLogEntry(
                                         'SMART SWITCH',
-                                        nextBest.label,
+                                        bestCandidate.label,
                                         'PENDING',
                                         0,
-                                        `Auto-switched market to ${nextBest.label} after ${maxRuns} runs`
+                                        `Rotated to top market ${bestCandidate.label} after ${maxRuns} runs`
+                                    );
+                                } else {
+                                    addLogEntry(
+                                        'CONTINUING RUN',
+                                        currentData.label,
+                                        'PENDING',
+                                        0,
+                                        `Completed ${maxRuns} runs. Maintaining current top market ${currentData.label}`
                                     );
                                 }
                             }
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
-                            addLogEntry(
-                                'CONTINUING RUN',
-                                selectedSymbolRef.current,
-                                'PENDING',
-                                0,
-                                `Completed ${maxRuns} runs cycle. Scanning next entry without halting...`
-                            );
-                            await new Promise(r => setTimeout(r, 1000));
+                            await new Promise(r => setTimeout(r, 600));
                         } else {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
+                            await new Promise(r => setTimeout(r, 600));
                         }
                         await new Promise(r => setTimeout(r, 1000));
                     } catch (err) {
@@ -1785,12 +1809,12 @@ const ElitePro = observer(() => {
                         <div className='ep-glass ep-hero-card ep-digit-card'>
                             <span className='ep-hero-label'>LAST TICK DIGIT</span>
                             <div
-                                className={`ep-digit-orb-wrapper ep-digit-orb-wrapper--${(activeData?.lastDigit ?? 0) < 5 ? 'under' : 'over'}`}
+                                className={`ep-digit-orb-wrapper ep-digit-orb-wrapper--${(activeData?.lastDigit ?? 0) <= 5 ? 'under' : 'over'}`}
                             >
                                 <div className='ep-digit-orb'>{activeData?.lastDigit ?? '—'}</div>
                             </div>
                             <span className='ep-digit-sub'>
-                                {(activeData?.lastDigit ?? 0) < 5 ? 'Under Digit (0-4)' : 'Over Digit (5-9)'}
+                                {(activeData?.lastDigit ?? 0) <= 5 ? 'Under 6 Zone (0-5)' : 'Over 3 Zone (6-9)'}
                             </span>
                         </div>
                     </div>
@@ -1819,10 +1843,10 @@ const ElitePro = observer(() => {
                                 </div>
                                 <span className={`ep-bias-badge ep-bias-badge--${analysis.bias}`}>
                                     {analysis.bias === 'under'
-                                        ? '📉 UNDER DOMINANT MARKET'
+                                        ? '🛡️ UNDER 6 BIAS'
                                         : analysis.bias === 'over'
-                                          ? '📈 OVER DOMINANT MARKET'
-                                          : '⚖️ BALANCED / NEUTRAL'}
+                                          ? '🚀 OVER 3 BIAS'
+                                          : '⚖️ BALANCED'}
                                 </span>
                             </div>
 
@@ -1876,43 +1900,42 @@ const ElitePro = observer(() => {
                                     <div className='side side--under'>
                                         <span className='tag'>Under (0-5)</span>
                                         <strong>
-                                            {analysis.under05} Ticks ({analysis.pctUnder05.toFixed(1)}%)
+                                            {analysis.under05} Ticks ({((analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100).toFixed(1)}% share)
                                         </strong>
                                     </div>
                                     <span className='vs'>VS</span>
                                     <div className='side side--over'>
                                         <span className='tag'>Over (4-9)</span>
                                         <strong>
-                                            {analysis.over49} Ticks ({analysis.pctOver49.toFixed(1)}%)
+                                            {analysis.over49} Ticks ({((analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100).toFixed(1)}% share)
                                         </strong>
                                     </div>
                                 </div>
                                 <div className='ep-progress-track'>
                                     <div
                                         className='ep-progress-bar ep-progress-bar--under'
-                                        style={{ width: `${analysis.pctUnder05}%` }}
+                                        style={{ width: `${(analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
                                     />
                                     <div
                                         className='ep-progress-bar ep-progress-bar--over'
-                                        style={{ width: `${analysis.pctOver49}%` }}
+                                        style={{ width: `${(analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
                                     />
                                 </div>
                                 <div className='ep-market-tendency-note'>
-                                    {analysis.under05 >= 34 && analysis.over49 <= 25 ? (
+                                    {analysis.bias === 'under' && analysis.under05 >= 29 ? (
                                         <span className='note note--under'>
-                                            🔥 Market is strongly favoring <strong>UNDER</strong> ({analysis.under05}{' '}
-                                            Under vs {analysis.over49} Over). Clear Under signal criteria qualified!
+                                            🔥 Market is strongly favoring <strong>UNDER 6</strong> ({analysis.under05}{' '}
+                                            Under vs {analysis.over49} Over). High-probability Under setup active!
                                         </span>
-                                    ) : analysis.over49 >= 34 && analysis.under05 <= 25 ? (
+                                    ) : analysis.bias === 'over' && analysis.over49 >= 29 ? (
                                         <span className='note note--over'>
-                                            🔥 Market is strongly favoring <strong>OVER</strong> ({analysis.over49} Over
-                                            vs {analysis.under05} Under). Clear Over signal criteria qualified!
+                                            🔥 Market is strongly favoring <strong>OVER 3</strong> ({analysis.over49} Over
+                                            vs {analysis.under05} Under). High-probability Over setup active!
                                         </span>
                                     ) : (
                                         <span className='note note--neutral'>
                                             ℹ️ Market digits are shifting ({analysis.under05} Under 0-5 vs{' '}
-                                            {analysis.over49} Over 4-9). Bot will auto-pause until high probability edge
-                                            is detected.
+                                            {analysis.over49} Over 4-9). Engine actively hunting best entry trigger...
                                         </span>
                                     )}
                                 </div>
@@ -1958,15 +1981,14 @@ const ElitePro = observer(() => {
                                 <div className='ep-checklist-col'>
                                     <span className='col-title'>Under 6 Entry Checklist</span>
                                     <div
-                                        className={`check-row ${analysis.pctUnder05 >= 54 && analysis.under05 >= analysis.over49 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.under05 > analysis.over49 && analysis.under05 >= 29 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Dominant Under Bias &gt;= 54% ({analysis.pctUnder05.toFixed(1)}%)
+                                        <span className='mark'>✓</span> Dominant Under Bias ({analysis.under05} U vs {analysis.over49} O)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.under05 >= 27 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.under05 >= 29 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Under 0-5 Ratio &gt;= 27 (U:
-                                        {analysis.under05} / O:{analysis.over49})
+                                        <span className='mark'>✓</span> Under 0-5 Frequency &gt;= 29 ({analysis.pctUnder05.toFixed(1)}%)
                                     </div>
                                     <div
                                         className={`check-row ${analysis.last10UnderCount >= 6 ? 'valid' : ''}`}
@@ -1974,7 +1996,7 @@ const ElitePro = observer(() => {
                                         <span className='mark'>✓</span> Last 10 Ticks Favoring Under (
                                         {analysis.last10UnderCount}/10 under)
                                     </div>
-                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isUnderTrendFlipped ? 'valid' : ''}`}>
+                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isUnderTrendFlipped && (activeData ? activeData.lastDigit < 7 : true) ? 'valid' : ''}`}>
                                         <span className='mark'>✓</span> Trend Stabilized (No contrary reversal)
                                     </div>
                                     <div
@@ -1987,15 +2009,14 @@ const ElitePro = observer(() => {
                                 <div className='ep-checklist-col'>
                                     <span className='col-title'>Over 3 Entry Checklist</span>
                                     <div
-                                        className={`check-row ${analysis.pctOver49 >= 54 && analysis.over49 >= analysis.under05 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.over49 > analysis.under05 && analysis.over49 >= 29 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Dominant Over Bias &gt;= 54% ({analysis.pctOver49.toFixed(1)}%)
+                                        <span className='mark'>✓</span> Dominant Over Bias ({analysis.over49} O vs {analysis.under05} U)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.over49 >= 27 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.over49 >= 29 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Over 4-9 Ratio &gt;= 27 (O:
-                                        {analysis.over49} / U:{analysis.under05})
+                                        <span className='mark'>✓</span> Over 4-9 Frequency &gt;= 29 ({analysis.pctOver49.toFixed(1)}%)
                                     </div>
                                     <div
                                         className={`check-row ${analysis.last10OverCount >= 6 ? 'valid' : ''}`}

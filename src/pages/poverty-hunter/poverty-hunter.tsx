@@ -238,7 +238,7 @@ const PovertyHunter: React.FC = observer(() => {
     const [sessionProfit, setSessionProfit] = useState<number>(0);
     const [winsCount, setWinsCount] = useState<number>(0);
     const [lossesCount, setLossesCount] = useState<number>(0);
-    const [consecutiveRuns, setConsecutiveRuns] = useState<number>(0);
+    const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
     const [accumulatedLoss, setAccumulatedLoss] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
@@ -251,6 +251,32 @@ const PovertyHunter: React.FC = observer(() => {
     const [differTargetDigit, setDifferTargetDigit] = useState<number | null>(null);
     const [waitingForAppear, setWaitingForAppear] = useState<boolean>(false);
     const [confirmationTicksRemaining, setConfirmationTicksRemaining] = useState<number>(0);
+
+    // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
+    const botStateRef = useRef<AutoRunState>('IDLE');
+    const autoAbortRef = useRef<AbortController | null>(null);
+    const selectedSymbolRef = useRef<string>(selectedSymbol);
+    const sessionProfitRef = useRef<number>(0);
+    const consecutiveRunsRef = useRef<number>(0);
+    const currentStakeRef = useRef<number>(0.5);
+    const isInRecoveryRef = useRef<boolean>(false);
+
+    useEffect(() => {
+        selectedSymbolRef.current = selectedSymbol;
+    }, [selectedSymbol]);
+
+    useEffect(() => {
+        currentStakeRef.current = currentStake;
+    }, [currentStake]);
+
+    useEffect(() => {
+        isInRecoveryRef.current = isInRecovery;
+    }, [isInRecovery]);
+
+    const setBotStateSync = useCallback((state: AutoRunState) => {
+        botStateRef.current = state;
+        setBotState(state);
+    }, []);
 
     // ── Active Market Data Map & Subscriptions ──
     const marketsDataRef = useRef<Map<string, MarketDigitState>>(new Map());
@@ -718,20 +744,25 @@ const PovertyHunter: React.FC = observer(() => {
 
                 // Post-trade handling
                 const roundedProfit = Number(totalBatchProfit.toFixed(2));
-                setSessionProfit(sp => Number((sp + roundedProfit).toFixed(2)));
+                const nextP = Number((sessionProfitRef.current + roundedProfit).toFixed(2));
+                sessionProfitRef.current = nextP;
+                setSessionProfit(nextP);
 
                 if (batchWon) {
                     setWinsCount(w => w + count);
                     addLogEntry(symbol, stratType, contractType, barrier, stakeAmount * count, 'WIN', roundedProfit);
 
                     // Recovery logic check
-                    if (isRecoveryTrade || isInRecovery) {
+                    if (isRecoveryTrade || isInRecoveryRef.current) {
                         const newAccLoss = accumulatedLoss - roundedProfit;
                         if (newAccLoss <= 0) {
                             // Fully recovered! Revert to Differs with original base stake
                             setIsInRecovery(false);
+                            isInRecoveryRef.current = false;
                             setAccumulatedLoss(0);
-                            setCurrentStake(parseFloat(initialStake) || 0.5);
+                            const baseStk = parseFloat(initialStake) || 0.5;
+                            currentStakeRef.current = baseStk;
+                            setCurrentStake(baseStk);
                         } else {
                             setAccumulatedLoss(newAccLoss);
                         }
@@ -743,19 +774,24 @@ const PovertyHunter: React.FC = observer(() => {
                     // Single Loss -> Trigger Over/Under Recovery
                     if (autoRecoveryMode) {
                         setIsInRecovery(true);
+                        isInRecoveryRef.current = true;
                         const lost = Math.abs(roundedProfit);
                         setAccumulatedLoss(al => al + lost);
 
                         const mult = parseFloat(martingale) || 2.6;
                         const nextStake = Number((stakeAmount * mult).toFixed(2));
+                        currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
                     }
                 }
 
-                setConsecutiveRuns(r => r + 1);
+                consecutiveRunsRef.current += 1;
+                setConsecutiveRuns(consecutiveRunsRef.current);
+                return roundedProfit;
             } catch (err) {
                 console.error('[PovertyHunter] Order execution error:', err);
                 addLogEntry(symbol, stratType, contractType, barrier, stakeAmount, 'LOSS', 0);
+                return -stakeAmount;
             } finally {
                 executionLockRef.current = false;
             }
@@ -766,7 +802,6 @@ const PovertyHunter: React.FC = observer(() => {
             currency,
             pushContractToDrawer,
             addLogEntry,
-            isInRecovery,
             accumulatedLoss,
             initialStake,
             autoRecoveryMode,
@@ -774,121 +809,197 @@ const PovertyHunter: React.FC = observer(() => {
         ]
     );
 
-    // ── Automated Trading State Machine Tick Listener ──
-    useEffect(() => {
-        if (botState !== 'TRADING') return;
+    // ── Dedicated Asynchronous Trading Engine Loop ──
+    const startAutoTradingLoop = useCallback(async () => {
+        autoAbortRef.current?.abort();
+        const abortCtrl = new AbortController();
+        autoAbortRef.current = abortCtrl;
+        const signal = abortCtrl.signal;
 
-        // Check Take Profit & Stop Loss
         const tp = parseFloat(takeProfit) || 9999;
         const sl = parseFloat(stopLoss) || 9999;
-        if (sessionProfit >= tp) {
-            setBotState('IDLE');
-            setMilestone({ isOpen: true, type: 'tp' });
-            return;
-        }
-        if (sessionProfit <= -sl) {
-            setBotState('IDLE');
-            setMilestone({ isOpen: true, type: 'sl' });
-            return;
-        }
 
-        // Check Max Runs threshold (7 runs max -> pause to re-analyze or auto-switch market)
-        if (consecutiveRuns >= maxRunsBeforeCheck) {
-            setConsecutiveRuns(0);
-            if (autoSwitchMarkets && bestMarketCandidate !== selectedSymbol) {
-                setSelectedSymbol(bestMarketCandidate);
-                setWaitingForAppear(true);
-                setConfirmationTicksRemaining(3);
-                return;
-            }
-        }
+        setBotStateSync('TRADING');
 
-        const currLastDigit = currentMarket.lastDigit;
+        let waitingForCandidate = true;
+        let ticksRemaining = 3;
+        let lastSeenDigit = -1;
 
-        // 1. RECOVERY MODE: Over / Under Execution
-        if (isInRecovery) {
-            const isUnderFavored = ouAnalysis.bias === 'UNDER';
-            const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
-            // Over prediction 2 or 3 / Under prediction 8 or 6
-            const prediction = isUnderFavored ? 6 : 3;
-
-            // Wait for entry trigger: highest entry digit in chosen direction to appear
-            const triggerDigit = isUnderFavored ? ouAnalysis.highestUnderEntryDigit : ouAnalysis.highestOverEntryDigit;
-
-            if (currLastDigit === triggerDigit && !executionLockRef.current) {
-                void executeTradeOrder(selectedSymbol, contractType, prediction, currentStake, true);
-            }
-            return;
-        }
-
-        // 2. PRIMARY STRATEGY: Differs Strategy
-        const targetDiff = differTargetDigit ?? autoDifferCandidate;
-
-        if (waitingForAppear) {
-            // Waiting for candidate digit to appear
-            if (currLastDigit === targetDiff) {
-                setWaitingForAppear(false);
-                setConfirmationTicksRemaining(3); // Start 3-tick verification
-            }
-        } else if (confirmationTicksRemaining > 0) {
-            // In 3-tick confirmation window
-            if (currLastDigit === targetDiff) {
-                // If it increases / appears again during the 3 ticks -> Pause & reset
-                setWaitingForAppear(true);
-                setConfirmationTicksRemaining(3);
-            } else {
-                const nextTicks = confirmationTicksRemaining - 1;
-                setConfirmationTicksRemaining(nextTicks);
-                if (nextTicks === 0 && !executionLockRef.current) {
-                    // 3 ticks elapsed without target digit appearing -> Trigger Differs trade!
-                    void executeTradeOrder(selectedSymbol, 'DIGITDIFF', targetDiff, currentStake, false);
-                    setWaitingForAppear(true); // Reset for next cycle
+        const loop = async () => {
+            while (!signal.aborted && botStateRef.current !== 'IDLE') {
+                if (botStateRef.current === 'PAUSED') {
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
                 }
+
+                // Check Take Profit & Stop Loss
+                if (sessionProfitRef.current >= tp) {
+                    setBotStateSync('IDLE');
+                    setMilestone({ isOpen: true, type: 'tp' });
+                    break;
+                }
+                if (sessionProfitRef.current <= -sl) {
+                    setBotStateSync('IDLE');
+                    setMilestone({ isOpen: true, type: 'sl' });
+                    break;
+                }
+
+                let targetSym = selectedSymbolRef.current;
+
+                // Check Max Runs threshold -> auto-switch market
+                if (autoSwitchMarkets && consecutiveRunsRef.current >= maxRunsBeforeCheck) {
+                    consecutiveRunsRef.current = 0;
+                    setConsecutiveRuns(0);
+                    if (bestMarketCandidate && bestMarketCandidate !== targetSym) {
+                        targetSym = bestMarketCandidate;
+                        selectedSymbolRef.current = targetSym;
+                        setSelectedSymbol(targetSym);
+                        waitingForCandidate = true;
+                        ticksRemaining = 3;
+                        setWaitingForAppear(true);
+                        setConfirmationTicksRemaining(3);
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+                }
+
+                const mData = marketsDataRef.current.get(targetSym);
+                if (!mData || mData.digits.length < 15) {
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
+                }
+
+                const digits = mData.digits;
+                const currLastDigit = mData.lastDigit;
+
+                // 1. RECOVERY MODE: Over / Under Execution
+                if (isInRecoveryRef.current) {
+                    const last50 = digits.slice(-50);
+                    const under05 = last50.filter(d => d <= 5).length;
+                    const over49 = last50.filter(d => d >= 4).length;
+                    const isUnderFavored = under05 >= over49;
+
+                    const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
+                    const prediction = isUnderFavored ? 6 : 3;
+
+                    // Trigger entry when last digit is in favored zone
+                    const isTrigger = isUnderFavored ? currLastDigit <= 5 : currLastDigit >= 4;
+
+                    if (isTrigger) {
+                        try {
+                            await executeTradeOrder(targetSym, contractType, prediction, currentStakeRef.current, true);
+                        } catch (e) {
+                            console.error('Poverty Hunter Recovery trade error:', e);
+                        }
+                        waitingForCandidate = true;
+                        ticksRemaining = 3;
+                        setWaitingForAppear(true);
+                        setConfirmationTicksRemaining(3);
+                        await new Promise(r => setTimeout(r, 600));
+                    } else {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    continue;
+                }
+
+                // 2. PRIMARY STRATEGY: Differs Strategy
+                const targetDiff = differTargetDigit ?? autoDifferCandidate;
+
+                // Wait for tick change
+                if (currLastDigit === lastSeenDigit) {
+                    await new Promise(r => setTimeout(r, 80));
+                    continue;
+                }
+                lastSeenDigit = currLastDigit;
+
+                if (waitingForCandidate) {
+                    if (currLastDigit === targetDiff) {
+                        waitingForCandidate = false;
+                        setWaitingForAppear(false);
+                        ticksRemaining = 3;
+                        setConfirmationTicksRemaining(3);
+                    }
+                } else if (ticksRemaining > 0) {
+                    if (currLastDigit === targetDiff) {
+                        // Target candidate appeared during verification -> Reset
+                        waitingForCandidate = true;
+                        setWaitingForAppear(true);
+                        ticksRemaining = 3;
+                        setConfirmationTicksRemaining(3);
+                    } else {
+                        ticksRemaining -= 1;
+                        setConfirmationTicksRemaining(ticksRemaining);
+
+                        if (ticksRemaining === 0) {
+                            // 3 clean ticks elapsed without candidate appearing -> Execute Differs Trade!
+                            try {
+                                await executeTradeOrder(targetSym, 'DIGITDIFF', targetDiff, currentStakeRef.current, false);
+                            } catch (e) {
+                                console.error('Poverty Hunter Differs trade error:', e);
+                            }
+                            waitingForCandidate = true;
+                            setWaitingForAppear(true);
+                            ticksRemaining = 3;
+                            setConfirmationTicksRemaining(3);
+                            await new Promise(r => setTimeout(r, 600));
+                        }
+                    }
+                } else {
+                    waitingForCandidate = true;
+                    setWaitingForAppear(true);
+                }
+
+                await new Promise(r => setTimeout(r, 80));
             }
-        } else {
-            setWaitingForAppear(true);
-        }
+        };
+
+        void loop();
     }, [
-        botState,
-        sessionProfit,
         takeProfit,
         stopLoss,
-        consecutiveRuns,
-        maxRunsBeforeCheck,
         autoSwitchMarkets,
+        maxRunsBeforeCheck,
         bestMarketCandidate,
-        selectedSymbol,
-        currentMarket.lastDigit,
-        isInRecovery,
-        ouAnalysis,
-        currentStake,
         differTargetDigit,
         autoDifferCandidate,
-        waitingForAppear,
-        confirmationTicksRemaining,
+        setBotStateSync,
         executeTradeOrder,
     ]);
 
     // ── Handlers ──
-    const handleStartBot = () => {
+    const handleStartBot = useCallback(() => {
         const baseStk = parseFloat(initialStake) || 0.5;
+        currentStakeRef.current = baseStk;
         setCurrentStake(baseStk);
+        consecutiveRunsRef.current = 0;
         setConsecutiveRuns(0);
+        sessionProfitRef.current = 0;
+        setSessionProfit(0);
+        setWinsCount(0);
+        setLossesCount(0);
+        isInRecoveryRef.current = false;
         setIsInRecovery(false);
         setAccumulatedLoss(0);
         setWaitingForAppear(true);
         setConfirmationTicksRemaining(3);
-        setBotState('TRADING');
-    };
+        setBotStateSync('TRADING');
+        void startAutoTradingLoop();
+    }, [initialStake, setBotStateSync, startAutoTradingLoop]);
 
-    const handleStopBot = () => {
-        setBotState('IDLE');
+    const handleStopBot = useCallback(() => {
+        setBotStateSync('IDLE');
+        autoAbortRef.current?.abort();
+        executionLockRef.current = false;
         setIsInRecovery(false);
-    };
+        isInRecoveryRef.current = false;
+    }, [setBotStateSync]);
 
-    const handlePauseBot = () => {
-        setBotState(botState === 'PAUSED' ? 'TRADING' : 'PAUSED');
-    };
+    const handlePauseBot = useCallback(() => {
+        if (botStateRef.current === 'PAUSED') {
+            setBotStateSync('TRADING');
+        } else if (botStateRef.current !== 'IDLE') {
+            setBotStateSync('PAUSED');
+        }
+    }, [setBotStateSync]);
 
     const handleClearStats = () => {
         setSessionProfit(0);
