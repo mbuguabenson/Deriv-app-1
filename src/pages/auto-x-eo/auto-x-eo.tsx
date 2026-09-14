@@ -107,9 +107,9 @@ const playSoundCue = (type: 'win' | 'loss' | 'signal') => {
     }
 };
 
-// ─── SVG Spline Line Chart Helper ──────────────────────────────────────────────
+// ─── SVG Spline Line Chart (Elite Pro Specification) ───────────────────────────
 
-const getBezierSplinePath = (points: { x: number; y: number }[]) => {
+const getBezierPath = (points: { x: number; y: number }[]) => {
     if (points.length < 2) return '';
     let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
     for (let i = 0; i < points.length - 1; i++) {
@@ -122,6 +122,133 @@ const getBezierSplinePath = (points: { x: number; y: number }[]) => {
         d += ` C ${cpX1.toFixed(1)},${cpY1.toFixed(1)} ${cpX2.toFixed(1)},${cpY2.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
     }
     return d;
+};
+
+const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
+    const slice = digits.slice(-CHART_TICKS);
+    if (slice.length < 2) {
+        return (
+            <div className='ep-chart-empty'>
+                <span className='ep-chart-empty__icon'>📊</span>
+                Waiting for tick stream...
+            </div>
+        );
+    }
+
+    const W = Math.max(760, slice.length * 15.5);
+    const H = 140;
+    const padTop = 26;
+    const padBot = 18;
+    const usableH = H - padTop - padBot;
+    const stepX = (W - 20) / (slice.length - 1);
+
+    const points = slice.map((d, i) => ({
+        x: 10 + i * stepX,
+        y: padTop + usableH - (d / 9) * usableH,
+        d,
+    }));
+
+    const pathD = getBezierPath(points);
+
+    return (
+        <div className='ep-chart-inner-scroll'>
+            <svg
+                width='100%'
+                height={H}
+                viewBox={`0 0 ${W} ${H}`}
+                preserveAspectRatio='none'
+                style={{ display: 'block', minWidth: `${W}px` }}
+            >
+                <defs>
+                    <linearGradient id='eoLineGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
+                        <stop offset='0%' stopColor='#00d2ff' stopOpacity='0.8' />
+                        <stop offset='50%' stopColor='#a855f7' stopOpacity='1' />
+                        <stop offset='100%' stopColor='#c084fc' stopOpacity='0.9' />
+                    </linearGradient>
+                    <filter id='eoGlow' x='-20%' y='-20%' width='140%' height='140%'>
+                        <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#9333ea' floodOpacity='0.6' />
+                    </filter>
+                </defs>
+
+                {/* Horizontal reference grid lines */}
+                {[0, 3, 6, 9].map(level => {
+                    const y = padTop + usableH - (level / 9) * usableH;
+                    return (
+                        <g key={level} className='ep-chart-grid-line'>
+                            <line
+                                x1='0'
+                                y1={y}
+                                x2={W}
+                                y2={y}
+                                stroke='rgba(255, 255, 255, 0.08)'
+                                strokeWidth='1'
+                                strokeDasharray={level === 3 || level === 6 ? '3 3' : undefined}
+                            />
+                            <text
+                                x='4'
+                                y={y - 3}
+                                fill='rgba(255, 255, 255, 0.35)'
+                                fontSize='9'
+                                fontFamily='monospace'
+                            >
+                                {level}
+                            </text>
+                        </g>
+                    );
+                })}
+
+                {/* Main Bezier Line path */}
+                {pathD && (
+                    <path
+                        d={pathD}
+                        fill='none'
+                        stroke='url(#eoLineGrad)'
+                        strokeWidth={2.4}
+                        strokeLinejoin='round'
+                        strokeLinecap='round'
+                        filter='url(#eoGlow)'
+                    />
+                )}
+
+                {/* Dots and condition-colored rectangular badges + bold digit labels */}
+                {points.map((p, i) => {
+                    const isLatest = i === points.length - 1;
+                    const isEven = p.d % 2 === 0;
+                    return (
+                        <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
+                            <rect
+                                x={p.x - 3}
+                                y={p.y - 3}
+                                width={6}
+                                height={6}
+                                rx={1.5}
+                                fill={
+                                    isLatest
+                                        ? '#ffffff'
+                                        : isEven
+                                          ? '#00d2ff'
+                                          : '#a855f7'
+                                }
+                                stroke={isLatest ? '#ffffff' : '#8b5cf6'}
+                                strokeWidth={1.5}
+                            />
+                            <text
+                                x={p.x}
+                                y={p.y - 8}
+                                textAnchor='middle'
+                                fill={isLatest ? '#ffffff' : isEven ? '#38bdf8' : '#c084fc'}
+                                fontSize={isLatest ? 12 : 11}
+                                fontWeight={800}
+                                fontFamily='system-ui, -apple-system, sans-serif'
+                            >
+                                {p.d}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
+    );
 };
 
 // ─── Digit Extraction Helper ───────────────────────────────────────────────────
@@ -925,29 +1052,7 @@ const AutoXEo: React.FC = observer(() => {
         };
     }, [botState]);
 
-    // ── 50 Ticks Wave Spline Line Chart Calculations ──
-    const chartPoints = useMemo(() => {
-        const last50 = currentMarket.digits.slice(-CHART_TICKS);
-        if (last50.length === 0) return [];
 
-        const width = 800;
-        const height = 150;
-        const paddingX = 20;
-        const paddingY = 25;
-        const innerWidth = width - paddingX * 2;
-        const innerHeight = height - paddingY * 2;
-
-        const stepX = last50.length > 1 ? innerWidth / (last50.length - 1) : 0;
-
-        return last50.map((digit, index) => {
-            const x = paddingX + index * stepX;
-            // Digits 0 to 9 inverted on Y axis (9 at top, 0 at bottom)
-            const y = paddingY + innerHeight - (digit / 9) * innerHeight;
-            return { x, y, digit, isEven: digit % 2 === 0 };
-        });
-    }, [currentMarket.digits]);
-
-    const chartPath = useMemo(() => getBezierSplinePath(chartPoints), [chartPoints]);
 
     return (
         <div className='auto-x-eo'>
@@ -1188,84 +1293,32 @@ const AutoXEo: React.FC = observer(() => {
 
                 {/* Right Workspace */}
                 <div className='auto-x-eo__workspace'>
-                    {/* Live 50 Ticks Wave Spline Line Chart */}
-                    <div className='auto-x-eo__chart-card'>
+                    {/* Live 50 Ticks Trajectory Spline Chart */}
+                    <div className='auto-x-eo__chart-card ep-chart-card'>
                         <div className='chart-header'>
                             <div className='chart-title-box'>
-                                <h2>Live Digit Wave Stream</h2>
+                                <h2>Live Digit Trajectory Stream</h2>
                                 <span className='pill-ticks'>Last 50 Ticks</span>
                             </div>
 
                             <div className='chart-legend'>
                                 <div className='legend-item'>
-                                    <span className='dot even' />
+                                    <span className='dot' style={{ background: '#00d2ff', boxShadow: '0 0 8px rgba(0, 210, 255, 0.6)' }} />
                                     <span>Even (0,2,4,6,8)</span>
                                 </div>
                                 <div className='legend-item'>
-                                    <span className='dot odd' />
+                                    <span className='dot' style={{ background: '#a855f7', boxShadow: '0 0 8px rgba(168, 85, 247, 0.6)' }} />
                                     <span>Odd (1,3,5,7,9)</span>
+                                </div>
+                                <div className='legend-item'>
+                                    <span className='dot' style={{ background: '#ffffff', boxShadow: '0 0 8px rgba(255, 255, 255, 0.8)' }} />
+                                    <span>Active Spot</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div className='chart-container'>
-                            {chartPoints.length > 1 ? (
-                                <svg viewBox='0 0 800 150' preserveAspectRatio='none'>
-                                    <defs>
-                                        <linearGradient id='lineGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
-                                            <stop offset='0%' stopColor='#00d2ff' />
-                                            <stop offset='50%' stopColor='#f5c542' />
-                                            <stop offset='100%' stopColor='#a855f7' />
-                                        </linearGradient>
-                                    </defs>
-
-                                    {/* Spline Path */}
-                                    <path
-                                        d={chartPath}
-                                        fill='none'
-                                        stroke='url(#lineGrad)'
-                                        strokeWidth='3.5'
-                                        strokeLinecap='round'
-                                    />
-
-                                    {/* Digit Nodes with numbers */}
-                                    {chartPoints.map((pt, idx) => {
-                                        const isLatest = idx === chartPoints.length - 1;
-                                        const nodeRadius = isLatest ? 9 : 6.5;
-
-                                        return (
-                                            <g key={idx} transform={`translate(${pt.x}, ${pt.y})`}>
-                                                {isLatest && (
-                                                    <circle
-                                                        r={16}
-                                                        fill='none'
-                                                        stroke={pt.isEven ? '#00d2ff' : '#a855f7'}
-                                                        strokeWidth='1.5'
-                                                        opacity='0.6'
-                                                    />
-                                                )}
-                                                <circle
-                                                    r={nodeRadius}
-                                                    fill={isLatest ? '#f5c542' : pt.isEven ? '#00d2ff' : '#a855f7'}
-                                                    stroke='#0f172a'
-                                                    strokeWidth={isLatest ? 2 : 1.5}
-                                                />
-                                                <text
-                                                    textAnchor='middle'
-                                                    dy={isLatest ? 3.5 : 2.5}
-                                                    fontSize={isLatest ? '9.5' : '7'}
-                                                    fontWeight='800'
-                                                    fill={isLatest ? '#0f172a' : '#ffffff'}
-                                                >
-                                                    {pt.digit}
-                                                </text>
-                                            </g>
-                                        );
-                                    })}
-                                </svg>
-                            ) : (
-                                <div className='chart-empty'>Waiting for tick stream...</div>
-                            )}
+                        <div className='ep-chart-wrap'>
+                            <DigitLineChart digits={currentMarket.digits} />
                         </div>
                     </div>
 

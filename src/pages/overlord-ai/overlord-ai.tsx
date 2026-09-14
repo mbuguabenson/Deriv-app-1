@@ -1,18 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
+import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
 import { safeSubscribe } from '@/utils/websocket-handler';
+import { isLoggedIn } from '@/utils/token-bridge';
 import {
-    Activity,
     BarChart2,
-    Cpu,
     Download,
     Flame,
     Layers,
-    Maximize2,
-    Minimize2,
     Play,
     Radio,
     RotateCcw,
@@ -20,8 +18,6 @@ import {
     Square,
     Volume2,
     VolumeX,
-    Wallet,
-    Zap,
 } from 'lucide-react';
 import './overlord-ai.scss';
 
@@ -35,6 +31,7 @@ export type OverlordStrategyMode =
 
 export type AutoRunState =
     | 'IDLE'
+    | 'SCANNING'
     | 'WAITING_SIGNAL'
     | 'WAITING_TRIGGER'
     | 'BURST_TRADING'
@@ -143,24 +140,151 @@ const playSoundCue = (type: 'win' | 'loss' | 'start' | 'burst_complete' | 'alert
     }
 };
 
-// Bezier Spline Path Generator for Smooth Wave Curve
-const getBezierSplinePath = (points: { x: number; y: number }[]): string => {
-    if (points.length === 0) return '';
-    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+// Generates smooth bezier curves for SVG line chart
+const getBezierPath = (points: { x: number; y: number }[]) => {
+    if (points.length < 2) return '';
     let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
     for (let i = 0; i < points.length - 1; i++) {
-        const p0 = i > 0 ? points[i - 1] : points[0];
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const p3 = i != points.length - 2 ? points[i + 2] : p2;
-        const cpX1 = p1.x + (p2.x - p0.x) / 6;
-        const cpY1 = p1.y + (p2.y - p0.y) / 6;
-        const cpX2 = p2.x - (p3.x - p1.x) / 6;
-        const cpY2 = p2.y - (p3.y - p1.y) / 6;
-        d += ` C ${cpX1.toFixed(1)},${cpY1.toFixed(1)} ${cpX2.toFixed(1)},${cpY2.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+        const p0 = points[i];
+        const p1 = points[i + 1];
+        const cpX1 = p0.x + (p1.x - p0.x) / 2;
+        const cpY1 = p0.y;
+        const cpX2 = p0.x + (p1.x - p0.x) / 2;
+        const cpY2 = p1.y;
+        d += ` C ${cpX1.toFixed(1)},${cpY1.toFixed(1)} ${cpX2.toFixed(1)},${cpY2.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
     }
     return d;
 };
+
+// ─── SVG Spline Line Chart (Elite Pro Specification) ───────────────────────────
+
+const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
+    const slice = digits.slice(-CHART_TICKS);
+    if (slice.length < 2) {
+        return (
+            <div className='ep-chart-empty'>
+                <span className='ep-chart-empty__icon'>📊</span>
+                Waiting for tick stream...
+            </div>
+        );
+    }
+
+    const W = Math.max(760, slice.length * 15.5);
+    const H = 140;
+    const padTop = 26;
+    const padBot = 18;
+    const usableH = H - padTop - padBot;
+    const stepX = (W - 20) / (slice.length - 1);
+
+    const points = slice.map((d, i) => ({
+        x: 10 + i * stepX,
+        y: padTop + usableH - (d / 9) * usableH,
+        d,
+    }));
+
+    const pathD = getBezierPath(points);
+
+    return (
+        <div className='ep-chart-inner-scroll'>
+            <svg
+                width='100%'
+                height={H}
+                viewBox={`0 0 ${W} ${H}`}
+                preserveAspectRatio='none'
+                style={{ display: 'block', minWidth: `${W}px` }}
+            >
+                <defs>
+                    <linearGradient id='epLineGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
+                        <stop offset='0%' stopColor='#8b5cf6' stopOpacity='0.7' />
+                        <stop offset='50%' stopColor='#a855f7' stopOpacity='1' />
+                        <stop offset='100%' stopColor='#c084fc' stopOpacity='0.9' />
+                    </linearGradient>
+                    <filter id='epGlow' x='-20%' y='-20%' width='140%' height='140%'>
+                        <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#9333ea' floodOpacity='0.6' />
+                    </filter>
+                </defs>
+
+                {/* Horizontal reference grid lines */}
+                {[0, 3, 6, 9].map(level => {
+                    const y = padTop + usableH - (level / 9) * usableH;
+                    return (
+                        <g key={level} className='ep-chart-grid-line'>
+                            <line
+                                x1='0'
+                                y1={y}
+                                x2={W}
+                                y2={y}
+                                stroke='rgba(255, 255, 255, 0.08)'
+                                strokeWidth='1'
+                                strokeDasharray={level === 3 || level === 6 ? '3 3' : undefined}
+                            />
+                            <text
+                                x='4'
+                                y={y - 3}
+                                fill='rgba(255, 255, 255, 0.35)'
+                                fontSize='9'
+                                fontFamily='monospace'
+                            >
+                                {level}
+                            </text>
+                        </g>
+                    );
+                })}
+
+                {/* Main Bezier Line path */}
+                {pathD && (
+                    <path
+                        d={pathD}
+                        fill='none'
+                        stroke='url(#epLineGrad)'
+                        strokeWidth={2.4}
+                        strokeLinejoin='round'
+                        strokeLinecap='round'
+                        filter='url(#epGlow)'
+                    />
+                )}
+
+                {/* Dots and purple bold digit labels */}
+                {points.map((p, i) => {
+                    const isLatest = i === points.length - 1;
+                    const isUnder = p.d < 5;
+                    return (
+                        <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
+                            <rect
+                                x={p.x - 3}
+                                y={p.y - 3}
+                                width={6}
+                                height={6}
+                                rx={1.5}
+                                fill={
+                                    isLatest
+                                        ? '#ffffff'
+                                        : isUnder
+                                          ? '#10b981'
+                                          : '#f59e0b'
+                                }
+                                stroke='#8b5cf6'
+                                strokeWidth={1.5}
+                            />
+                            <text
+                                x={p.x}
+                                y={p.y - 8}
+                                textAnchor='middle'
+                                fill={isLatest ? '#ffffff' : '#c084fc'}
+                                fontSize={isLatest ? 12 : 11}
+                                fontWeight={800}
+                                fontFamily='system-ui, -apple-system, sans-serif'
+                            >
+                                {p.d}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
+    );
+};
+
 
 // Digit Extraction Helper
 const extractLastDigit = (quote: number | string, pip = 2): number => {
@@ -178,12 +302,9 @@ const OverlordAi: React.FC = observer(() => {
     const store = useStore();
     const { client, transactions, summary_card, run_panel } = store || {};
     const currency = client?.currency || 'USD';
-    const rawBalance = Number(client?.balance || 0);
-
     // ── Market States ──
     const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
     const scanAllMarkets = true;
-    const [isWideViewOpen, setIsWideViewOpen] = useState<boolean>(false);
     const [marketSearchTerm, setMarketSearchTerm] = useState<string>('');
     const [autoPickBestMarket, setAutoPickBestMarket] = useState<boolean>(true);
     const [mobileActiveTab, setMobileActiveTab] = useState<
@@ -225,7 +346,6 @@ const OverlordAi: React.FC = observer(() => {
     const [currentBurstRun, setCurrentBurstRun] = useState<number>(0);
     const [burstCountTotal, setBurstCountTotal] = useState<number>(0);
     const [marketRotationRuns, setMarketRotationRuns] = useState<number>(4); // Change market after 4 runs
-    const [runsOnCurrentMarket, setRunsOnCurrentMarket] = useState<number>(0);
     const [isMarketRotationEnabled] = useState<boolean>(true);
 
     // ── Session State & Execution Engine ──
@@ -239,6 +359,25 @@ const OverlordAi: React.FC = observer(() => {
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
     const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
     const executionLockRef = useRef<boolean>(false);
+
+    // Automation Engine control refs
+    const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'tp' | 'sl' | null }>({
+        isOpen: false,
+        type: null,
+    });
+    const botStateRef = useRef<AutoRunState>('IDLE');
+    const autoAbortRef = useRef<AbortController | null>(null);
+    const sessionProfitRef = useRef<number>(0);
+    const currentStakeRef = useRef<number>(1.0);
+    const selectedSymbolRef = useRef<string>(selectedSymbol);
+    const burstRunRef = useRef<number>(0);
+    const burstCountRef = useRef<number>(0);
+    const runsOnMarketRef = useRef<number>(0);
+    const contractStreamAbortRef = useRef<Set<AbortController>>(new Set());
+
+    useEffect(() => {
+        selectedSymbolRef.current = selectedSymbol;
+    }, [selectedSymbol]);
 
     // Initial Manual Stake parse
     const initialBaseStake = useMemo(() => {
@@ -691,22 +830,29 @@ const OverlordAi: React.FC = observer(() => {
                 if (isWon) {
                     if (soundEnabled) playSoundCue('win');
                     setWinsCount(w => w + 1);
-                    setSessionProfit(p => Math.round((p + profitVal) * 100) / 100);
+                    const nextProfit = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextProfit;
+                    setSessionProfit(nextProfit);
                     setIsInRecovery(false);
                     setMartingaleStage(0);
+                    currentStakeRef.current = initialBaseStake;
                     setCurrentStake(initialBaseStake);
                 } else {
                     if (soundEnabled) playSoundCue('loss');
                     setLossesCount(l => l + 1);
-                    setSessionProfit(p => Math.round((p + profitVal) * 100) / 100);
+                    const nextProfit = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextProfit;
+                    setSessionProfit(nextProfit);
 
                     if (isMartingaleEnabled) {
                         setIsInRecovery(true);
                         setMartingaleStage((s: number) => s + 1);
                         const mult = parseFloat(martingaleMultiplier) || 2.5;
                         const nextStakeVal = Math.round(stakeAmount * mult * 100) / 100;
+                        currentStakeRef.current = nextStakeVal;
                         setCurrentStake(nextStakeVal);
                     } else {
+                        currentStakeRef.current = initialBaseStake;
                         setCurrentStake(initialBaseStake);
                     }
                 }
@@ -720,7 +866,9 @@ const OverlordAi: React.FC = observer(() => {
                     )
                 );
                 setLossesCount(l => l + 1);
-                setSessionProfit(p => Math.round((p - stakeAmount) * 100) / 100);
+                const nextProfit = Math.round((sessionProfitRef.current - stakeAmount) * 100) / 100;
+                sessionProfitRef.current = nextProfit;
+                setSessionProfit(nextProfit);
                 return false;
             } finally {
                 executionLockRef.current = false;
@@ -736,153 +884,274 @@ const OverlordAi: React.FC = observer(() => {
         ]
     );
 
-    // ── Continuous Burst Trading & Autopilot Orchestrator ──
-    useEffect(() => {
-        if (
-            botState === 'IDLE' ||
-            botState === 'PAUSED' ||
-            botState === 'TP_REACHED' ||
-            botState === 'SL_REACHED' ||
-            executionLockRef.current
-        ) {
+    // Synchronize bot state helper
+    const setBotStateSync = useCallback((newState: AutoRunState) => {
+        botStateRef.current = newState;
+        setBotState(newState);
+    }, []);
+
+    // Stop Auto Trading Engine
+    const stopAutoTrading = useCallback(() => {
+        setBotStateSync('IDLE');
+        autoAbortRef.current?.abort();
+        contractStreamAbortRef.current.forEach(c => c.abort());
+        contractStreamAbortRef.current.clear();
+        setCurrentBurstRun(0);
+        burstRunRef.current = 0;
+    }, [setBotStateSync]);
+
+    // Start Auto Trading Engine Loop
+    const startAutoTrading = useCallback(async () => {
+        const loggedIn = client?.is_logged_in ?? isLoggedIn();
+        if (!loggedIn) {
+            const oauthUrl = await generateOAuthURL();
+            if (oauthUrl) window.location.href = oauthUrl;
             return;
         }
 
-        // 1. Risk Guards (Take Profit & Stop Loss)
-        const targetTp = parseFloat(takeProfit) || 20.0;
-        const targetSl = parseFloat(stopLoss) || 50.0;
+        if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') return;
 
-        if (sessionProfit >= targetTp && targetTp > 0) {
-            setBotState('TP_REACHED');
-            if (soundEnabled) playSoundCue('burst_complete');
-            return;
+        if (botStateRef.current === 'IDLE') {
+            setSessionProfit(0);
+            sessionProfitRef.current = 0;
+            setWinsCount(0);
+            setLossesCount(0);
+            setCurrentBurstRun(0);
+            burstRunRef.current = 0;
+            setBurstCountTotal(0);
+            runsOnMarketRef.current = 0;
+            setIsInRecovery(false);
+            setMartingaleStage(0);
         }
 
-        if (sessionProfit <= -targetSl && targetSl > 0) {
-            setBotState('SL_REACHED');
-            if (soundEnabled) playSoundCue('loss');
-            return;
-        }
+        const tp = parseFloat(takeProfit) || 20.0;
+        const sl = parseFloat(stopLoss) || 50.0;
+        const baseStake = initialBaseStake;
+        currentStakeRef.current = baseStake;
+        setCurrentStake(baseStake);
 
-        // 2. Active Burst Execution
-        if (botState === 'BURST_TRADING') {
-            void (async () => {
-                const nextRun = currentBurstRun + 1;
-                setCurrentBurstRun(nextRun);
-                setRunsOnCurrentMarket(r => r + 1);
+        if (soundEnabled) playSoundCue('start');
 
-                const contractType = patternEngine.signal === 'OVER' ? 'DIGITOVER' : 'DIGITUNDER';
-                const barrier = patternEngine.targetBarrier;
-                const stakeToUse = isInRecovery ? currentStake : initialBaseStake;
+        setBotStateSync('SCANNING');
+        autoAbortRef.current = new AbortController();
+        const abortSignal = autoAbortRef.current.signal;
 
-                await executeTradeOrder(selectedSymbol, contractType, barrier, stakeToUse, nextRun);
+        const loop = async () => {
+            while (!abortSignal.aborted && botStateRef.current !== 'IDLE') {
+                if (botStateRef.current === 'PAUSED') {
+                    await new Promise(r => setTimeout(r, 600));
+                    continue;
+                }
 
-                // If completed full burst streak (e.g. 10 of 10)
-                if (nextRun >= burstRunSize) {
+                // Check Take Profit & Stop Loss
+                if (sessionProfitRef.current >= tp && tp > 0) {
+                    setBotStateSync('TP_REACHED');
                     if (soundEnabled) playSoundCue('burst_complete');
+                    setMilestone({ isOpen: true, type: 'tp' });
+                    break;
+                }
+                if (sessionProfitRef.current <= -sl && sl > 0) {
+                    setBotStateSync('SL_REACHED');
+                    if (soundEnabled) playSoundCue('loss');
+                    setMilestone({ isOpen: true, type: 'sl' });
+                    break;
+                }
+
+                // Determine active market
+                let targetSym = selectedSymbolRef.current;
+                if (autoPickBestMarket && rankedMarketCandidates.length > 0 && burstRunRef.current === 0) {
+                    const bestCand = rankedMarketCandidates[0];
+                    if (bestCand && bestCand.score >= 60 && bestCand.symbol !== targetSym) {
+                        targetSym = bestCand.symbol;
+                        selectedSymbolRef.current = targetSym;
+                        setSelectedSymbol(targetSym);
+                    }
+                }
+
+                const mData = marketsDataRef.current.get(targetSym);
+                if (!mData || mData.digits.length < 15) {
+                    if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
+                }
+
+                // Evaluate entry conditions
+                const signal = patternEngine.signal;
+                const barrier = patternEngine.targetBarrier;
+                const isTriggerReady = patternEngine.isTriggerReady;
+                const confidence = patternEngine.signalConfidence;
+
+                if (signal === 'NEUTRAL' || confidence < 55) {
+                    if (botStateRef.current !== 'WAITING_SIGNAL') {
+                        setBotStateSync('WAITING_SIGNAL');
+                    }
+                    await new Promise(r => setTimeout(r, 350));
+                    continue;
+                }
+
+                if (!isTriggerReady) {
+                    if (botStateRef.current !== 'WAITING_TRIGGER') {
+                        setBotStateSync('WAITING_TRIGGER');
+                    }
+                    await new Promise(r => setTimeout(r, 80));
+                    continue;
+                }
+
+                // Signal & Trigger confirmed -> Execute burst streak
+                setBotStateSync('BURST_TRADING');
+                const targetBurstSize = Math.max(1, burstRunSize);
+
+                while (
+                    !abortSignal.aborted &&
+                    botStateRef.current === 'BURST_TRADING' &&
+                    burstRunRef.current < targetBurstSize
+                ) {
+                    // Pre-trade TP / SL risk check
+                    if (sessionProfitRef.current >= tp && tp > 0) {
+                        setBotStateSync('TP_REACHED');
+                        if (soundEnabled) playSoundCue('burst_complete');
+                        setMilestone({ isOpen: true, type: 'tp' });
+                        break;
+                    }
+                    if (sessionProfitRef.current <= -sl && sl > 0) {
+                        setBotStateSync('SL_REACHED');
+                        if (soundEnabled) playSoundCue('loss');
+                        setMilestone({ isOpen: true, type: 'sl' });
+                        break;
+                    }
+
+                    const currentRunNumber = burstRunRef.current + 1;
+                    burstRunRef.current = currentRunNumber;
+                    setCurrentBurstRun(currentRunNumber);
+                    runsOnMarketRef.current += 1;
+
+                    const contractType = signal === 'OVER' ? 'DIGITOVER' : 'DIGITUNDER';
+                    const stakeToUse = currentStakeRef.current;
+
+                    try {
+                        await executeTradeOrder(
+                            targetSym,
+                            contractType,
+                            barrier,
+                            stakeToUse,
+                            currentRunNumber
+                        );
+
+                        if (burstRunRef.current < targetBurstSize && botStateRef.current === 'BURST_TRADING') {
+                            await new Promise(r => setTimeout(r, 450));
+                        }
+                    } catch (tradeError) {
+                        console.error('[Overlord AI] Error executing burst trade:', tradeError);
+                        await new Promise(r => setTimeout(r, 800));
+                    }
+                }
+
+                if (abortSignal.aborted || (botStateRef.current as string) === 'IDLE') break;
+
+                // Full burst streak completed
+                if (burstRunRef.current >= targetBurstSize) {
+                    if (soundEnabled) playSoundCue('burst_complete');
+                    burstRunRef.current = 0;
                     setCurrentBurstRun(0);
-                    setBurstCountTotal(b => b + 1);
+                    burstCountRef.current += 1;
+                    setBurstCountTotal(burstCountRef.current);
 
-                    // Pause briefly for multi-market AI re-analysis
-                    setBotState('BURST_PAUSED');
+                    setBotStateSync('BURST_PAUSED');
 
-                    // Market Rotation check:
+                    // Market rotation check
                     if (
                         isMarketRotationEnabled &&
-                        rankedMarketCandidates.length > 0 &&
-                        (runsOnCurrentMarket >= marketRotationRuns ||
-                            rankedMarketCandidates[0].symbol !== selectedSymbol)
+                        (runsOnMarketRef.current >= marketRotationRuns || autoPickBestMarket) &&
+                        rankedMarketCandidates.length > 0
                     ) {
-                        const nextBest =
-                            rankedMarketCandidates.find(c => c.symbol !== selectedSymbol) ||
+                        const nextCandidate =
+                            rankedMarketCandidates.find(c => c.symbol !== targetSym && c.score >= 60) ||
                             rankedMarketCandidates[0];
-                        if (nextBest && nextBest.score >= 70) {
-                            setSelectedSymbol(nextBest.symbol);
-                            setRunsOnCurrentMarket(0);
+                        if (nextCandidate && nextCandidate.symbol !== targetSym) {
+                            targetSym = nextCandidate.symbol;
+                            selectedSymbolRef.current = targetSym;
+                            setSelectedSymbol(targetSym);
+                            runsOnMarketRef.current = 0;
                         }
                     }
 
-                    setTimeout(() => {
-                        if (isMountedRef.current) {
-                            setBotState(curr => (curr === 'BURST_PAUSED' ? 'WAITING_SIGNAL' : curr));
-                        }
-                    }, 3000);
+                    await new Promise(r => setTimeout(r, 2200));
+                    if (!abortSignal.aborted && botStateRef.current === 'BURST_PAUSED') {
+                        setBotStateSync('WAITING_SIGNAL');
+                    }
                 }
-            })();
-            return;
-        }
-
-        // 3. Waiting for High-Confidence Entry Signal to Trigger New Burst
-        if (patternEngine.signal === 'NEUTRAL' || patternEngine.signalConfidence < 65) {
-            if (botState !== 'WAITING_SIGNAL' && botState !== 'BURST_PAUSED') {
-                setBotState('WAITING_SIGNAL');
             }
-            return;
-        }
+        };
 
-        // 4. Signal detected -> Check trigger confirmation
-        if (patternEngine.isTriggerReady) {
-            const contractType = patternEngine.signal === 'OVER' ? 'DIGITOVER' : 'DIGITUNDER';
-            const barrier = patternEngine.targetBarrier;
-            const stakeToUse = isInRecovery ? currentStake : initialBaseStake;
-
-            setBotState('BURST_TRADING');
-            setCurrentBurstRun(1);
-            setRunsOnCurrentMarket(r => r + 1);
-
-            void executeTradeOrder(selectedSymbol, contractType, barrier, stakeToUse, 1);
-        } else {
-            if (botState !== 'WAITING_TRIGGER') {
-                setBotState('WAITING_TRIGGER');
-            }
-        }
+        void loop();
     }, [
-        botState,
-        currentBurstRun,
-        burstRunSize,
-        sessionProfit,
+        client?.is_logged_in,
         takeProfit,
         stopLoss,
-        patternEngine,
-        isInRecovery,
-        currentStake,
         initialBaseStake,
-        selectedSymbol,
-        executeTradeOrder,
         soundEnabled,
-        isMarketRotationEnabled,
-        runsOnCurrentMarket,
-        marketRotationRuns,
+        setBotStateSync,
+        autoPickBestMarket,
         rankedMarketCandidates,
+        patternEngine,
+        burstRunSize,
+        executeTradeOrder,
+        isMarketRotationEnabled,
+        marketRotationRuns,
     ]);
 
-    // ── 50-Digit Bezier Wave Spline Line Chart ──
-    const chartData = useMemo(() => {
-        const last50 = currentMarket.digits.slice(-CHART_TICKS);
-        const count = last50.length;
-        if (count < 2) return { path: '', points: [], currentPoint: null, areaPath: '' };
+    // TopBar controller status broadcast
+    useEffect(() => {
+        window.dispatchEvent(
+            new CustomEvent('PH_ENGINE_STATUS_UPDATE', {
+                detail: {
+                    tab: 'overlord_ai',
+                    isRunning: botState !== 'IDLE',
+                    state: botState,
+                    profit: sessionProfit,
+                },
+            })
+        );
+    }, [botState, sessionProfit]);
 
-        const width = 600;
-        const height = 180;
-        const padX = 24;
-        const padY = 20;
+    // TopBar controller action listeners
+    useEffect(() => {
+        const handleTrigger = (e: Event) => {
+            const customEvent = e as CustomEvent<{ tab: string; action: string }>;
+            if (customEvent.detail?.tab === 'overlord_ai') {
+                if (botStateRef.current === 'IDLE') {
+                    void startAutoTrading();
+                } else {
+                    stopAutoTrading();
+                }
+            }
+        };
 
-        const points = last50.map((digit, idx) => {
-            const x = padX + (idx / (CHART_TICKS - 1)) * (width - padX * 2);
-            // Inverted Y: Digit 9 at top, Digit 0 at bottom
-            const y = height - padY - (digit / 9) * (height - padY * 2);
-            return { x, y, digit, idx };
-        });
+        const handleGlobalStop = () => {
+            if (botStateRef.current !== 'IDLE') {
+                stopAutoTrading();
+            }
+        };
 
-        const path = getBezierSplinePath(points);
-        const currentPoint = points[points.length - 1];
-        const areaPath =
-            path && points.length > 1
-                ? `${path} L ${currentPoint.x.toFixed(1)},175 L ${points[0].x.toFixed(1)},175 Z`
-                : '';
+        window.addEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
+        globalObserver.register('bot.manual_stop', handleGlobalStop);
 
-        return { path, points, currentPoint, areaPath };
-    }, [currentMarket.digits]);
+        return () => {
+            window.removeEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
+            globalObserver.unregister('bot.manual_stop', handleGlobalStop);
+        };
+    }, [startAutoTrading, stopAutoTrading]);
+
+    // Unmount cleanup
+    useEffect(() => {
+        const abortControllers = contractStreamAbortRef.current;
+        return () => {
+            botStateRef.current = 'IDLE';
+            autoAbortRef.current?.abort();
+            abortControllers.forEach(c => c.abort());
+            abortControllers.clear();
+        };
+    }, []);
 
     // Filtered Market List for Search
     const filteredMarkets = useMemo(() => {
@@ -894,26 +1163,20 @@ const OverlordAi: React.FC = observer(() => {
     }, [marketSearchTerm]);
 
     // Controls Action Handlers
-    const handleStartTrading = () => {
-        if (soundEnabled) playSoundCue('start');
-        setBotState('WAITING_SIGNAL');
-    };
-
-    const handleStopTrading = () => {
-        setBotState('IDLE');
-        setCurrentBurstRun(0);
-    };
-
     const handleResetStats = () => {
         setWinsCount(0);
         setLossesCount(0);
         setSessionProfit(0);
+        sessionProfitRef.current = 0;
         setTradeLog([]);
         setCurrentBurstRun(0);
+        burstRunRef.current = 0;
         setBurstCountTotal(0);
+        burstCountRef.current = 0;
         setMartingaleStage(0);
         setIsInRecovery(false);
         setCurrentStake(initialBaseStake);
+        currentStakeRef.current = initialBaseStake;
     };
 
     // Quick Stake Setters
@@ -937,7 +1200,8 @@ const OverlordAi: React.FC = observer(() => {
                             <button
                                 type='button'
                                 className='btn-control btn-autotrade-start'
-                                onClick={handleStartTrading}
+                                data-testid='overlord_ai_toggle'
+                                onClick={() => void startAutoTrading()}
                             >
                                 <Play size={16} /> START AI TRADER
                             </button>
@@ -945,7 +1209,8 @@ const OverlordAi: React.FC = observer(() => {
                             <button
                                 type='button'
                                 className='btn-control btn-autotrade-stop'
-                                onClick={handleStopTrading}
+                                data-testid='overlord_ai_toggle'
+                                onClick={stopAutoTrading}
                             >
                                 <Square size={16} /> STOP TRADING
                             </button>
@@ -1252,57 +1517,16 @@ const OverlordAi: React.FC = observer(() => {
                         </div>
                     </div>
 
-                    {/* 50-Digit Bezier Wave Spline Chart */}
-                    <div className='digit-chart-container'>
-                        <div className='chart-header-row'>
-                            <span className='split-title'>
-                                <Activity size={14} /> LIVE DIGIT TRAJECTORY (LAST 50 TICKS)
+                    {/* ── 50-Ticks Spline Line Chart (Elite Pro Specification) ── */}
+                    <div className='ep-glass ep-chart-card'>
+                        <div className='ep-chart-card__header'>
+                            <span className='title'>
+                                📊 50-Ticks Digit Trend Line Chart — {currentMarket.label}
                             </span>
-                            <div className='chart-legend'>
-                                <div className='legend-item'>
-                                    <span className='dot dot-under' /> UNDER 0–4
-                                </div>
-                                <div className='legend-item'>
-                                    <span className='dot dot-over' /> OVER 5–9
-                                </div>
-                            </div>
+                            <span className='subtitle'>Real-Time Spline with Digit Markers (0–9)</span>
                         </div>
-
-                        <div className='svg-chart-wrapper'>
-                            <svg viewBox='0 0 600 180' preserveAspectRatio='none'>
-                                <defs>
-                                    <linearGradient
-                                        id='splineAreaGrad'
-                                        x1='0'
-                                        y1='0'
-                                        x2='0'
-                                        y2='1'
-                                    >
-                                        <stop offset='0%' stopColor='#00f5ff' stopOpacity='0.25' />
-                                        <stop offset='100%' stopColor='#00f5ff' stopOpacity='0.0' />
-                                    </linearGradient>
-                                </defs>
-                                {chartData.areaPath && (
-                                    <path d={chartData.areaPath} fill='url(#splineAreaGrad)' />
-                                )}
-                                {chartData.path && (
-                                    <path
-                                        d={chartData.path}
-                                        fill='none'
-                                        stroke='#00f5ff'
-                                        strokeWidth='2.5'
-                                    />
-                                )}
-                                {chartData.points.map(pt => (
-                                    <circle
-                                        key={pt.idx}
-                                        cx={pt.x}
-                                        cy={pt.y}
-                                        r={pt.digit === currentMarket.lastDigit ? 4.5 : 2.5}
-                                        fill={pt.digit <= 4 ? '#00e676' : '#ffb700'}
-                                    />
-                                ))}
-                            </svg>
+                        <div className='ep-chart-wrap'>
+                            <DigitLineChart digits={currentMarket.digits} />
                         </div>
                     </div>
 
@@ -1478,6 +1702,18 @@ const OverlordAi: React.FC = observer(() => {
                             <span className='m-val val-loss'>{lossesCount}</span>
                         </div>
                         <div className='metric-mini-card'>
+                            <span className='m-label'>WIN RATE</span>
+                            <span className='m-val' style={{ color: '#f5c542' }}>
+                                {winRate}%
+                            </span>
+                        </div>
+                        <div className='metric-mini-card'>
+                            <span className='m-label'>CURRENT STAKE</span>
+                            <span className='m-val' style={{ color: isInRecovery ? '#ff8c42' : '#38bdf8' }}>
+                                ${currentStake.toFixed(2)}
+                            </span>
+                        </div>
+                        <div className='metric-mini-card'>
                             <span className='m-label'>BURSTS</span>
                             <span className='m-val' style={{ color: '#00f5ff' }}>
                                 {burstCountTotal}
@@ -1491,31 +1727,41 @@ const OverlordAi: React.FC = observer(() => {
                             <span className='split-title'>
                                 <Layers size={14} /> LIVE EXECUTION LOGS
                             </span>
-                            <button
-                                className='chip'
-                                onClick={() => {
-                                    const csvContent =
-                                        'data:text/csv;charset=utf-8,' +
-                                        ['Time,Market,Type,Barrier,Stake,Result,Profit,ExitDigit']
-                                            .concat(
-                                                tradeLog.map(
-                                                    t =>
-                                                        `${new Date(t.timestamp).toLocaleTimeString()},${t.symbol},${t.contractType},${t.barrier},${t.stake},${t.result},${t.profit},${t.exitDigit || ''}`
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                    className='chip'
+                                    onClick={handleResetStats}
+                                    title='Reset session statistics and trade log'
+                                    style={{ cursor: 'pointer', background: 'rgba(255, 255, 255, 0.08)' }}
+                                >
+                                    <RotateCcw size={11} /> RESET
+                                </button>
+                                <button
+                                    className='chip'
+                                    onClick={() => {
+                                        const csvContent =
+                                            'data:text/csv;charset=utf-8,' +
+                                            ['Time,Market,Type,Barrier,Stake,Result,Profit,ExitDigit']
+                                                .concat(
+                                                    tradeLog.map(
+                                                        t =>
+                                                            `${new Date(t.timestamp).toLocaleTimeString()},${t.symbol},${t.contractType},${t.barrier},${t.stake},${t.result},${t.profit},${t.exitDigit || ''}`
+                                                    )
                                                 )
-                                            )
-                                            .join('\n');
-                                    const encodedUri = encodeURI(csvContent);
-                                    const link = document.createElement('a');
-                                    link.setAttribute('href', encodedUri);
-                                    link.setAttribute('download', `overlord_trades_${Date.now()}.csv`);
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                }}
-                                style={{ cursor: 'pointer', background: 'rgba(255, 255, 255, 0.08)' }}
-                            >
-                                <Download size={11} /> CSV
-                            </button>
+                                                .join('\n');
+                                        const encodedUri = encodeURI(csvContent);
+                                        const link = document.createElement('a');
+                                        link.setAttribute('href', encodedUri);
+                                        link.setAttribute('download', `overlord_trades_${Date.now()}.csv`);
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                    }}
+                                    style={{ cursor: 'pointer', background: 'rgba(255, 255, 255, 0.08)' }}
+                                >
+                                    <Download size={11} /> CSV
+                                </button>
+                            </div>
                         </div>
 
                         <div className='live-trade-log-container'>
@@ -1596,6 +1842,15 @@ const OverlordAi: React.FC = observer(() => {
                     </div>
                 </aside>
             </div>
+
+            <TradingMilestoneModal
+                isOpen={milestone.isOpen}
+                type={milestone.type}
+                amount={sessionProfit}
+                currency={currency}
+                botName='Overlord AI'
+                onClose={() => setMilestone({ isOpen: false, type: null })}
+            />
         </div>
     );
 });

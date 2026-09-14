@@ -700,112 +700,49 @@
             }
         }
 
-        // SVG Chart Container
-        .ph-svg-chart-container {
-            width: 100%;
-            height: 200px;
+        // Live Digit Trajectory Spline Chart (Elite Pro Style)
+        .ep-chart-wrap {
             position: relative;
-            background: radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.95), rgba(8, 12, 22, 0.98));
-            border-radius: 16px;
-            border: 1px solid rgba(245, 197, 66, 0.18);
-            padding: 0.8rem 1rem;
-            box-sizing: border-box;
+            width: 100%;
+            background: rgba(3, 7, 18, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 12px 10px;
             overflow-x: auto;
-            overflow-y: hidden;
-            box-shadow: inset 0 2px 16px rgba(0, 0, 0, 0.6);
 
-            svg {
-                width: 100%;
-                min-width: 740px;
-                height: 100%;
-                overflow: visible;
-                display: block;
+            &::-webkit-scrollbar {
+                height: 4px;
+            }
+            &::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 99px;
             }
 
-            .ph-chart-grid-line {
-                stroke: rgba(255, 255, 255, 0.08);
-                stroke-dasharray: 4 4;
+            .ep-chart-inner-scroll {
+                min-width: 720px;
             }
 
-            .ph-chart-split-line {
-                stroke: rgba(245, 197, 66, 0.35);
-                stroke-dasharray: 6 6;
-                stroke-width: 1.5;
+            .ep-chart-empty {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                min-height: 120px;
+                color: #64748b;
+                font-size: 0.85rem;
             }
 
-            .ph-chart-curve {
-                fill: none;
-                stroke: url(#ph-chart-grad);
-                stroke-width: 3.2;
-                stroke-linecap: round;
-                stroke-linejoin: round;
-                filter: drop-shadow(0 3px 12px rgba(245, 197, 66, 0.6));
-            }
+            .ep-chart-point {
+                transition: transform 0.2s;
 
-            .ph-chart-point {
-                transition: all 0.2s ease;
-                cursor: pointer;
-
-                &:hover {
-                    r: 6.5;
-                    filter: drop-shadow(0 0 10px #fff);
+                &--latest {
+                    rect {
+                        filter: drop-shadow(0 0 6px #ffffff);
+                    }
+                    text {
+                        filter: drop-shadow(0 0 6px #38bdf8);
+                    }
                 }
-
-                &--under {
-                    fill: #10b981;
-                    stroke: #080c16;
-                    stroke-width: 1.5;
-                }
-
-                &--over {
-                    fill: #60a5fa;
-                    stroke: #080c16;
-                    stroke-width: 1.5;
-                }
-
-                &--active {
-                    fill: #f5c542;
-                    stroke: #fff;
-                    stroke-width: 2.5;
-                    filter: drop-shadow(0 0 14px #f5c542);
-                }
-            }
-
-            .ph-chart-digit-text {
-                font-size: 11px;
-                font-weight: 900;
-                font-family: 'JetBrains Mono', 'Fira Code', monospace;
-                text-anchor: middle;
-                user-select: none;
-                pointer-events: none;
-                filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9));
-
-                &--under {
-                    fill: #10b981;
-                }
-
-                &--over {
-                    fill: #60a5fa;
-                }
-
-                &--active {
-                    fill: #f5c542;
-                    font-size: 13px;
-                    filter: drop-shadow(0 0 8px rgba(245, 197, 66, 0.9));
-                }
-            }
-
-            .ph-pulse-ring {
-                animation: chartHalo 1.8s infinite ease-out;
-                transform-origin: center;
-            }
-
-            .ph-chart-label {
-                font-size: 10px;
-                fill: #64748b;
-                font-weight: 800;
-                text-anchor: middle;
-                font-family: monospace;
             }
         }
     }

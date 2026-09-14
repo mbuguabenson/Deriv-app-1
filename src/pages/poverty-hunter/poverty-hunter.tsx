@@ -53,9 +53,9 @@ const MAX_TICKS_STORED = 100;
 const CHART_TICKS = 50;
 const EXCLUDED_DIGITS = [0, 1, 8, 9];
 
-// ─── SVG Spline Line Chart Helper ──────────────────────────────────────────────
+// ─── SVG Spline Line Chart (Elite Pro Specification) ───────────────────────────
 
-const getBezierSplinePath = (points: { x: number; y: number }[]) => {
+const getBezierPath = (points: { x: number; y: number }[]) => {
     if (points.length < 2) return '';
     let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
     for (let i = 0; i < points.length - 1; i++) {
@@ -68,6 +68,133 @@ const getBezierSplinePath = (points: { x: number; y: number }[]) => {
         d += ` C ${cpX1.toFixed(1)},${cpY1.toFixed(1)} ${cpX2.toFixed(1)},${cpY2.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
     }
     return d;
+};
+
+const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
+    const slice = digits.slice(-CHART_TICKS);
+    if (slice.length < 2) {
+        return (
+            <div className='ep-chart-empty'>
+                <span className='ep-chart-empty__icon'>📊</span>
+                Waiting for tick stream...
+            </div>
+        );
+    }
+
+    const W = Math.max(760, slice.length * 15.5);
+    const H = 140;
+    const padTop = 26;
+    const padBot = 18;
+    const usableH = H - padTop - padBot;
+    const stepX = (W - 20) / (slice.length - 1);
+
+    const points = slice.map((d, i) => ({
+        x: 10 + i * stepX,
+        y: padTop + usableH - (d / 9) * usableH,
+        d,
+    }));
+
+    const pathD = getBezierPath(points);
+
+    return (
+        <div className='ep-chart-inner-scroll'>
+            <svg
+                width='100%'
+                height={H}
+                viewBox={`0 0 ${W} ${H}`}
+                preserveAspectRatio='none'
+                style={{ display: 'block', minWidth: `${W}px` }}
+            >
+                <defs>
+                    <linearGradient id='phLineGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
+                        <stop offset='0%' stopColor='#8b5cf6' stopOpacity='0.7' />
+                        <stop offset='50%' stopColor='#a855f7' stopOpacity='1' />
+                        <stop offset='100%' stopColor='#c084fc' stopOpacity='0.9' />
+                    </linearGradient>
+                    <filter id='phGlow' x='-20%' y='-20%' width='140%' height='140%'>
+                        <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#9333ea' floodOpacity='0.6' />
+                    </filter>
+                </defs>
+
+                {/* Horizontal reference grid lines */}
+                {[0, 3, 6, 9].map(level => {
+                    const y = padTop + usableH - (level / 9) * usableH;
+                    return (
+                        <g key={level} className='ep-chart-grid-line'>
+                            <line
+                                x1='0'
+                                y1={y}
+                                x2={W}
+                                y2={y}
+                                stroke='rgba(255, 255, 255, 0.08)'
+                                strokeWidth='1'
+                                strokeDasharray={level === 3 || level === 6 ? '3 3' : undefined}
+                            />
+                            <text
+                                x='4'
+                                y={y - 3}
+                                fill='rgba(255, 255, 255, 0.35)'
+                                fontSize='9'
+                                fontFamily='monospace'
+                            >
+                                {level}
+                            </text>
+                        </g>
+                    );
+                })}
+
+                {/* Main Bezier Line path */}
+                {pathD && (
+                    <path
+                        d={pathD}
+                        fill='none'
+                        stroke='url(#phLineGrad)'
+                        strokeWidth={2.4}
+                        strokeLinejoin='round'
+                        strokeLinecap='round'
+                        filter='url(#phGlow)'
+                    />
+                )}
+
+                {/* Dots and purple bold digit labels */}
+                {points.map((p, i) => {
+                    const isLatest = i === points.length - 1;
+                    const isUnder = p.d < 5;
+                    return (
+                        <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
+                            <rect
+                                x={p.x - 3}
+                                y={p.y - 3}
+                                width={6}
+                                height={6}
+                                rx={1.5}
+                                fill={
+                                    isLatest
+                                        ? '#ffffff'
+                                        : isUnder
+                                          ? '#10b981'
+                                          : '#f59e0b'
+                                }
+                                stroke='#8b5cf6'
+                                strokeWidth={1.5}
+                            />
+                            <text
+                                x={p.x}
+                                y={p.y - 8}
+                                textAnchor='middle'
+                                fill={isLatest ? '#ffffff' : '#c084fc'}
+                                fontSize={isLatest ? 12 : 11}
+                                fontWeight={800}
+                                fontFamily='system-ui, -apple-system, sans-serif'
+                            >
+                                {p.d}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
+    );
 };
 
 // ─── Digit Extraction Helper ───────────────────────────────────────────────────
@@ -801,29 +928,6 @@ const PovertyHunter: React.FC = observer(() => {
         };
     }, [botState]);
 
-    // ── SVG Line Chart Points Calculation (50 Last Digits) ──
-    const { chartPoints, splinePath, chartWidth } = useMemo(() => {
-        const slice = currentMarket.digits.slice(-CHART_TICKS);
-        if (slice.length < 2) return { chartPoints: [], splinePath: '', chartWidth: 800 };
-
-        const width = Math.max(780, slice.length * 16);
-        const height = 175;
-        const padTop = 28;
-        const padBot = 22;
-        const usableH = height - padTop - padBot;
-        const stepX = (width - 44) / Math.max(1, slice.length - 1);
-
-        const pts = slice.map((digit, idx) => {
-            const x = 22 + idx * stepX;
-            // Inverted Y: 9 is highest (top/padTop), 0 is lowest (padTop + usableH)
-            const y = padTop + usableH - (digit / 9) * usableH;
-            return { x, y, digit, idx };
-        });
-
-        const spline = getBezierSplinePath(pts);
-        return { chartPoints: pts, splinePath: spline, chartWidth: width };
-    }, [currentMarket.digits]);
-
     const totalTrades = winsCount + lossesCount;
     const winRate = totalTrades > 0 ? ((winsCount / totalTrades) * 100).toFixed(1) : '0.0';
 
@@ -1087,107 +1191,9 @@ const PovertyHunter: React.FC = observer(() => {
                             </div>
                         </div>
 
-                        {/* SVG Spline Chart */}
-                        <div className='ph-svg-chart-container'>
-                            {chartPoints.length < 2 ? (
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        height: '100%',
-                                        color: '#94a3b8',
-                                    }}
-                                >
-                                    Streaming real-time ticks...
-                                </div>
-                            ) : (
-                                <svg viewBox={`0 0 ${chartWidth} 175`} preserveAspectRatio='none'>
-                                    <defs>
-                                        <linearGradient id='ph-chart-grad' x1='0%' y1='0%' x2='100%' y2='0%'>
-                                            <stop offset='0%' stopColor='#f5c542' />
-                                            <stop offset='50%' stopColor='#ff8c42' />
-                                            <stop offset='100%' stopColor='#10b981' />
-                                        </linearGradient>
-                                    </defs>
-
-                                    {/* Horizontal Reference Grid Lines */}
-                                    {[0, 3, 6, 9].map(d => {
-                                        const y = 28 + (175 - 50) - (d / 9) * (175 - 50);
-                                        return (
-                                            <g key={d}>
-                                                <line
-                                                    x1='22'
-                                                    y1={y}
-                                                    x2={chartWidth - 22}
-                                                    y2={y}
-                                                    className='ph-chart-grid-line'
-                                                />
-                                                <text x='12' y={y + 3} className='ph-chart-label'>
-                                                    {d}
-                                                </text>
-                                            </g>
-                                        );
-                                    })}
-
-                                    {/* Middle Under/Over Partition Line (at 4.5) */}
-                                    {(() => {
-                                        const midY = 28 + (175 - 50) - (4.5 / 9) * (175 - 50);
-                                        return (
-                                            <line
-                                                x1='22'
-                                                y1={midY}
-                                                x2={chartWidth - 22}
-                                                y2={midY}
-                                                className='ph-chart-split-line'
-                                            />
-                                        );
-                                    })()}
-
-                                    {/* Smooth Spline Curve */}
-                                    <path d={splinePath} className='ph-chart-curve' />
-
-                                    {/* Data Points and Clear Digit Text Numbers */}
-                                    {chartPoints.map((pt, i) => {
-                                        const isLast = i === chartPoints.length - 1;
-                                        const isUnder = pt.digit < 5;
-                                        return (
-                                            <g key={i}>
-                                                {/* Animated Pulse Ring on Latest Active Tick */}
-                                                {isLast && (
-                                                    <circle
-                                                        cx={pt.x}
-                                                        cy={pt.y}
-                                                        className='ph-pulse-ring'
-                                                        fill='none'
-                                                        stroke='#f5c542'
-                                                        strokeWidth='2'
-                                                    />
-                                                )}
-
-                                                {/* Node Point */}
-                                                <circle
-                                                    cx={pt.x}
-                                                    cy={pt.y}
-                                                    r={isLast ? 6 : 3.5}
-                                                    className={`ph-chart-point ${isLast ? 'ph-chart-point--active' : isUnder ? 'ph-chart-point--under' : 'ph-chart-point--over'}`}
-                                                >
-                                                    <title>{`Tick #${i + 1} | Digit: ${pt.digit}`}</title>
-                                                </circle>
-
-                                                {/* Prominent Digit Text Label */}
-                                                <text
-                                                    x={pt.x}
-                                                    y={pt.y - 8}
-                                                    className={`ph-chart-digit-text ${isLast ? 'ph-chart-digit-text--active' : isUnder ? 'ph-chart-digit-text--under' : 'ph-chart-digit-text--over'}`}
-                                                >
-                                                    {pt.digit}
-                                                </text>
-                                            </g>
-                                        );
-                                    })}
-                                </svg>
-                            )}
+                        {/* Live Digit Trajectory Spline Chart */}
+                        <div className='ep-chart-wrap'>
+                            <DigitLineChart digits={currentMarket.digits} />
                         </div>
                     </div>
 

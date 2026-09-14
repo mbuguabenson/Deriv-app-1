@@ -83,6 +83,7 @@ export const TopBarTradeController: React.FC<TopBarTradeControllerProps> = ({ cu
                     market_hunter_pro: '.mhp-auto-btn, button[data-testid="market_hunter_start"]',
                     ai_trading_engine: '.ai-engine-run-btn, button[data-testid="ai_engine_start"]',
                     scanner: '.scanner-auto-btn, button[data-testid="scanner_start"]',
+                    overlord_ai: '.btn-autotrade-stop, button[data-testid="overlord_ai_toggle"]',
                 };
                 const sel = stopSelectors[normalizedTab];
                 if (sel) {
@@ -108,6 +109,7 @@ export const TopBarTradeController: React.FC<TopBarTradeControllerProps> = ({ cu
                     ai_trading_engine: '.entry-scanner-start, .ai-engine-run-btn, button[data-testid="ai_engine_start"]',
                     scanner: '.scanner-auto-btn, .scanner-run-btn, button[data-testid="scanner_start"]',
                     manual_trading: '.manual-trade-btn, .smart-trading-buy, button[data-testid="manual_trade_buy"]',
+                    overlord_ai: '.btn-autotrade-start, button[data-testid="overlord_ai_toggle"]',
                 };
                 const sel = startSelectors[normalizedTab];
                 if (sel) {
@@ -144,6 +146,14 @@ export const TopBarTradeController: React.FC<TopBarTradeControllerProps> = ({ cu
                     startLabel: 'START AUTO X E/O',
                     stopLabel: 'STOP AUTO X E/O',
                     icon: '🚀',
+                    canToggle: true,
+                };
+            case 'overlord_ai':
+                return {
+                    name: 'Overlord AI',
+                    startLabel: 'START OVERLORD AI',
+                    stopLabel: 'STOP OVERLORD AI',
+                    icon: '👑',
                     canToggle: true,
                 };
             case 'marketkiller':

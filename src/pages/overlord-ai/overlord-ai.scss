@@ -810,56 +810,81 @@
         }
     }
 
-    // 50-Digit Spline Line Chart
-    .digit-chart-container {
-        .chart-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
+    // ─── 50-Digit Bezier Wave Spline Line Chart (Elite Pro specification) ───
+    .ep-chart-card {
+        background: rgba(13, 20, 37, 0.75);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        padding: 18px 20px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
-            .chart-legend {
+        &__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+
+            .title {
+                font-size: 0.95rem;
+                font-weight: 800;
+                color: #ffffff;
                 display: flex;
                 align-items: center;
-                gap: 14px;
-                font-size: 11px;
+                gap: 8px;
+            }
 
-                .legend-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    color: #94a3b8;
-
-                    .dot {
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 50%;
-
-                        &.dot-under {
-                            background: #00e676;
-                            box-shadow: 0 0 8px #00e676;
-                        }
-
-                        &.dot-over {
-                            background: #ffb700;
-                            box-shadow: 0 0 8px #ffb700;
-                        }
-                    }
-                }
+            .subtitle {
+                font-size: 0.75rem;
+                color: #94a3b8;
             }
         }
 
-        .svg-chart-wrapper {
+        .ep-chart-wrap {
+            position: relative;
             width: 100%;
-            height: 180px;
-            background: rgba(9, 14, 28, 0.7);
-            border-radius: 12px;
+            background: rgba(3, 7, 18, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.05);
-            overflow: hidden;
+            border-radius: 14px;
+            padding: 12px 10px;
+            overflow-x: auto;
 
-            svg {
-                width: 100%;
-                height: 100%;
+            &::-webkit-scrollbar {
+                height: 4px;
+            }
+            &::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 99px;
+            }
+
+            .ep-chart-inner-scroll {
+                min-width: 720px;
+            }
+
+            .ep-chart-empty {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                min-height: 120px;
+                color: #64748b;
+                font-size: 0.85rem;
+            }
+
+            .ep-chart-point {
+                transition: transform 0.2s;
+
+                &--latest {
+                    rect {
+                        filter: drop-shadow(0 0 6px #ffffff);
+                    }
+                    text {
+                        filter: drop-shadow(0 0 6px #38bdf8);
+                    }
+                }
             }
         }
     }

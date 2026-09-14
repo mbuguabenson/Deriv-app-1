@@ -239,6 +239,7 @@ const ElitePro = observer(() => {
     const subscriptionsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
     const unmountedRef = useRef(false);
     const uiThrottleRef = useRef(0);
+    const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const selectedSymbolRef = useRef(MARKETS[0].symbol);
 
     // Component lifecycle
@@ -246,6 +247,10 @@ const ElitePro = observer(() => {
         unmountedRef.current = false;
         return () => {
             unmountedRef.current = true;
+            if (throttleTimerRef.current) {
+                clearTimeout(throttleTimerRef.current);
+                throttleTimerRef.current = null;
+            }
         };
     }, []);
 
@@ -471,7 +476,8 @@ const ElitePro = observer(() => {
     // ── Check entry signal based on exact user trading conditions ──
     const checkEntrySignal = useCallback(
         (
-            digits: number[]
+            digits: number[],
+            waitCycles = 0
         ): {
             direction: 'UNDER' | 'OVER';
             prediction: number;
@@ -479,57 +485,57 @@ const ElitePro = observer(() => {
             reason: string;
             status: 'WAITING' | 'TRIGGERED';
         } | null => {
-            if (digits.length < 30) return null;
+            if (digits.length < 25) return null;
             const a = computeAnalysis(digits);
             const currentLastDigit = digits[digits.length - 1];
 
-            // 1. UNDER 6 Conditions (Digits 0-5)
-            const underRatioMet = a.pctUnder05 >= 62; // ~31/50
-            const underIncreasingMet = a.underIncreasing;
-            const under50TicksMet = a.under05 >= 32;
-            const underRecentTicksMet = a.last15Under && a.last10Under && a.last7Under;
-
-            // ALL conditions must align perfectly
+            // 1. UNDER 6 Conditions (Digits 0-5 win)
+            // Dominant under bias: >= 54% under or >= 27 ticks in 0-5
+            const underRatioMet = a.under05 >= 27 || a.pctUnder05 >= 54;
+            const underDominance = a.under05 >= a.over49;
+            const underRecentTicksMet = a.last10UnderCount >= 6;
             const isUnderValid =
                 underRatioMet &&
-                underIncreasingMet &&
-                under50TicksMet &&
+                underDominance &&
                 underRecentTicksMet &&
                 !a.isUnderTrendFlipped &&
                 !a.recentTrendFlip;
 
             if (isUnderValid) {
+                const isExactTrigger = currentLastDigit === a.highestUnderDigit;
+                const isWinningZoneTrigger = currentLastDigit <= 5 && (a.pctUnder05 >= 56 || waitCycles >= 5);
+                const isTriggered = isExactTrigger || isWinningZoneTrigger;
                 return {
                     direction: 'UNDER',
                     prediction: 6,
                     triggerDigit: a.highestUnderDigit,
-                    reason: `Strict Under setup aligned (U0-5: ${a.under05}/50). Trigger: [${a.highestUnderDigit}]`,
-                    status: currentLastDigit === a.highestUnderDigit ? 'TRIGGERED' : 'WAITING',
+                    reason: `Under 6 setup aligned (U0-5: ${a.under05}/50, ${a.pctUnder05.toFixed(1)}%). Trigger: [${a.highestUnderDigit}]`,
+                    status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
             }
 
-            // 2. OVER 3 Conditions (Digits 4-9)
-            const overRatioMet = a.pctOver49 >= 62; // ~31/50
-            const overIncreasingMet = a.overIncreasing;
-            const over50TicksMet = a.over49 >= 32;
-            const overRecentTicksMet = a.last15Over && a.last10Over && a.last7Over;
-
-            // ALL conditions must align perfectly
+            // 2. OVER 3 Conditions (Digits 4-9 win)
+            // Dominant over bias: >= 54% over or >= 27 ticks in 4-9
+            const overRatioMet = a.over49 >= 27 || a.pctOver49 >= 54;
+            const overDominance = a.over49 >= a.under05;
+            const overRecentTicksMet = a.last10OverCount >= 6;
             const isOverValid =
                 overRatioMet &&
-                overIncreasingMet &&
-                over50TicksMet &&
+                overDominance &&
                 overRecentTicksMet &&
                 !a.isOverTrendFlipped &&
                 !a.recentTrendFlip;
 
             if (isOverValid) {
+                const isExactTrigger = currentLastDigit === a.highestOverDigit;
+                const isWinningZoneTrigger = currentLastDigit >= 4 && (a.pctOver49 >= 56 || waitCycles >= 5);
+                const isTriggered = isExactTrigger || isWinningZoneTrigger;
                 return {
                     direction: 'OVER',
                     prediction: 3,
                     triggerDigit: a.highestOverDigit,
-                    reason: `Strict Over setup aligned (O4-9: ${a.over49}/50). Trigger: [${a.highestOverDigit}]`,
-                    status: currentLastDigit === a.highestOverDigit ? 'TRIGGERED' : 'WAITING',
+                    reason: `Over 3 setup aligned (O4-9: ${a.over49}/50, ${a.pctOver49.toFixed(1)}%). Trigger: [${a.highestOverDigit}]`,
+                    status: isTriggered ? 'TRIGGERED' : 'WAITING',
                 };
             }
 
@@ -540,15 +546,36 @@ const ElitePro = observer(() => {
 
     // ── Get active market data ──
     const getActiveData = useCallback((): MarketDigitData | null => {
-        return marketsRef.current.get(selectedSymbol) || null;
-    }, [selectedSymbol]);
+        const data = marketsRef.current.get(selectedSymbol);
+        if (!data) return null;
+        return {
+            ...data,
+            digits: [...data.digits],
+        };
+    }, [selectedSymbol, renderTick]);
 
-    // ── Throttle UI re-renders ──
+    // ── Throttle UI re-renders with trailing edge so frames are never dropped ──
     const throttleRender = useCallback(() => {
         const now = Date.now();
-        if (now - uiThrottleRef.current < 80) return;
-        uiThrottleRef.current = now;
-        forceRender(n => n + 1);
+        const elapsed = now - uiThrottleRef.current;
+        if (elapsed >= 80) {
+            uiThrottleRef.current = now;
+            if (throttleTimerRef.current) {
+                clearTimeout(throttleTimerRef.current);
+                throttleTimerRef.current = null;
+            }
+            if (!unmountedRef.current) {
+                forceRender(n => (n + 1) % 1000000);
+            }
+        } else if (!throttleTimerRef.current) {
+            throttleTimerRef.current = setTimeout(() => {
+                throttleTimerRef.current = null;
+                uiThrottleRef.current = Date.now();
+                if (!unmountedRef.current) {
+                    forceRender(n => (n + 1) % 1000000);
+                }
+            }, 80 - elapsed);
+        }
     }, []);
 
     // ── Subscribe to real-time ticks for all / selected markets ──
@@ -557,6 +584,14 @@ const ElitePro = observer(() => {
     // Listen to account switch, WebSocket re-auth, and visibility change to refresh live streams
     useEffect(() => {
         const handleRefresh = () => {
+            subscriptionsRef.current.forEach(sub => {
+                try {
+                    sub.unsubscribe();
+                } catch {
+                    /* ignore */
+                }
+            });
+            subscriptionsRef.current.clear();
             setStreamRefreshKey(k => k + 1);
         };
 
@@ -594,7 +629,7 @@ const ElitePro = observer(() => {
             return;
         }
 
-        const symbolsToSubscribe = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbol];
+        const symbolsToSubscribe = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbolRef.current];
 
         symbolsToSubscribe.forEach(sym => {
             if (!marketsRef.current.has(sym)) {
@@ -613,6 +648,8 @@ const ElitePro = observer(() => {
 
         const startSubscription = async (sym: string) => {
             if (!api_base.api || unmountedRef.current) return;
+            // If already actively subscribed, skip re-subscribing to prevent rate limits and dropped streams
+            if (activeSubs.has(sym)) return;
 
             try {
                 const market = marketsRef.current.get(sym);
@@ -639,6 +676,8 @@ const ElitePro = observer(() => {
                     }
                 }
 
+                if (activeSubs.has(sym)) return;
+
                 // Always establish / renew live tick observable
                 const tickObservable = api_base.api.subscribe({ ticks: sym });
                 const sub = safeSubscribe(tickObservable, (data: Record<string, unknown>) => {
@@ -659,7 +698,6 @@ const ElitePro = observer(() => {
                     }
                 });
 
-                activeSubs.get(sym)?.unsubscribe();
                 activeSubs.set(sym, sub);
             } catch (err) {
                 console.error(`[ElitePro] Subscription error for ${sym}:`, err);
@@ -675,7 +713,7 @@ const ElitePro = observer(() => {
             for (const sym of symbolsToSubscribe) {
                 if (!isEffectActive || unmountedRef.current) break;
                 await startSubscription(sym);
-                await new Promise(r => setTimeout(r, 120)); // Gentle throttle to prevent Deriv WS rate limiting
+                await new Promise(r => setTimeout(r, 100)); // Gentle throttle to prevent Deriv WS rate limiting
             }
         };
 
@@ -696,19 +734,19 @@ const ElitePro = observer(() => {
             isEffectActive = false;
             if (retryTimeout) clearTimeout(retryTimeout);
         };
-    }, [selectedSymbol, scanAll, showElitePro, client?.loginid, isBotIdle, throttleRender, streamRefreshKey]);
+    }, [scanAll, showElitePro, client?.loginid, isBotIdle, throttleRender, streamRefreshKey]);
 
     // ── Active Market Data & Analysis ──
     const activeData = getActiveData();
     const analysis = useMemo(() => {
         if (!activeData || activeData.digits.length < 15) return null;
         return computeAnalysis(activeData.digits);
-    }, [activeData, computeAnalysis]);
+    }, [activeData, computeAnalysis, renderTick]);
 
     const activeSignal = useMemo(() => {
-        if (!activeData || activeData.digits.length < 30) return null;
+        if (!activeData || activeData.digits.length < 25) return null;
         return checkEntrySignal(activeData.digits);
-    }, [activeData, checkEntrySignal]);
+    }, [activeData, checkEntrySignal, renderTick]);
 
     // ── Multi-Market Comparative Overview ──
     const allMarketsData = useMemo(() => {
@@ -797,6 +835,49 @@ const ElitePro = observer(() => {
             setSelectedSymbol(bestMarket.symbol);
         }
     }, [autoInputBestMarket, bestMarket, selectedSymbol, autoState]);
+
+    // ── Real-time dynamic ranked markets helper for the continuous trading loop ──
+    const getLiveRankedMarkets = useCallback(() => {
+        const result: Array<{
+            symbol: string;
+            label: string;
+            currentPrice: string;
+            lastDigit: number;
+            bias: string;
+            strength: number;
+            hasSignal: boolean;
+            isTriggered: boolean;
+            signalDirection?: 'UNDER' | 'OVER';
+        }> = [];
+
+        marketsRef.current.forEach((data, sym) => {
+            if (data.digits.length < 15) return;
+            const a = computeAnalysis(data.digits);
+            const entrySignal = checkEntrySignal(data.digits);
+            const strength = Math.max(a.pctUnder05, a.pctOver49);
+            result.push({
+                symbol: sym,
+                label: data.label,
+                currentPrice: data.currentPrice,
+                lastDigit: data.lastDigit,
+                bias: a.bias,
+                strength,
+                hasSignal: !!entrySignal,
+                isTriggered: entrySignal?.status === 'TRIGGERED',
+                signalDirection: entrySignal?.direction,
+            });
+        });
+
+        result.sort((a, b) => {
+            if (a.isTriggered && !b.isTriggered) return -1;
+            if (!a.isTriggered && b.isTriggered) return 1;
+            if (a.hasSignal && !b.hasSignal) return -1;
+            if (!a.hasSignal && b.hasSignal) return 1;
+            return b.strength - a.strength;
+        });
+
+        return result;
+    }, [computeAnalysis, checkEntrySignal]);
 
     // ── Push trade updates to Transaction Drawer & Run Panel ──
     const pushContract = useCallback(
@@ -1071,9 +1152,11 @@ const ElitePro = observer(() => {
                     }
 
                     let targetSym = selectedSymbolRef.current;
-                    if (autoInputBestMarket && bestMarket && bestMarket.symbol) {
-                        targetSym = bestMarket.symbol;
-                        if (targetSym !== selectedSymbolRef.current) {
+                    if (autoInputBestMarket) {
+                        const liveRanked = getLiveRankedMarkets();
+                        const top = liveRanked[0];
+                        if (top && top.symbol && top.symbol !== selectedSymbolRef.current) {
+                            targetSym = top.symbol;
                             setSelectedSymbol(targetSym);
                             selectedSymbolRef.current = targetSym;
                         }
@@ -1085,17 +1168,18 @@ const ElitePro = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 600));
+                        await new Promise(r => setTimeout(r, 500));
                         continue;
                     }
 
-                    const entrySignal = checkEntrySignal(currentData.digits);
+                    const entrySignal = checkEntrySignal(currentData.digits, scanningCycles);
                     if (!entrySignal || entrySignal.status === 'WAITING') {
                         scanningCycles++;
 
-                        // Smart Auto-Switch if current market has no signal for a while and another market has a signal
-                        if (scanningCycles > 18 && autoSwitchMarkets) {
-                            const candidateWithSignal = allMarketsData.find(m => m.symbol !== targetSym && m.hasSignal);
+                        // Smart Auto-Switch if current market has no trigger for a while and another market has a trigger/signal
+                        if (scanningCycles > 8 && autoSwitchMarkets) {
+                            const liveRanked = getLiveRankedMarkets();
+                            const candidateWithSignal = liveRanked.find(m => m.symbol !== targetSym && m.hasSignal);
                             if (candidateWithSignal) {
                                 setSelectedSymbol(candidateWithSignal.symbol);
                                 selectedSymbolRef.current = candidateWithSignal.symbol;
@@ -1104,10 +1188,10 @@ const ElitePro = observer(() => {
                                     candidateWithSignal.label,
                                     'PENDING',
                                     0,
-                                    `Auto-switched to market with active ${candidateWithSignal.signalDirection} signal`
+                                    `Auto-switched to ${candidateWithSignal.label} (${candidateWithSignal.signalDirection || 'Setup'} active)`
                                 );
                                 scanningCycles = 0;
-                                await new Promise(r => setTimeout(r, 800));
+                                await new Promise(r => setTimeout(r, 500));
                                 continue;
                             }
                         }
@@ -1119,8 +1203,8 @@ const ElitePro = observer(() => {
                             }
                         } else {
                             const a = computeAnalysis(currentData.digits);
-                            const isUnderSetup = a.pctUnder05 >= 60 && a.under05 >= 30;
-                            const isOverSetup = a.pctOver49 >= 60 && a.over49 >= 30;
+                            const isUnderSetup = (a.pctUnder05 >= 54 || a.under05 >= 27) && a.under05 >= a.over49;
+                            const isOverSetup = (a.pctOver49 >= 54 || a.over49 >= 27) && a.over49 >= a.under05;
 
                             if (isUnderSetup || isOverSetup) {
                                 if (autoStateRef.current !== 'WAITING_TRIGGER') {
@@ -1135,8 +1219,8 @@ const ElitePro = observer(() => {
                             }
                         }
 
-                        // Poll faster when waiting for trigger to execute immediately
-                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 50 : 800;
+                        // Poll fast when waiting for trigger to execute tick immediately
+                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 60 : 500;
                         await new Promise(r => setTimeout(r, delay));
                         continue;
                     }
@@ -1186,12 +1270,27 @@ const ElitePro = observer(() => {
                             currentStakeRef.current = Number((currentStakeRef.current * mgMultiplier).toFixed(2));
                         }
 
+                        // Check Take Profit or Stop Loss immediately after trade settlement
+                        if (totalProfitRef.current >= tp) {
+                            addLogEntry('TARGET REACHED', 'Take Profit Target Hit 🎉', 'PENDING', 0);
+                            setAutoState('IDLE');
+                            setMilestone({ isOpen: true, type: 'tp' });
+                            break;
+                        }
+                        if (totalProfitRef.current <= -sl) {
+                            addLogEntry('STOP LOSS HIT', 'Stop Loss Limit Reached 🛡️', 'PENDING', 0);
+                            setAutoState('IDLE');
+                            setMilestone({ isOpen: true, type: 'sl' });
+                            break;
+                        }
+
                         const maxRuns = parseInt(maxRunsBeforeSwitch, 10) || 7;
                         if (tradeRuns >= maxRuns) {
                             tradeRuns = 0;
                             if (autoSwitchMarkets) {
-                                const nextBest = allMarketsData.find(
-                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 55)
+                                const liveRanked = getLiveRankedMarkets();
+                                const nextBest = liveRanked.find(
+                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 52)
                                 );
                                 if (nextBest) {
                                     setSelectedSymbol(nextBest.symbol);
@@ -1208,25 +1307,25 @@ const ElitePro = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                             addLogEntry(
-                                'RE-ANALYZING',
+                                'CONTINUING RUN',
                                 selectedSymbolRef.current,
                                 'PENDING',
                                 0,
-                                `Re-evaluating signals after ${maxRuns} runs...`
+                                `Completed ${maxRuns} runs cycle. Scanning next entry without halting...`
                             );
-                            await new Promise(r => setTimeout(r, 2500)); // Brief settling cooldown
+                            await new Promise(r => setTimeout(r, 1000));
                         } else {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 1500));
+                        await new Promise(r => setTimeout(r, 1000));
                     } catch (err) {
                         const msg = err instanceof Error ? err.message : String(err);
                         console.error('[ElitePro] Trade execution loop error:', msg);
                         addLogEntry('EXECUTION ERROR', currentData.label, 'LOSS', 0, msg);
                         setAutoState('SCANNING');
                         autoStateRef.current = 'SCANNING';
-                        await new Promise(r => setTimeout(r, 3000));
+                        await new Promise(r => setTimeout(r, 2500));
                     }
                 }
             };
@@ -1299,7 +1398,9 @@ const ElitePro = observer(() => {
         tickDuration,
         analysis?.bias,
         autoInputBestMarket,
-        bestMarket,
+        autoSwitchMarkets,
+        maxRunsBeforeSwitch,
+        getLiveRankedMarkets,
         checkEntrySignal,
         computeAnalysis,
         executeTrade,
@@ -1857,62 +1958,58 @@ const ElitePro = observer(() => {
                                 <div className='ep-checklist-col'>
                                     <span className='col-title'>Under 6 Entry Checklist</span>
                                     <div
-                                        className={`check-row ${analysis.pctUnder04 >= 53 && analysis.underIncreasing ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.pctUnder05 >= 54 && analysis.under05 >= analysis.over49 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Under 0-4 &gt; 55% &amp; Increasing (
-                                        {analysis.pctUnder04.toFixed(1)}%)
+                                        <span className='mark'>✓</span> Dominant Under Bias &gt;= 54% ({analysis.pctUnder05.toFixed(1)}%)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.under05 >= 32 && analysis.over49 <= 27 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.under05 >= 27 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Under 0-5 &gt;= 34 &amp; Over 4-9 &lt;= 25 (U:
+                                        <span className='mark'>✓</span> Under 0-5 Ratio &gt;= 27 (U:
                                         {analysis.under05} / O:{analysis.over49})
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.last10Under || analysis.last7Under ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.last10UnderCount >= 6 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Last 10/7 Ticks Favoring Under (
+                                        <span className='mark'>✓</span> Last 10 Ticks Favoring Under (
                                         {analysis.last10UnderCount}/10 under)
                                     </div>
-                                    <div className={`check-row ${!analysis.isUnderTrendFlipped ? 'valid' : ''}`}>
-                                        <span className='mark'>✓</span> Trend Stabilized (Max 3 Over digits in last 7)
+                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isUnderTrendFlipped ? 'valid' : ''}`}>
+                                        <span className='mark'>✓</span> Trend Stabilized (No contrary reversal)
                                     </div>
                                     <div
-                                        className={`check-row ${activeData?.lastDigit === analysis.highestUnderDigit ? 'valid' : ''}`}
+                                        className={`check-row ${activeData?.lastDigit === analysis.highestUnderDigit || (activeData?.lastDigit !== undefined && activeData.lastDigit <= 5) ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Current Tick is Under Trigger Digit [
-                                        {analysis.highestUnderDigit}] (Current: {activeData?.lastDigit})
+                                        <span className='mark'>✓</span> Trigger Digit Aligned [{analysis.highestUnderDigit} or Zone 0-5] (Current: {activeData?.lastDigit})
                                     </div>
                                 </div>
 
                                 <div className='ep-checklist-col'>
                                     <span className='col-title'>Over 3 Entry Checklist</span>
                                     <div
-                                        className={`check-row ${analysis.pctOver59 >= 53 && analysis.overIncreasing ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.pctOver49 >= 54 && analysis.over49 >= analysis.under05 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Over 5-9 &gt; 55% &amp; Increasing (
-                                        {analysis.pctOver59.toFixed(1)}%)
+                                        <span className='mark'>✓</span> Dominant Over Bias &gt;= 54% ({analysis.pctOver49.toFixed(1)}%)
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.over49 >= 32 && analysis.under05 <= 27 ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.over49 >= 27 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Over 4-9 &gt;= 34 &amp; Under 0-5 &lt;= 25 (O:
+                                        <span className='mark'>✓</span> Over 4-9 Ratio &gt;= 27 (O:
                                         {analysis.over49} / U:{analysis.under05})
                                     </div>
                                     <div
-                                        className={`check-row ${analysis.last10Over || analysis.last7Over ? 'valid' : ''}`}
+                                        className={`check-row ${analysis.last10OverCount >= 6 ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Last 10/7 Ticks Favoring Over (
+                                        <span className='mark'>✓</span> Last 10 Ticks Favoring Over (
                                         {analysis.last10OverCount}/10 over)
                                     </div>
-                                    <div className={`check-row ${!analysis.isOverTrendFlipped ? 'valid' : ''}`}>
-                                        <span className='mark'>✓</span> Trend Stabilized (Max 3 Under digits in last 7)
+                                    <div className={`check-row ${!analysis.recentTrendFlip && !analysis.isOverTrendFlipped ? 'valid' : ''}`}>
+                                        <span className='mark'>✓</span> Trend Stabilized (No contrary reversal)
                                     </div>
                                     <div
-                                        className={`check-row ${activeData?.lastDigit === analysis.highestOverDigit ? 'valid' : ''}`}
+                                        className={`check-row ${activeData?.lastDigit === analysis.highestOverDigit || (activeData?.lastDigit !== undefined && activeData.lastDigit >= 4) ? 'valid' : ''}`}
                                     >
-                                        <span className='mark'>✓</span> Current Tick is Over Trigger Digit [
-                                        {analysis.highestOverDigit}] (Current: {activeData?.lastDigit})
+                                        <span className='mark'>✓</span> Trigger Digit Aligned [{analysis.highestOverDigit} or Zone 4-9] (Current: {activeData?.lastDigit})
                                     </div>
                                 </div>
                             </div>
@@ -2056,7 +2153,11 @@ const ElitePro = observer(() => {
                         {/* Execution Action Buttons */}
                         <div className='ep-actions-row'>
                             {autoState === 'IDLE' && (
-                                <button className='ep-action-btn ep-action-btn--start' onClick={startAutoTrading}>
+                                <button
+                                    className='ep-action-btn ep-action-btn--start'
+                                    data-testid='elite_pro_toggle'
+                                    onClick={startAutoTrading}
+                                >
                                     ▶ Start Automated Bot
                                 </button>
                             )}
@@ -2068,7 +2169,11 @@ const ElitePro = observer(() => {
                                     <button className='ep-action-btn ep-action-btn--pause' onClick={pauseAutoTrading}>
                                         ⏸ Auto Pause Engine
                                     </button>
-                                    <button className='ep-action-btn ep-action-btn--stop' onClick={stopAutoTrading}>
+                                    <button
+                                        className='ep-action-btn ep-action-btn--stop'
+                                        data-testid='elite_pro_toggle'
+                                        onClick={stopAutoTrading}
+                                    >
                                         ⏹ Stop Engine
                                     </button>
                                 </>
@@ -2079,7 +2184,11 @@ const ElitePro = observer(() => {
                                     <button className='ep-action-btn ep-action-btn--start' onClick={resumeAutoTrading}>
                                         ▶ Auto Resume Engine
                                     </button>
-                                    <button className='ep-action-btn ep-action-btn--stop' onClick={stopAutoTrading}>
+                                    <button
+                                        className='ep-action-btn ep-action-btn--stop'
+                                        data-testid='elite_pro_toggle'
+                                        onClick={stopAutoTrading}
+                                    >
                                         ⏹ Stop Engine
                                     </button>
                                 </>
