@@ -964,6 +964,7 @@ const AutoXEo: React.FC = observer(() => {
 
         setBotStateSync('SCANNING');
         let scanningCycles = 0;
+        let lastProcessedTickCount = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -994,6 +995,7 @@ const AutoXEo: React.FC = observer(() => {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
+                        lastProcessedTickCount = -1;
                         await new Promise(r => setTimeout(r, 300));
                     }
                 }
@@ -1004,6 +1006,13 @@ const AutoXEo: React.FC = observer(() => {
                     await new Promise(r => setTimeout(r, 400));
                     continue;
                 }
+
+                // Wait for a fresh live tick before evaluating signals
+                if (mData.digits.length === lastProcessedTickCount) {
+                    await new Promise(r => setTimeout(r, 50));
+                    continue;
+                }
+                lastProcessedTickCount = mData.digits.length;
 
                 const digits = mData.digits;
                 const lastDigit = mData.lastDigit;
@@ -1022,8 +1031,8 @@ const AutoXEo: React.FC = observer(() => {
                     const strategyType = isUnderFavored ? 'RECOVERY_UNDER' : 'RECOVERY_OVER';
 
                     const isTrigger = isUnderFavored
-                        ? (lastDigit <= (barrier === 8 ? 6 : 4) || (scanningCycles >= 3 && lastDigit <= (barrier === 8 ? 7 : 5)))
-                        : (lastDigit >= (barrier === 2 ? 3 : 5) || (scanningCycles >= 3 && lastDigit >= (barrier === 2 ? 2 : 4)));
+                        ? lastDigit <= (barrier === 8 ? 6 : 4)
+                        : lastDigit >= (barrier === 2 ? 3 : 5);
 
                     if (isTrigger) {
                         setBotStateSync('TRADING');
@@ -1040,26 +1049,12 @@ const AutoXEo: React.FC = observer(() => {
                     } else {
                         scanningCycles++;
                         if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                        await new Promise(r => setTimeout(r, 100));
+                        await new Promise(r => setTimeout(r, 50));
                     }
                     continue;
                 }
 
                 // 2. Base Even / Odd Strategy Branch
-                const last60 = digits.slice(-60);
-                const t60 = last60.length || 1;
-                const evenCount = last60.filter(d => d % 2 === 0).length;
-                const oddCount = last60.filter(d => d % 2 !== 0).length;
-                const evenPct = Math.round((evenCount / t60) * 100);
-                const oddPct = Math.round((oddCount / t60) * 100);
-
-                const last15 = digits.slice(-15);
-                const prev15 = digits.slice(-30, -15);
-                const last15Even = last15.filter(d => d % 2 === 0).length;
-                const prev15Even = prev15.filter(d => d % 2 === 0).length;
-                const last15Odd = last15.filter(d => d % 2 !== 0).length;
-                const prev15Odd = prev15.filter(d => d % 2 !== 0).length;
-
                 const last3 = digits.slice(-3);
                 // Canonical Auto X Reversal Patterns
                 const isOddOddEven =
@@ -1100,22 +1095,23 @@ const AutoXEo: React.FC = observer(() => {
                 } else if (isAwaitingEvenTick || isAwaitingOddTick) {
                     scanningCycles++;
                     if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                    await new Promise(r => setTimeout(r, 80));
+                    await new Promise(r => setTimeout(r, 50));
                 } else {
                     scanningCycles++;
                     if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
 
-                    // If current market has no pattern forming, switch after 5 cycles if autoSwitchMarkets is enabled
-                    if (autoSwitchMarkets && scanningCycles >= 5 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
+                    // If current market has no pattern forming, switch after 10 cycles if autoSwitchMarkets is enabled
+                    if (autoSwitchMarkets && scanningCycles >= 10 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
                         scanningCycles = 0;
+                        lastProcessedTickCount = -1;
                         await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
 
-                    await new Promise(r => setTimeout(r, 120));
+                    await new Promise(r => setTimeout(r, 50));
                 }
             }
         };
@@ -1180,20 +1176,37 @@ const AutoXEo: React.FC = observer(() => {
 
     useEffect(() => {
         const handleTrigger = (e: Event) => {
-            const customEvent = e as CustomEvent<{ tab: string; action: string }>;
+            const customEvent = e as CustomEvent<{ tab: string; action?: string }>;
             if (customEvent.detail?.tab === 'auto_x_eo') {
-                if (botState === 'IDLE') {
+                const action = customEvent.detail.action;
+                if (action === 'start') {
+                    if (botStateRef.current === 'IDLE') {
+                        handleStartBot();
+                    }
+                } else if (action === 'stop') {
+                    if (botStateRef.current !== 'IDLE') {
+                        handleStopBot();
+                    }
+                } else if (botStateRef.current === 'IDLE') {
                     handleStartBot();
                 } else {
                     handleStopBot();
                 }
             }
         };
+        const handleGlobalStop = () => {
+            if (botStateRef.current !== 'IDLE') {
+                handleStopBot();
+            }
+        };
+
         window.addEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
+        globalObserver.register('bot.manual_stop', handleGlobalStop);
         return () => {
             window.removeEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
+            globalObserver.unregister('bot.manual_stop', handleGlobalStop);
         };
-    }, [botState]);
+    }, [handleStartBot, handleStopBot]);
 
 
 

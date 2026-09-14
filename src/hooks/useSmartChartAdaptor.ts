@@ -234,66 +234,73 @@ export const useSmartChartAdaptor = (): UseSmartChartAdaptorReturn => {
     // Memoized getQuotes function
     const getQuotes: TGetQuotes = useCallback(
         async params => {
-            console.log('[SmartCharts] getQuotes called with params:', params);
+            try {
+                const result = await adapter.getQuotes({
+                    symbol: params.symbol,
+                    granularity: isValidGranularity(params.granularity) ? params.granularity : 0,
+                    count: params.count,
+                    start: params.start,
+                    end: params.end,
+                });
 
-            const result = await adapter.getQuotes({
-                symbol: params.symbol,
-                granularity: isValidGranularity(params.granularity) ? params.granularity : 0,
-                count: params.count,
-                start: params.start,
-                end: params.end,
-            });
+                if (!result) {
+                    return params.granularity === 0 ? { history: { prices: [], times: [] } } : { candles: [] };
+                }
 
-            console.log('[SmartCharts] getQuotes received quotes count:', result?.quotes?.length);
-
-            // Prefer raw history and candles if provided by adapter
-            if (params.granularity === 0) {
-                if (result.history) {
+                // Prefer raw history and candles if provided by adapter
+                if (params.granularity === 0) {
+                    if (result.history && Array.isArray(result.history.prices) && Array.isArray(result.history.times)) {
+                        return {
+                            history: {
+                                prices: (result.history.prices || []).map((p: any) => +(p ?? 0)),
+                                times: (result.history.times || []).map((t: any) => +(t ?? 0)),
+                            },
+                        };
+                    }
+                    const quotes = Array.isArray(result.quotes) ? result.quotes : [];
                     return {
                         history: {
-                            prices: result.history.prices.map((p: any) => +p),
-                            times: result.history.times.map((t: any) => +t),
+                            prices: quotes.map(q => +(q?.Close ?? q?.close ?? 0)),
+                            times: quotes.map(q => {
+                                const dtEpoch = q?.DT ? Math.floor(q.DT.getTime() / 1000) : NaN;
+                                if (Number.isFinite(dtEpoch) && dtEpoch > 100000) return dtEpoch;
+                                const parsed = parseInt(q?.Date || '');
+                                return Number.isFinite(parsed) && parsed > 100000 ? parsed : Math.floor(Date.now() / 1000);
+                            }),
                         },
                     };
-                }
-                return {
-                    history: {
-                        prices: result.quotes.map(q => q.Close),
-                        times: result.quotes.map(q => {
-                            const dtEpoch = q.DT ? Math.floor(q.DT.getTime() / 1000) : NaN;
-                            if (Number.isFinite(dtEpoch) && dtEpoch > 100000) return dtEpoch;
-                            const parsed = parseInt(q.Date);
-                            return Number.isFinite(parsed) && parsed > 100000 ? parsed : Math.floor(Date.now() / 1000);
-                        }),
-                    },
-                };
-            } else {
-                if (result.candles) {
+                } else {
+                    if (result.candles && Array.isArray(result.candles)) {
+                        return {
+                            candles: result.candles.map((c: any) => ({
+                                open: +(c?.open ?? c?.Open ?? 0),
+                                high: +(c?.high ?? c?.High ?? 0),
+                                low: +(c?.low ?? c?.Low ?? 0),
+                                close: +(c?.close ?? c?.Close ?? 0),
+                                epoch: +(c?.epoch ?? c?.Epoch ?? 0),
+                            })),
+                        };
+                    }
+                    const quotes = Array.isArray(result.quotes) ? result.quotes : [];
                     return {
-                        candles: result.candles.map((c: any) => ({
-                            open: +(c.open || 0),
-                            high: +(c.high || 0),
-                            low: +(c.low || 0),
-                            close: +(c.close || 0),
-                            epoch: +(c.epoch || 0),
-                        })),
+                        candles: quotes.map(q => {
+                            const dtEpoch = q?.DT ? Math.floor(q.DT.getTime() / 1000) : NaN;
+                            const epoch = Number.isFinite(dtEpoch) && dtEpoch > 100000
+                                ? dtEpoch
+                                : (parseInt(q?.Date || '') || Math.floor(Date.now() / 1000));
+                            return {
+                                open: +(q?.Open ?? q?.Close ?? q?.open ?? q?.close ?? 0),
+                                high: +(q?.High ?? q?.Close ?? q?.high ?? q?.close ?? 0),
+                                low: +(q?.Low ?? q?.Close ?? q?.low ?? q?.close ?? 0),
+                                close: +(q?.Close ?? q?.close ?? 0),
+                                epoch,
+                            };
+                        }),
                     };
                 }
-                return {
-                    candles: result.quotes.map(q => {
-                        const dtEpoch = q.DT ? Math.floor(q.DT.getTime() / 1000) : NaN;
-                        const epoch = Number.isFinite(dtEpoch) && dtEpoch > 100000
-                            ? dtEpoch
-                            : (parseInt(q.Date) || Math.floor(Date.now() / 1000));
-                        return {
-                            open: +(q.Open || q.Close || 0),
-                            high: +(q.High || q.Close || 0),
-                            low: +(q.Low || q.Close || 0),
-                            close: +(q.Close || 0),
-                            epoch,
-                        };
-                    }),
-                };
+            } catch (err) {
+                console.error('[SmartCharts Hook] Error in getQuotes:', err);
+                return params.granularity === 0 ? { history: { prices: [], times: [] } } : { candles: [] };
             }
         },
         [adapter]

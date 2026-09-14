@@ -610,13 +610,13 @@ const evaluateOverlordAnalysis = (
             targetBarrier = 8;
             signalConfidence = Math.min(99, Math.round(under8Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
-            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 7;
+            isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 7 && lastDigit <= 4);
         } else if (!isUnderFavored && (isOverCondition || over1Pct >= 70)) {
             signal = 'OVER';
             targetBarrier = 1;
             signalConfidence = Math.min(99, Math.round(over1Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 2;
+            isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 7 && lastDigit >= 5);
         }
     } else if (chosenStrategy === 'OVER_2_UNDER_7') {
         const isUnderFavored = under7Count >= over2Count;
@@ -625,13 +625,13 @@ const evaluateOverlordAnalysis = (
             targetBarrier = 7;
             signalConfidence = Math.min(95, Math.round(under7Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6];
-            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 6;
+            isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 7 && lastDigit <= 3);
         } else if (!isUnderFavored && (isOverCondition || over2Pct >= 65)) {
             signal = 'OVER';
             targetBarrier = 2;
             signalConfidence = Math.min(95, Math.round(over2Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 3;
+            isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 7 && lastDigit >= 6);
         }
     } else if (chosenStrategy === 'OVER_3_UNDER_6') {
         const isUnderFavored = under6Count >= over3Count;
@@ -640,13 +640,13 @@ const evaluateOverlordAnalysis = (
             targetBarrier = 6;
             signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5];
-            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 5;
+            isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 8 && lastDigit <= 2);
         } else if (!isUnderFavored && (isOverCondition || over3Pct >= 55)) {
             signal = 'OVER';
             targetBarrier = 3;
             signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 4;
+            isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 8 && lastDigit >= 7);
         }
     }
 
@@ -969,6 +969,7 @@ const evaluateOverlordAnalysis = (
         setBotStateSync('SCANNING');
         autoAbortRef.current = new AbortController();
         const abortSignal = autoAbortRef.current.signal;
+        let lastProcessedTickCount = -1;
 
         const loop = async () => {
             while (!abortSignal.aborted && botStateRef.current !== 'IDLE') {
@@ -1008,6 +1009,13 @@ const evaluateOverlordAnalysis = (
                     await new Promise(r => setTimeout(r, 400));
                     continue;
                 }
+
+                // Wait for a new tick from the stream before processing
+                if (mData.digits.length === lastProcessedTickCount) {
+                    await new Promise(r => setTimeout(r, 50));
+                    continue;
+                }
+                lastProcessedTickCount = mData.digits.length;
 
                 // Evaluate entry conditions dynamically on live incoming digits
                 const liveAnalysis = evaluateOverlordAnalysis(mData.digits, strategyMode, mData.lastDigit);
@@ -1152,9 +1160,18 @@ const evaluateOverlordAnalysis = (
     // TopBar controller action listeners
     useEffect(() => {
         const handleTrigger = (e: Event) => {
-            const customEvent = e as CustomEvent<{ tab: string; action: string }>;
+            const customEvent = e as CustomEvent<{ tab: string; action?: string }>;
             if (customEvent.detail?.tab === 'overlord_ai') {
-                if (botStateRef.current === 'IDLE') {
+                const action = customEvent.detail.action;
+                if (action === 'start') {
+                    if (botStateRef.current === 'IDLE') {
+                        void startAutoTrading();
+                    }
+                } else if (action === 'stop') {
+                    if (botStateRef.current !== 'IDLE') {
+                        stopAutoTrading();
+                    }
+                } else if (botStateRef.current === 'IDLE') {
                     void startAutoTrading();
                 } else {
                     stopAutoTrading();

@@ -872,6 +872,13 @@ const PovertyHunter: React.FC = observer(() => {
                 const digits = mData.digits;
                 const currLastDigit = mData.lastDigit;
 
+                // Wait for a new tick to arrive in the stream before evaluating strategy
+                if (digits.length === lastProcessedTickCount) {
+                    await new Promise(r => setTimeout(r, 60));
+                    continue;
+                }
+                lastProcessedTickCount = digits.length;
+
                 // 1. RECOVERY MODE: Over / Under Execution
                 if (isInRecoveryRef.current) {
                     const last50 = digits.slice(-50);
@@ -882,8 +889,10 @@ const PovertyHunter: React.FC = observer(() => {
                     const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
                     const prediction = isUnderFavored ? 6 : 3;
 
-                    // Trigger entry when last digit is in favored zone
-                    const isTrigger = isUnderFavored ? currLastDigit <= 5 : currLastDigit >= 4;
+                    // Trigger entry when high probability setup is met
+                    const isTrigger = isUnderFavored
+                        ? (currLastDigit <= 3 && under05 >= 28)
+                        : (currLastDigit >= 6 && over49 >= 28);
 
                     if (isTrigger) {
                         try {
@@ -904,13 +913,6 @@ const PovertyHunter: React.FC = observer(() => {
 
                 // 2. PRIMARY STRATEGY: Differs Strategy
                 const targetDiff = differTargetDigit ?? autoDifferCandidate;
-
-                // Wait for a new tick to arrive in the stream
-                if (digits.length === lastProcessedTickCount) {
-                    await new Promise(r => setTimeout(r, 60));
-                    continue;
-                }
-                lastProcessedTickCount = digits.length;
 
                 if (waitingForCandidate) {
                     if (currLastDigit === targetDiff) {
@@ -1029,10 +1031,15 @@ const PovertyHunter: React.FC = observer(() => {
         const handleTrigger = (e: Event) => {
             const customEvent = e as CustomEvent<{ tab: string; action: string }>;
             if (customEvent.detail?.tab === 'poverty_hunter') {
-                if (botState === 'IDLE') {
-                    handleStartBot();
-                } else {
-                    handleStopBot();
+                const act = customEvent.detail.action;
+                if (act === 'start' || (act === 'toggle' && botStateRef.current === 'IDLE')) {
+                    if (botStateRef.current === 'IDLE') {
+                        handleStartBot();
+                    }
+                } else if (act === 'stop' || (act === 'toggle' && botStateRef.current !== 'IDLE')) {
+                    if (botStateRef.current !== 'IDLE') {
+                        handleStopBot();
+                    }
                 }
             }
         };
@@ -1040,7 +1047,7 @@ const PovertyHunter: React.FC = observer(() => {
         return () => {
             window.removeEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
         };
-    }, [botState]);
+    }, [handleStartBot, handleStopBot]);
 
     const totalTrades = winsCount + lossesCount;
     const winRate = totalTrades > 0 ? ((winsCount / totalTrades) * 100).toFixed(1) : '0.0';

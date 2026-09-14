@@ -513,10 +513,10 @@ const ElitePro = observer(() => {
             if (activeStrat === 'UNDER_6') {
                 // Condition 1 & 2: Under 0-4 vs Over 5-9 >= 55% or (Under 0-5 dominant & last 10 ticks >= 7 under)
                 const isConditionMet = a.pctUnder04 >= 55 || (a.under05 >= a.over49 && a.last10UnderCount >= 7);
-                // Trigger: wait for highest digit in under to appear (or any under digit <= 5 if cycled)
+                // Trigger: wait for highest digit in under to appear (or if under is overwhelmingly strong >= 8/10, any digit <= 4)
                 const isTriggered =
                     isConditionMet &&
-                    (currentLastDigit === a.highestUnderDigit || (waitCycles >= 2 && currentLastDigit <= 5));
+                    (currentLastDigit === a.highestUnderDigit || (a.last10UnderCount >= 8 && currentLastDigit <= 4));
 
                 return {
                     direction: 'UNDER',
@@ -531,10 +531,10 @@ const ElitePro = observer(() => {
             } else {
                 // Condition 1 & 2: Over 5-9 vs Under 0-4 >= 55% or (Over 4-9 dominant & last 10 ticks >= 7 over)
                 const isConditionMet = a.pctOver59 >= 55 || (a.over49 >= a.under05 && a.last10OverCount >= 7);
-                // Trigger: wait for highest digit in over to appear (or any over digit >= 4 if cycled)
+                // Trigger: wait for highest digit in over to appear (or if over is overwhelmingly strong >= 8/10, any digit >= 5)
                 const isTriggered =
                     isConditionMet &&
-                    (currentLastDigit === a.highestOverDigit || (waitCycles >= 2 && currentLastDigit >= 4));
+                    (currentLastDigit === a.highestOverDigit || (a.last10OverCount >= 8 && currentLastDigit >= 5));
 
                 return {
                     direction: 'OVER',
@@ -1139,6 +1139,7 @@ const ElitePro = observer(() => {
             const abortSignal = autoAbortRef.current.signal;
             let tradeRuns = 0;
             let scanningCycles = 0;
+            let lastProcessedTickCount = -1;
 
             const loop = async () => {
                 while (!abortSignal.aborted && autoStateRef.current !== 'IDLE') {
@@ -1177,9 +1178,16 @@ const ElitePro = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 500));
+                        await new Promise(r => setTimeout(r, 400));
                         continue;
                     }
+
+                    // Wait for a new tick from the stream before processing
+                    if (currentData.digits.length === lastProcessedTickCount) {
+                        await new Promise(r => setTimeout(r, 50));
+                        continue;
+                    }
+                    lastProcessedTickCount = currentData.digits.length;
 
                     const entrySignal = checkEntrySignal(currentData.digits, scanningCycles);
                     if (!entrySignal || entrySignal.status === 'WAITING') {
@@ -1550,10 +1558,15 @@ const ElitePro = observer(() => {
         const handleTrigger = (e: Event) => {
             const customEvent = e as CustomEvent<{ tab: string; action: string }>;
             if (customEvent.detail?.tab === 'elite_pro') {
-                if (autoStateRef.current === 'IDLE') {
-                    void startAutoTrading();
-                } else {
-                    void stopAutoTrading();
+                const act = customEvent.detail.action;
+                if (act === 'start' || (act === 'toggle' && autoStateRef.current === 'IDLE')) {
+                    if (autoStateRef.current === 'IDLE') {
+                        void startAutoTrading();
+                    }
+                } else if (act === 'stop' || (act === 'toggle' && autoStateRef.current !== 'IDLE')) {
+                    if (autoStateRef.current !== 'IDLE') {
+                        void stopAutoTrading();
+                    }
                 }
             }
         };

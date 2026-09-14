@@ -1,41 +1,153 @@
 .draggable {
     user-select: none;
-    transition: opacity 0.25s cubic-bezier(0.25, 0.1, 0.1, 0.25);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
     color: var(--text-general);
-    background: var(--general-main-2);
-    border: 1px solid rgb(0 0 0 / 12%);
-    border-radius: 8px;
-    box-shadow: 0 0 8px 4px var(--shadow-menu);
-    padding: 4px;
+    background: var(--general-main-2, #182230);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    padding: 3px;
+    overflow: hidden;
+
+    &--minimized {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 12px rgba(14, 165, 233, 0.25);
+        border-color: rgba(14, 165, 233, 0.4);
+
+        .draggable-content {
+            border-radius: 8px;
+            overflow: hidden;
+
+            &__header {
+                padding: 8px 12px;
+                background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(15, 23, 42, 0.95) 100%);
+            }
+        }
+    }
+
+    &--maximized {
+        border-radius: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+
+        .draggable-content {
+            border-radius: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+    }
 
     .draggable-content {
-        background: var(--general-main-1);
+        background: var(--general-main-1, #0f172a);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
 
         &__header {
             cursor: move;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 16px;
+            padding: 8px 12px;
+            height: 44px;
+            min-height: 44px;
             width: 100%;
+            background: var(--general-section-1, rgba(255, 255, 255, 0.03));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            gap: 10px;
+            flex-shrink: 0;
 
             &__title {
-                font-size: 16px;
+                font-size: 14px;
                 font-weight: 700;
-            }
-
-            &__close {
-                cursor: pointer;
-            }
-
-            &-title {
-                width: 100%;
+                color: var(--text-prominent, #f8fafc);
+                letter-spacing: 0.2px;
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
         }
 
         &__body {
-            padding: 2px;
-            display: contents;
+            padding: 0;
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+    }
+
+    .draggable-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .draggable-window-controls {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .draggable-window-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-prominent, #e2e8f0);
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        outline: none;
+
+        svg {
+            display: block;
+            pointer-events: none;
+        }
+
+        &:hover {
+            transform: translateY(-1px);
+        }
+
+        &:active {
+            transform: translateY(0);
+        }
+
+        &--minimize {
+            &:hover,
+            &.active {
+                background: rgba(245, 158, 11, 0.2);
+                color: #fbbf24;
+                border-color: rgba(245, 158, 11, 0.5);
+                box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+            }
+        }
+
+        &--maximize {
+            &:hover,
+            &.active {
+                background: rgba(16, 185, 129, 0.2);
+                color: #34d399;
+                border-color: rgba(16, 185, 129, 0.5);
+                box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+            }
+        }
+
+        &--close {
+            &:hover {
+                background: rgba(239, 68, 68, 0.25);
+                color: #f87171;
+                border-color: rgba(239, 68, 68, 0.5);
+                box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+            }
         }
     }
 
@@ -115,32 +227,61 @@
 }
 
 .draggable.dragging {
-    cursor: no-drop;
+    cursor: grab;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.draggable-zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .draggable-zoom-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     color: #e2e8f0;
-    padding: 3px 8px;
+    padding: 3px 7px;
     border-radius: 6px;
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s ease;
+    line-height: 1.2;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.18);
         color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.25);
     }
 }
 
 /* 📱 Mobile Scalability & Touch Handle Enhancements */
 @media (max-width: 768px) {
     .draggable {
-        max-width: calc(100vw - 12px) !important;
-        max-height: calc(100vh - 12px) !important;
+        max-width: calc(100vw - 8px) !important;
+        max-height: calc(100vh - 8px) !important;
         touch-action: none;
+
+        .draggable-content__header {
+            padding: 4px 8px;
+            height: 44px;
+            min-height: 44px;
+            gap: 6px;
+
+            &__title {
+                font-size: 13px;
+            }
+        }
+
+        .draggable-window-btn {
+            width: 36px;
+            height: 36px;
+        }
+
+        .draggable-zoom-controls {
+            display: none; // Keep header compact on mobile
+        }
     }
 
     .resizable-handle {

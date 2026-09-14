@@ -66,57 +66,19 @@ export const TopBarTradeController: React.FC<TopBarTradeControllerProps> = ({ cu
                 globalObserver.emit('bot.stop');
             } catch {}
 
-            // Tertiary: DOM fallback + PH event for non-bot strategies (Elite Pro, etc.)
+            // Tertiary: dispatch PH event for non-bot strategies (Elite Pro, Poverty Hunter, etc.)
             window.dispatchEvent(
                 new CustomEvent('PH_TRIGGER_ENGINE_ACTION', {
                     detail: { tab: normalizedTab, action: 'stop' },
                 })
             );
-
-            // DOM click fallback (for pages that listen to their own stop button)
-            setTimeout(() => {
-                const stopSelectors: Record<string, string> = {
-                    elite_pro: '.ep-btn--stop, button[data-testid="elite_pro_toggle"]',
-                    poverty_hunter: '.ph-btn--stop, button[data-testid="poverty_hunter_toggle"]',
-                    auto_x_eo: '.btn-stop-auto, button[data-testid="auto_x_eo_toggle"]',
-                    marketkiller: '.mkill-btn, button[data-testid="marketkiller_strike"]',
-                    market_hunter_pro: '.mhp-auto-btn, button[data-testid="market_hunter_start"]',
-                    ai_trading_engine: '.ai-engine-run-btn, button[data-testid="ai_engine_start"]',
-                    scanner: '.scanner-auto-btn, button[data-testid="scanner_start"]',
-                    overlord_ai: '.btn-autotrade-stop, button[data-testid="overlord_ai_toggle"]',
-                };
-                const sel = stopSelectors[normalizedTab];
-                if (sel) {
-                    const btn = document.querySelector(sel) as HTMLElement;
-                    if (btn) btn.click();
-                }
-            }, 10);
         } else {
             // ── START ─────────────────────────────────────────────────────────────
             window.dispatchEvent(
                 new CustomEvent('PH_TRIGGER_ENGINE_ACTION', {
-                    detail: { tab: normalizedTab, action: 'toggle' },
+                    detail: { tab: normalizedTab, action: 'start' },
                 })
             );
-
-            setTimeout(() => {
-                const startSelectors: Record<string, string> = {
-                    elite_pro: '.ep-btn--start, button[data-testid="elite_pro_toggle"]',
-                    poverty_hunter: '.ph-btn--start, button[data-testid="poverty_hunter_toggle"]',
-                    auto_x_eo: '.btn-start-auto, button[data-testid="auto_x_eo_toggle"]',
-                    marketkiller: '.strike-btn, button[data-testid="marketkiller_strike"]',
-                    market_hunter_pro: '.mhp-auto-btn, .proai-btn-load, button[data-testid="market_hunter_start"]',
-                    ai_trading_engine: '.entry-scanner-start, .ai-engine-run-btn, button[data-testid="ai_engine_start"]',
-                    scanner: '.scanner-auto-btn, .scanner-run-btn, button[data-testid="scanner_start"]',
-                    manual_trading: '.manual-trade-btn, .smart-trading-buy, button[data-testid="manual_trade_buy"]',
-                    overlord_ai: '.btn-autotrade-start, button[data-testid="overlord_ai_toggle"]',
-                };
-                const sel = startSelectors[normalizedTab];
-                if (sel) {
-                    const btn = document.querySelector(sel) as HTMLElement;
-                    if (btn) btn.click();
-                }
-            }, 10);
         }
     }, [normalizedTab, currentStatus.isRunning, store]);
 

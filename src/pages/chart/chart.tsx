@@ -76,7 +76,7 @@ const Chart = observer(({ show_digits_stats: _show_digits_stats }: { show_digits
 
     // Resolve a safe, strictly valid symbol synchronously on every render
     const validSymbol = useMemo(() => {
-        if (!activeSymbolsList || activeSymbolsList.length === 0) return null;
+        if (!activeSymbolsList || activeSymbolsList.length === 0) return symbol || 'R_100';
         if (symbol && activeSymbolsList.some(s => s.symbol === symbol)) {
             return symbol;
         }
@@ -115,19 +115,21 @@ const Chart = observer(({ show_digits_stats: _show_digits_stats }: { show_digits
     }, [is_drawer_open]);
 
     // Manage reactive connection state for SmartChart
-    const [isSocketConnected, setIsSocketConnected] = useState(() =>
-        Boolean(common?.is_socket_opened || chart_api?.api?.connection?.readyState === WebSocket.OPEN)
+    const checkSocketOpen = () => Boolean(
+        common?.is_socket_opened ||
+        chart_api?.api?.connection?.readyState === WebSocket.OPEN ||
+        (typeof window !== 'undefined' && (window as any)?.api_base?.api?.connection?.readyState === WebSocket.OPEN) ||
+        (typeof window !== 'undefined' && (window as any)?.DerivAPI?.api?.connection?.readyState === WebSocket.OPEN)
     );
+
+    const [isSocketConnected, setIsSocketConnected] = useState(checkSocketOpen);
 
     useEffect(() => {
         let isMounted = true;
 
         const updateConnectionStatus = () => {
             if (!isMounted) return;
-            const isOpen = Boolean(
-                common?.is_socket_opened ||
-                chart_api?.api?.connection?.readyState === WebSocket.OPEN
-            );
+            const isOpen = checkSocketOpen();
             setIsSocketConnected(prev => (prev !== isOpen ? isOpen : prev));
         };
 
@@ -171,7 +173,9 @@ const Chart = observer(({ show_digits_stats: _show_digits_stats }: { show_digits
     const is_connection_opened = Boolean(
         isSocketConnected ||
         common?.is_socket_opened ||
-        chart_api?.api?.connection?.readyState === WebSocket.OPEN
+        chart_api?.api?.connection?.readyState === WebSocket.OPEN ||
+        (typeof window !== 'undefined' && (window as any)?.api_base?.api?.connection?.readyState === WebSocket.OPEN) ||
+        (typeof window !== 'undefined' && (window as any)?.DerivAPI?.api?.connection?.readyState === WebSocket.OPEN)
     );
 
     const handleStateChange: TStateChangeListener = (state, _options) => {
@@ -217,9 +221,7 @@ const Chart = observer(({ show_digits_stats: _show_digits_stats }: { show_digits
     const isChartReadyToMount = Boolean(
         store &&
         chart_store &&
-        validSymbol &&
-        is_connection_opened &&
-        activeSymbolsList.length > 0
+        validSymbol
     );
 
     if (!isChartReadyToMount || !validSymbol) {

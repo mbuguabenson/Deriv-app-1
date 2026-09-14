@@ -8,10 +8,23 @@ class ChartAPI {
         this.reconnectIfNotConnected();
     }
 
+    getSharedApi = () => {
+        if (typeof window !== 'undefined') {
+            if (window.api_base?.api?.connection?.readyState === WebSocket.OPEN) {
+                return window.api_base.api;
+            }
+            if ((window as any)?.DerivAPI?.api?.connection?.readyState === WebSocket.OPEN) {
+                return (window as any).DerivAPI.api;
+            }
+        }
+        return null;
+    };
+
     waitForConnection = async (timeoutMs = 5000) => {
+        const shared = this.getSharedApi();
         if (this.api?.connection?.readyState === WebSocket.OPEN) return true;
-        if (typeof window !== 'undefined' && window.api_base?.api?.connection?.readyState === WebSocket.OPEN) {
-            this.api = window.api_base.api;
+        if (shared) {
+            this.api = shared;
             return true;
         }
         if (!this.api || this.api?.connection?.readyState > WebSocket.OPEN) {
@@ -41,7 +54,15 @@ class ChartAPI {
             this.api?.connection?.addEventListener?.('open', onOpen);
 
             interval = setInterval(() => {
+                const currentShared = this.getSharedApi();
                 if (this.api?.connection?.readyState === WebSocket.OPEN) {
+                    if (!settled) {
+                        settled = true;
+                        cleanup();
+                        resolve(true);
+                    }
+                } else if (currentShared) {
+                    this.api = currentShared;
                     if (!settled) {
                         settled = true;
                         cleanup();
@@ -61,8 +82,9 @@ class ChartAPI {
     };
 
     init = async (forceNew = false) => {
-        if (typeof window !== 'undefined' && window.api_base?.api?.connection?.readyState === WebSocket.OPEN && !forceNew) {
-            this.api = window.api_base.api;
+        const shared = this.getSharedApi();
+        if (shared && !forceNew) {
+            this.api = shared;
             this.getTime();
             return this.api;
         }

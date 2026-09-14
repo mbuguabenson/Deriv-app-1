@@ -15,10 +15,8 @@ const ChartWrapper = observer(({ prefix = 'chart', show_digits_stats }: ChartWra
     const store = useStore();
     const [uuid] = useState(uuidv4());
 
-    if (!store?.client) return null;
-    const { client } = store;
-
-    const uniqueKey = client.loginid ? `${prefix}-${client.loginid}` : `${prefix}-${uuid}`;
+    const client = store?.client;
+    const uniqueKey = client?.loginid ? `${prefix}-${client.loginid}` : `${prefix}-${uuid}`;
 
     return <Chart key={uniqueKey} show_digits_stats={show_digits_stats} />;
 });
