@@ -17,6 +17,7 @@ export interface MarketDigitState {
     currentPrice: string;
     lastDigit: number;
     pip: number;
+    tickCount?: number;
 }
 
 export interface DigitStat {
@@ -33,7 +34,7 @@ export interface TradeLogItem {
     id: string;
     time: string;
     market: string;
-    strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER';
+    strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY';
     contractType: string;
     prediction: number;
     stake: number;
@@ -232,6 +233,7 @@ const PovertyHunter: React.FC = observer(() => {
     const [tickDuration, setTickDuration] = useState<string>('1');
     const [bulkCount, setBulkCount] = useState<string>('6');
     const [autoRecoveryMode, setAutoRecoveryMode] = useState<boolean>(true);
+    const [recoveryType, setRecoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
 
     // ── Bot Running State ──
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
@@ -251,6 +253,12 @@ const PovertyHunter: React.FC = observer(() => {
     const [differTargetDigit, setDifferTargetDigit] = useState<number | null>(null);
     const [waitingForAppear, setWaitingForAppear] = useState<boolean>(false);
     const [confirmationTicksRemaining, setConfirmationTicksRemaining] = useState<number>(0);
+
+    // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
+    const recoveryTypeRef = useRef<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>(recoveryType);
+    useEffect(() => {
+        recoveryTypeRef.current = recoveryType;
+    }, [recoveryType]);
 
     // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
     const botStateRef = useRef<AutoRunState>('IDLE');
@@ -387,6 +395,7 @@ const PovertyHunter: React.FC = observer(() => {
                         if (activeM.digits.length > MAX_TICKS_STORED) activeM.digits.shift();
                         activeM.currentPrice = Number(quote).toFixed(pip);
                         activeM.lastDigit = d;
+                        activeM.tickCount = (activeM.tickCount || 0) + 1;
                         throttleRender();
                     }
                 });
@@ -576,12 +585,10 @@ const PovertyHunter: React.FC = observer(() => {
         return 4;
     }, [digitStats, mostAppearing]);
 
-    // Auto update differ target digit
+    // Auto update differ target digit continuously to track safest middle digit dynamically
     useEffect(() => {
-        if (differTargetDigit === null || botState === 'IDLE') {
-            setDifferTargetDigit(autoDifferCandidate);
-        }
-    }, [autoDifferCandidate, differTargetDigit, botState]);
+        setDifferTargetDigit(autoDifferCandidate);
+    }, [autoDifferCandidate]);
 
     // ── Best Market Auto-Selector for Switcher ──
     const bestMarketCandidate = useMemo(() => {
@@ -745,6 +752,7 @@ const PovertyHunter: React.FC = observer(() => {
                             const baseStk = parseFloat(initialStake) || 0.5;
                             currentStakeRef.current = baseStk;
                             setCurrentStake(baseStk);
+                            addLogEntry(symbol, 'RECOVERY', 'RECOVERED_TO_DIFFERS', 0, 0, 'WIN', roundedProfit);
                         } else {
                             setAccumulatedLoss(newAccLoss);
                         }
@@ -805,11 +813,11 @@ const PovertyHunter: React.FC = observer(() => {
         const tp = parseFloat(takeProfit) || 9999;
         const sl = parseFloat(stopLoss) || 9999;
 
-        setBotStateSync('TRADING');
+        setBotStateSync('SCANNING');
 
         let waitingForCandidate = true;
         let ticksRemaining = 3;
-        let lastProcessedTickCount = -1;
+        let lastProcessedTick = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -821,11 +829,13 @@ const PovertyHunter: React.FC = observer(() => {
                 // Check Take Profit & Stop Loss
                 if (sessionProfitRef.current >= tp) {
                     setBotStateSync('IDLE');
+                    addLogEntry(selectedSymbolRef.current, 'TAKE_PROFIT', 'DOLLARS_PRINTED 💵💸', 0, 0, 'WIN', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'tp' });
                     break;
                 }
                 if (sessionProfitRef.current <= -sl) {
                     setBotStateSync('IDLE');
+                    addLogEntry(selectedSymbolRef.current, 'STOP_LOSS', 'CAPITAL_PROTECTED 🛡️', 0, 0, 'LOSS', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'sl' });
                     break;
                 }
@@ -841,23 +851,28 @@ const PovertyHunter: React.FC = observer(() => {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
+                        lastProcessedTick = -1;
                     }
                     waitingForCandidate = true;
                     ticksRemaining = 3;
                     setWaitingForAppear(true);
                     setConfirmationTicksRemaining(3);
+                    if (botStateRef.current !== 'PAUSED' && botStateRef.current !== 'IDLE') {
+                        setBotStateSync('SCANNING');
+                    }
                     await new Promise(r => setTimeout(r, 600));
                 }
 
                 const mData = marketsDataRef.current.get(targetSym);
                 if (!mData || mData.digits.length < 15) {
+                    if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
                     await new Promise(r => setTimeout(r, 400));
                     continue;
                 }
 
                 // Check if candidate digit frequency has increased >= 10% in last 60 ticks -> pause & re-select
                 const recent60 = mData.digits.slice(-60);
-                const currentDiff = differTargetDigit ?? autoDifferCandidate;
+                const currentDiff = autoDifferCandidate ?? differTargetDigit ?? 4;
                 const digitOccurrences = recent60.filter(d => d === currentDiff).length;
                 const digitPct = (digitOccurrences / (recent60.length || 1)) * 100;
                 if (digitPct >= 10 && autoDifferCandidate !== null) {
@@ -866,37 +881,45 @@ const PovertyHunter: React.FC = observer(() => {
                     ticksRemaining = 3;
                     setWaitingForAppear(true);
                     setConfirmationTicksRemaining(3);
+                    if (botStateRef.current !== 'PAUSED' && botStateRef.current !== 'IDLE') {
+                        setBotStateSync('SCANNING');
+                    }
                     await new Promise(r => setTimeout(r, 500));
                 }
 
                 const digits = mData.digits;
                 const currLastDigit = mData.lastDigit;
+                const currTickCount = mData.tickCount || 0;
 
-                // Wait for a new tick to arrive in the stream before evaluating strategy
-                if (digits.length === lastProcessedTickCount) {
-                    await new Promise(r => setTimeout(r, 60));
+                // Wait for a fresh live tick from the stream before processing
+                if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                    await new Promise(r => setTimeout(r, 40));
                     continue;
                 }
-                lastProcessedTickCount = digits.length;
+                lastProcessedTick = currTickCount;
 
-                // 1. RECOVERY MODE: Over / Under Execution
+                // 1. RECOVERY MODE: Over / Under Execution (Over 1,2,3 or Under 8,7,6)
                 if (isInRecoveryRef.current) {
                     const last50 = digits.slice(-50);
                     const under05 = last50.filter(d => d <= 5).length;
                     const over49 = last50.filter(d => d >= 4).length;
                     const isUnderFavored = under05 >= over49;
 
+                    const activeRecMode = recoveryTypeRef.current;
+                    const barrier = isUnderFavored
+                        ? (activeRecMode === 'OVER_1_UNDER_8' ? 8 : activeRecMode === 'OVER_2_UNDER_7' ? 7 : 6)
+                        : (activeRecMode === 'OVER_1_UNDER_8' ? 1 : activeRecMode === 'OVER_2_UNDER_7' ? 2 : 3);
                     const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
-                    const prediction = isUnderFavored ? 6 : 3;
 
-                    // Trigger entry when high probability setup is met
+                    // High-probability trigger entry
                     const isTrigger = isUnderFavored
-                        ? (currLastDigit <= 3 && under05 >= 28)
-                        : (currLastDigit >= 6 && over49 >= 28);
+                        ? (currLastDigit <= (barrier === 8 ? 6 : barrier === 7 ? 5 : 4) || under05 >= 25)
+                        : (currLastDigit >= (barrier === 1 ? 3 : barrier === 2 ? 4 : 5) || over49 >= 25);
 
                     if (isTrigger) {
+                        setBotStateSync('TRADING');
                         try {
-                            await executeTradeOrder(targetSym, contractType, prediction, currentStakeRef.current, true);
+                            await executeTradeOrder(targetSym, contractType, barrier, currentStakeRef.current, true);
                         } catch (e) {
                             console.error('Poverty Hunter Recovery trade error:', e);
                         }
@@ -904,15 +927,24 @@ const PovertyHunter: React.FC = observer(() => {
                         ticksRemaining = 3;
                         setWaitingForAppear(true);
                         setConfirmationTicksRemaining(3);
-                        await new Promise(r => setTimeout(r, 600));
+                        if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                            setBotStateSync('SCANNING');
+                        }
+                        await new Promise(r => setTimeout(r, 500));
                     } else {
-                        await new Promise(r => setTimeout(r, 100));
+                        if (botStateRef.current !== 'WAITING_TRIGGER') {
+                            setBotStateSync('WAITING_TRIGGER');
+                        }
+                        await new Promise(r => setTimeout(r, 40));
                     }
                     continue;
                 }
 
-                // 2. PRIMARY STRATEGY: Differs Strategy
-                const targetDiff = differTargetDigit ?? autoDifferCandidate;
+                // 2. PRIMARY STRATEGY: Differs Strategy with Live Dynamic Prediction
+                const targetDiff = autoDifferCandidate ?? differTargetDigit ?? 4;
+                if (differTargetDigit !== targetDiff) {
+                    setDifferTargetDigit(targetDiff);
+                }
 
                 if (waitingForCandidate) {
                     if (currLastDigit === targetDiff) {
@@ -920,6 +952,13 @@ const PovertyHunter: React.FC = observer(() => {
                         setWaitingForAppear(false);
                         ticksRemaining = 3;
                         setConfirmationTicksRemaining(3);
+                        if (botStateRef.current !== 'WAITING_CONFIRMATION') {
+                            setBotStateSync('WAITING_CONFIRMATION');
+                        }
+                    } else {
+                        if (botStateRef.current !== 'SCANNING') {
+                            setBotStateSync('SCANNING');
+                        }
                     }
                 } else if (ticksRemaining > 0) {
                     if (currLastDigit === targetDiff) {
@@ -928,12 +967,16 @@ const PovertyHunter: React.FC = observer(() => {
                         setWaitingForAppear(true);
                         ticksRemaining = 3;
                         setConfirmationTicksRemaining(3);
+                        if (botStateRef.current !== 'SCANNING') {
+                            setBotStateSync('SCANNING');
+                        }
                     } else {
                         ticksRemaining -= 1;
                         setConfirmationTicksRemaining(ticksRemaining);
 
                         if (ticksRemaining === 0) {
                             // 3 clean ticks elapsed without candidate appearing -> Execute Differs Trade!
+                            setBotStateSync('TRADING');
                             try {
                                 await executeTradeOrder(targetSym, 'DIGITDIFF', targetDiff, currentStakeRef.current, false);
                             } catch (e) {
@@ -943,7 +986,14 @@ const PovertyHunter: React.FC = observer(() => {
                             setWaitingForAppear(true);
                             ticksRemaining = 3;
                             setConfirmationTicksRemaining(3);
-                            await new Promise(r => setTimeout(r, 600));
+                            if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                                setBotStateSync('SCANNING');
+                            }
+                            await new Promise(r => setTimeout(r, 500));
+                        } else {
+                            if (botStateRef.current !== 'WAITING_CONFIRMATION') {
+                                setBotStateSync('WAITING_CONFIRMATION');
+                            }
                         }
                     }
                 } else {
@@ -951,9 +1001,12 @@ const PovertyHunter: React.FC = observer(() => {
                     setWaitingForAppear(true);
                     ticksRemaining = 3;
                     setConfirmationTicksRemaining(3);
+                    if (botStateRef.current !== 'SCANNING') {
+                        setBotStateSync('SCANNING');
+                    }
                 }
 
-                await new Promise(r => setTimeout(r, 60));
+                await new Promise(r => setTimeout(r, 40));
             }
         };
 
@@ -968,6 +1021,7 @@ const PovertyHunter: React.FC = observer(() => {
         autoDifferCandidate,
         setBotStateSync,
         executeTradeOrder,
+        addLogEntry,
     ]);
 
     // ── Handlers ──
@@ -986,7 +1040,7 @@ const PovertyHunter: React.FC = observer(() => {
         setAccumulatedLoss(0);
         setWaitingForAppear(true);
         setConfirmationTicksRemaining(3);
-        setBotStateSync('TRADING');
+        setBotStateSync('SCANNING');
         void startAutoTradingLoop();
     }, [initialStake, setBotStateSync, startAutoTradingLoop]);
 
@@ -1576,6 +1630,19 @@ const PovertyHunter: React.FC = observer(() => {
                                 <option value='false'>Disabled (Differs Only)</option>
                             </select>
                         </div>
+                        {autoRecoveryMode && (
+                            <div className='ph-input-group'>
+                                <label>Recovery Strategy</label>
+                                <select
+                                    value={recoveryType}
+                                    onChange={e => setRecoveryType(e.target.value as any)}
+                                >
+                                    <option value='OVER_1_UNDER_8'>Over 1 / Under 8 (90% Win Rate)</option>
+                                    <option value='OVER_2_UNDER_7'>Over 2 / Under 7 (80% Win Rate)</option>
+                                    <option value='OVER_3_UNDER_6'>Over 3 / Under 6 (70% Win Rate)</option>
+                                </select>
+                            </div>
+                        )}
                     </div>
 
                     {/* ── Action Buttons & Status Ribbon ── */}

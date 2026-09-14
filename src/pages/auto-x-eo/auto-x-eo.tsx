@@ -32,6 +32,7 @@ export interface MarketDigitState {
     currentPrice: string;
     lastDigit: number;
     pip: number;
+    tickCount?: number;
 }
 
 export interface DigitStat {
@@ -48,7 +49,7 @@ export interface TradeLogItem {
     id: string;
     time: string;
     market: string;
-    strategy: 'EVEN_ODD' | 'RECOVERY_OVER' | 'RECOVERY_UNDER';
+    strategy: 'EVEN_ODD' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY';
     contractType: string;
     prediction?: number;
     stake: number;
@@ -436,6 +437,7 @@ const AutoXEo: React.FC = observer(() => {
                             item.currentPrice = quote.toFixed(pip);
                             item.lastDigit = lastD;
                             item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
+                            item.tickCount = (item.tickCount || 0) + 1;
                             throttleRender();
                         }
                     }
@@ -964,7 +966,7 @@ const AutoXEo: React.FC = observer(() => {
 
         setBotStateSync('SCANNING');
         let scanningCycles = 0;
-        let lastProcessedTickCount = -1;
+        let lastProcessedTick = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -976,11 +978,13 @@ const AutoXEo: React.FC = observer(() => {
                 // Check TP / SL Limits
                 if (sessionProfitRef.current >= tpVal && tpVal > 0) {
                     setBotStateSync('IDLE');
+                    addLogEntry(targetSym, 'TAKE_PROFIT', 'DOLLARS_PRINTED 💵💸', undefined, 0, 'WIN', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'tp' });
                     break;
                 }
                 if (sessionProfitRef.current <= -slVal && slVal > 0) {
                     setBotStateSync('IDLE');
+                    addLogEntry(targetSym, 'STOP_LOSS', 'CAPITAL_PROTECTED 🛡️', undefined, 0, 'LOSS', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'sl' });
                     break;
                 }
@@ -995,7 +999,7 @@ const AutoXEo: React.FC = observer(() => {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
-                        lastProcessedTickCount = -1;
+                        lastProcessedTick = -1;
                         await new Promise(r => setTimeout(r, 300));
                     }
                 }
@@ -1007,15 +1011,16 @@ const AutoXEo: React.FC = observer(() => {
                     continue;
                 }
 
-                // Wait for a fresh live tick before evaluating signals
-                if (mData.digits.length === lastProcessedTickCount) {
-                    await new Promise(r => setTimeout(r, 50));
-                    continue;
-                }
-                lastProcessedTickCount = mData.digits.length;
-
                 const digits = mData.digits;
                 const lastDigit = mData.lastDigit;
+                const currTickCount = mData.tickCount || 0;
+
+                // Wait for a fresh live tick before evaluating signals
+                if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                    await new Promise(r => setTimeout(r, 40));
+                    continue;
+                }
+                lastProcessedTick = currTickCount;
 
                 // 1. Recovery Mode Branch
                 if (isInRecoveryRef.current) {
@@ -1042,14 +1047,14 @@ const AutoXEo: React.FC = observer(() => {
                         } catch (e) {
                             console.error('Auto X Recovery trade error:', e);
                         }
-                        if (botStateRef.current === 'TRADING') {
+                        if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
                             setBotStateSync('SCANNING');
                         }
                         await new Promise(r => setTimeout(r, 500));
                     } else {
                         scanningCycles++;
                         if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                        await new Promise(r => setTimeout(r, 50));
+                        await new Promise(r => setTimeout(r, 40));
                     }
                     continue;
                 }
@@ -1076,7 +1081,7 @@ const AutoXEo: React.FC = observer(() => {
                     } catch (e) {
                         console.error('Auto X Even trade error:', e);
                     }
-                    if (botStateRef.current === 'TRADING') {
+                    if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
@@ -1088,14 +1093,14 @@ const AutoXEo: React.FC = observer(() => {
                     } catch (e) {
                         console.error('Auto X Odd trade error:', e);
                     }
-                    if (botStateRef.current === 'TRADING') {
+                    if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
                 } else if (isAwaitingEvenTick || isAwaitingOddTick) {
                     scanningCycles++;
                     if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                    await new Promise(r => setTimeout(r, 50));
+                    await new Promise(r => setTimeout(r, 40));
                 } else {
                     scanningCycles++;
                     if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
@@ -1106,12 +1111,12 @@ const AutoXEo: React.FC = observer(() => {
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
                         scanningCycles = 0;
-                        lastProcessedTickCount = -1;
+                        lastProcessedTick = -1;
                         await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
 
-                    await new Promise(r => setTimeout(r, 50));
+                    await new Promise(r => setTimeout(r, 40));
                 }
             }
         };

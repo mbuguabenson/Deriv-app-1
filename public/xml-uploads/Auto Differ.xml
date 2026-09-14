@@ -411,6 +411,18 @@
                                 <field name="VAR" id="ad_var_text_stop">text3</field>
                               </block>
                             </value>
+                            <next>
+                              <block type="text_print" id="ad_print_stop_loss">
+                                <value name="TEXT">
+                                  <shadow type="text" id="ad_print_sl_sh">
+                                    <field name="TEXT">Stop Loss Reached 🛡️</field>
+                                  </shadow>
+                                  <block type="variables_get" id="ad_get_print_stop_text">
+                                    <field name="VAR" id="ad_var_text_stop">text3</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </next>
                           </block>
                         </next>
                       </block>
@@ -438,7 +450,7 @@
                                 <field name="TEXT"></field>
                               </shadow>
                               <block type="text" id="ad_target_label">
-                                <field name="TEXT">🟢 [TARGET PROFIT ACHIEVED] 🎯 Auto Differ Poverty Hunter Success! Total Profit: $ </field>
+                                <field name="TEXT">💵 DOLLARS PRINTED 💸 Auto Differ Bot Success! Total Profit: $ </field>
                               </block>
                             </value>
                             <next>
@@ -465,6 +477,18 @@
                                 <field name="VAR" id="ad_var_text_target">text4</field>
                               </block>
                             </value>
+                            <next>
+                              <block type="text_print" id="ad_print_target_profit">
+                                <value name="TEXT">
+                                  <shadow type="text" id="ad_print_tp_sh">
+                                    <field name="TEXT">Dollars printed 💵💸</field>
+                                  </shadow>
+                                  <block type="variables_get" id="ad_get_print_target_text">
+                                    <field name="VAR" id="ad_var_text_target">text4</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </next>
                           </block>
                         </next>
                       </block>

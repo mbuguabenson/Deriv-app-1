@@ -602,7 +602,7 @@
                                 <field name="TEXT"></field>
                               </shadow>
                               <block type="text" id="ep_target_label">
-                                <field name="TEXT">🟢 [TARGET PROFIT ACHIEVED] 💎 Elite Pro Engine Success! Total Profit: $ </field>
+                                <field name="TEXT">💵 DOLLARS PRINTED 💸 Elite Pro Engine Success! Total Profit: $ </field>
                               </block>
                             </value>
                             <next>
@@ -629,6 +629,18 @@
                                 <field name="VAR" id="ep_var_text_target">text4</field>
                               </block>
                             </value>
+                            <next>
+                              <block type="text_print" id="ep_print_target_profit">
+                                <value name="TEXT">
+                                  <shadow type="text" id="ep_print_tp_sh">
+                                    <field name="TEXT">Dollars printed 💵💸</field>
+                                  </shadow>
+                                  <block type="variables_get" id="ep_get_print_target_text">
+                                    <field name="VAR" id="ep_var_text_target">text4</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </next>
                           </block>
                         </next>
                       </block>

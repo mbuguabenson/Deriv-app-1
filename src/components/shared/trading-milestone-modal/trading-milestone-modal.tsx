@@ -154,14 +154,14 @@ export const TradingMilestoneModal: React.FC<TradingMilestoneModalProps> = ({
                         )}
                     </div>
                     <div className='trading-milestone-card__badge-tag'>
-                        {isTp ? 'PROFIT GOAL ACHIEVED' : 'RISK PROTECTION ACTIVE'}
+                        {isTp ? 'DOLLARS PRINTED 💵💸' : 'RISK PROTECTION ACTIVE 🛡️'}
                     </div>
                     <h2 className='trading-milestone-card__title'>
-                        {isTp ? 'Congratulations!' : 'Stop Loss Triggered'}
+                        {isTp ? 'Dollars Printed! 💸' : 'Stop Loss Hit — Capital Protected'}
                     </h2>
                     <p className='trading-milestone-card__subtitle'>
                         {isTp
-                            ? `${botName} successfully reached your target profit goal.`
+                            ? `${botName} successfully printed +${amount.toFixed(2)} ${currency}! Target profit goal smashed.`
                             : `${botName} safely halted trading to protect your account capital.`}
                     </p>
                 </div>

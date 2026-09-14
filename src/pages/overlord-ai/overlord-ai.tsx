@@ -47,6 +47,7 @@ export interface MarketDigitState {
     currentPrice: string;
     lastDigit: number;
     pip: number;
+    tickCount?: number;
 }
 
 export interface TradeLogItem {
@@ -450,6 +451,7 @@ const OverlordAi: React.FC = observer(() => {
                                     }
                                     activeM.currentPrice = Number(quote).toFixed(pip);
                                     activeM.lastDigit = digit;
+                                    activeM.tickCount = (activeM.tickCount || 0) + 1;
                                     throttleRender();
                                 }
                             }
@@ -969,7 +971,7 @@ const evaluateOverlordAnalysis = (
         setBotStateSync('SCANNING');
         autoAbortRef.current = new AbortController();
         const abortSignal = autoAbortRef.current.signal;
-        let lastProcessedTickCount = -1;
+        let lastProcessedTick = -1;
 
         const loop = async () => {
             while (!abortSignal.aborted && botStateRef.current !== 'IDLE') {
@@ -1000,6 +1002,7 @@ const evaluateOverlordAnalysis = (
                         targetSym = bestCand.symbol;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
+                        lastProcessedTick = -1;
                     }
                 }
 
@@ -1010,12 +1013,13 @@ const evaluateOverlordAnalysis = (
                     continue;
                 }
 
-                // Wait for a new tick from the stream before processing
-                if (mData.digits.length === lastProcessedTickCount) {
-                    await new Promise(r => setTimeout(r, 50));
+                const currTickCount = mData.tickCount || 0;
+                // Wait for a fresh live tick from the stream before processing
+                if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                    await new Promise(r => setTimeout(r, 40));
                     continue;
                 }
-                lastProcessedTickCount = mData.digits.length;
+                lastProcessedTick = currTickCount;
 
                 // Evaluate entry conditions dynamically on live incoming digits
                 const liveAnalysis = evaluateOverlordAnalysis(mData.digits, strategyMode, mData.lastDigit);
@@ -1115,6 +1119,7 @@ const evaluateOverlordAnalysis = (
                             selectedSymbolRef.current = targetSym;
                             setSelectedSymbol(targetSym);
                             runsOnMarketRef.current = 0;
+                            lastProcessedTick = -1;
                         }
                     }
 

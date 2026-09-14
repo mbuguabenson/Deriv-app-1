@@ -26,6 +26,7 @@ type MarketDigitData = {
     digits: number[];
     currentPrice: string;
     lastDigit: number;
+    tickCount?: number;
 };
 
 type TradeLogEntry = {
@@ -488,7 +489,7 @@ const ElitePro = observer(() => {
     const checkEntrySignal = useCallback(
         (
             digits: number[],
-            waitCycles = 0,
+            _waitCycles = 0,
             forcedStrategy?: 'UNDER_6' | 'OVER_3'
         ): {
             direction: 'UNDER' | 'OVER';
@@ -496,6 +497,7 @@ const ElitePro = observer(() => {
             triggerDigit: number;
             reason: string;
             status: 'WAITING' | 'TRIGGERED';
+            isAutoPaused?: boolean;
         } | null => {
             if (digits.length < 15) return null;
             const a = computeAnalysis(digits);
@@ -701,6 +703,7 @@ const ElitePro = observer(() => {
                         if (activeMarket.digits.length > MAX_DIGITS) activeMarket.digits.shift();
                         activeMarket.currentPrice = String(quote);
                         activeMarket.lastDigit = digit;
+                        activeMarket.tickCount = (activeMarket.tickCount || 0) + 1;
                         throttleRender();
                     }
                 });
@@ -1139,7 +1142,7 @@ const ElitePro = observer(() => {
             const abortSignal = autoAbortRef.current.signal;
             let tradeRuns = 0;
             let scanningCycles = 0;
-            let lastProcessedTickCount = -1;
+            let lastProcessedTick = -1;
 
             const loop = async () => {
                 while (!abortSignal.aborted && autoStateRef.current !== 'IDLE') {
@@ -1169,6 +1172,7 @@ const ElitePro = observer(() => {
                             targetSym = top.symbol;
                             setSelectedSymbol(targetSym);
                             selectedSymbolRef.current = targetSym;
+                            lastProcessedTick = -1;
                         }
                     }
 
@@ -1182,12 +1186,13 @@ const ElitePro = observer(() => {
                         continue;
                     }
 
-                    // Wait for a new tick from the stream before processing
-                    if (currentData.digits.length === lastProcessedTickCount) {
-                        await new Promise(r => setTimeout(r, 50));
+                    const currTickCount = currentData.tickCount || 0;
+                    // Wait for a fresh live tick from the stream before processing
+                    if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                        await new Promise(r => setTimeout(r, 40));
                         continue;
                     }
-                    lastProcessedTickCount = currentData.digits.length;
+                    lastProcessedTick = currTickCount;
 
                     const entrySignal = checkEntrySignal(currentData.digits, scanningCycles);
                     if (!entrySignal || entrySignal.status === 'WAITING') {
@@ -1201,6 +1206,7 @@ const ElitePro = observer(() => {
                             if (readyMarket) {
                                 setSelectedSymbol(readyMarket.symbol);
                                 selectedSymbolRef.current = readyMarket.symbol;
+                                lastProcessedTick = -1;
                                 addLogEntry(
                                     'SMART SWITCH',
                                     readyMarket.label,
@@ -1221,6 +1227,7 @@ const ElitePro = observer(() => {
                                 if (bestCandidate) {
                                     setSelectedSymbol(bestCandidate.symbol);
                                     selectedSymbolRef.current = bestCandidate.symbol;
+                                    lastProcessedTick = -1;
                                     addLogEntry(
                                         'SMART SWITCH',
                                         bestCandidate.label,
