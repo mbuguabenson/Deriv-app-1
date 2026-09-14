@@ -832,26 +832,41 @@ const PovertyHunter: React.FC = observer(() => {
 
                 let targetSym = selectedSymbolRef.current;
 
-                // Check Max Runs threshold -> auto-switch market
-                if (autoSwitchMarkets && consecutiveRunsRef.current >= maxRunsBeforeCheck) {
+                // Check Max Runs threshold (default 7 runs) -> Auto-pause, re-analyze & resume/switch
+                if (consecutiveRunsRef.current >= maxRunsBeforeCheck) {
                     consecutiveRunsRef.current = 0;
                     setConsecutiveRuns(0);
-                    if (bestMarketCandidate && bestMarketCandidate !== targetSym) {
+                    // Soft cooldown pause to re-analyze conditions
+                    if (bestMarketCandidate && bestMarketCandidate !== targetSym && autoSwitchMarkets) {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
-                        waitingForCandidate = true;
-                        ticksRemaining = 3;
-                        setWaitingForAppear(true);
-                        setConfirmationTicksRemaining(3);
-                        await new Promise(r => setTimeout(r, 400));
                     }
+                    waitingForCandidate = true;
+                    ticksRemaining = 3;
+                    setWaitingForAppear(true);
+                    setConfirmationTicksRemaining(3);
+                    await new Promise(r => setTimeout(r, 600));
                 }
 
                 const mData = marketsDataRef.current.get(targetSym);
                 if (!mData || mData.digits.length < 15) {
                     await new Promise(r => setTimeout(r, 400));
                     continue;
+                }
+
+                // Check if candidate digit frequency has increased >= 10% in last 60 ticks -> pause & re-select
+                const recent60 = mData.digits.slice(-60);
+                const currentDiff = differTargetDigit ?? autoDifferCandidate;
+                const digitOccurrences = recent60.filter(d => d === currentDiff).length;
+                const digitPct = (digitOccurrences / (recent60.length || 1)) * 100;
+                if (digitPct >= 10 && autoDifferCandidate !== null) {
+                    // Candidate gaining power: pause and reset candidate
+                    waitingForCandidate = true;
+                    ticksRemaining = 3;
+                    setWaitingForAppear(true);
+                    setConfirmationTicksRemaining(3);
+                    await new Promise(r => setTimeout(r, 500));
                 }
 
                 const digits = mData.digits;

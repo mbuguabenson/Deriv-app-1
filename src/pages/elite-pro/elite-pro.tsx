@@ -511,24 +511,40 @@ const ElitePro = observer(() => {
                       : 'OVER_3');
 
             if (activeStrat === 'UNDER_6') {
-                // Canonical Elite Pro Under 6 (ep_cmp_under_trigger: last_digit <= 5)
-                const isTriggered = currentLastDigit <= 5;
+                // Condition 1 & 2: Under 0-4 vs Over 5-9 >= 55% or (Under 0-5 dominant & last 10 ticks >= 7 under)
+                const isConditionMet = a.pctUnder04 >= 55 || (a.under05 >= a.over49 && a.last10UnderCount >= 7);
+                // Trigger: wait for highest digit in under to appear (or any under digit <= 5 if cycled)
+                const isTriggered =
+                    isConditionMet &&
+                    (currentLastDigit === a.highestUnderDigit || (waitCycles >= 2 && currentLastDigit <= 5));
+
                 return {
                     direction: 'UNDER',
                     prediction: 6,
                     triggerDigit: a.highestUnderDigit,
-                    reason: `Under 6 Momentum (U0-5: ${a.under05}/50 vs O4-9: ${a.over49}). Trigger (Digit <= 5): [${currentLastDigit}]`,
+                    reason: isConditionMet
+                        ? `Under 6 Signal Active (U0-4: ${a.pctUnder04}%, U0-5: ${a.under05}/50, Last 10: ${a.last10UnderCount}/10). Trigger Digit: [${a.highestUnderDigit}]`
+                        : `Auto-Paused: Market power shifted (U0-4: ${a.pctUnder04}%, Last 10: ${a.last10UnderCount}/10). Auto-resumes when >= 7/10.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
+                    isAutoPaused: !isConditionMet,
                 };
             } else {
-                // Canonical Elite Pro Over 3 (ep_cmp_over_trigger: last_digit >= 4)
-                const isTriggered = currentLastDigit >= 4;
+                // Condition 1 & 2: Over 5-9 vs Under 0-4 >= 55% or (Over 4-9 dominant & last 10 ticks >= 7 over)
+                const isConditionMet = a.pctOver59 >= 55 || (a.over49 >= a.under05 && a.last10OverCount >= 7);
+                // Trigger: wait for highest digit in over to appear (or any over digit >= 4 if cycled)
+                const isTriggered =
+                    isConditionMet &&
+                    (currentLastDigit === a.highestOverDigit || (waitCycles >= 2 && currentLastDigit >= 4));
+
                 return {
                     direction: 'OVER',
                     prediction: 3,
                     triggerDigit: a.highestOverDigit,
-                    reason: `Over 3 Momentum (O4-9: ${a.over49}/50 vs U0-5: ${a.under05}). Trigger (Digit >= 4): [${currentLastDigit}]`,
+                    reason: isConditionMet
+                        ? `Over 3 Signal Active (O5-9: ${a.pctOver59}%, O4-9: ${a.over49}/50, Last 10: ${a.last10OverCount}/10). Trigger Digit: [${a.highestOverDigit}]`
+                        : `Auto-Paused: Market power shifted (O5-9: ${a.pctOver59}%, Last 10: ${a.last10OverCount}/10). Auto-resumes when >= 7/10.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
+                    isAutoPaused: !isConditionMet,
                 };
             }
         },

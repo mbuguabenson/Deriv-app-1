@@ -336,9 +336,9 @@ const OverlordAi: React.FC = observer(() => {
     // ── User Configuration & Strategy Parameters ──
     const [manualStake, setManualStake] = useState<string>('1.00');
     const [takeProfit, setTakeProfit] = useState<string>('20.00');
-    const [stopLoss, setStopLoss] = useState<string>('50.00');
+    const [stopLoss, setStopLoss] = useState<string>('0.00');
     const [strategyMode, setStrategyMode] = useState<OverlordStrategyMode>('ALL_AUTO');
-    const [martingaleMultiplier, setMartingaleMultiplier] = useState<string>('2.5');
+    const [martingaleMultiplier, setMartingaleMultiplier] = useState<string>('2.6');
     const [isMartingaleEnabled] = useState<boolean>(true);
 
     // ── Continuous Burst Trading & Market Rotation ──
@@ -556,10 +556,31 @@ const evaluateOverlordAnalysis = (
     const under6Pct = Math.round((under6Count / sampleSize) * 100);
     const over3Pct = Math.round((over3Count / sampleSize) * 100);
 
-    // Micro-momentum (last 10 & last 5 ticks)
+    // Micro-momentum (last 10 ticks)
     const last10 = digits.slice(-10);
     const last10Low = last10.filter(d => d <= 4).length;
     const last10High = 10 - last10Low;
+    const last10Under = last10.filter(d => d <= 5).length;
+    const last10Over = last10.filter(d => d >= 4).length;
+
+    // Highest Entry Digit in Under (0-5) & Over (4-9)
+    let highestUnderDigit = 0;
+    let maxUnderCount = -1;
+    for (let i = 0; i <= 5; i++) {
+        if (frequencies[i] > maxUnderCount) {
+            maxUnderCount = frequencies[i];
+            highestUnderDigit = i;
+        }
+    }
+
+    let highestOverDigit = 9;
+    let maxOverCount = -1;
+    for (let i = 4; i <= 9; i++) {
+        if (frequencies[i] > maxOverCount) {
+            maxOverCount = frequencies[i];
+            highestOverDigit = i;
+        }
+    }
 
     // Strategy Resolution
     let chosenStrategy: OverlordStrategyMode = mode;
@@ -579,50 +600,53 @@ const evaluateOverlordAnalysis = (
     let isTriggerReady = false;
     let triggerDigits: number[] = [];
 
+    const isUnderCondition = lowRatio >= 55 || (under6Count >= over3Count && last10Under >= 7);
+    const isOverCondition = highRatio >= 55 || (over3Count >= under6Count && last10Over >= 7);
+
     if (chosenStrategy === 'OVER_1_UNDER_8') {
         const isUnderFavored = under8Count >= over1Count;
-        if (isUnderFavored) {
+        if (isUnderFavored && (isUnderCondition || under8Pct >= 70)) {
             signal = 'UNDER';
             targetBarrier = 8;
-            signalConfidence = Math.min(99, Math.round(under8Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(99, Math.round(under8Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
-            isTriggerReady = lastDigit <= 7;
-        } else {
+            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 7;
+        } else if (!isUnderFavored && (isOverCondition || over1Pct >= 70)) {
             signal = 'OVER';
             targetBarrier = 1;
-            signalConfidence = Math.min(99, Math.round(over1Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(99, Math.round(over1Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit >= 2;
+            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 2;
         }
     } else if (chosenStrategy === 'OVER_2_UNDER_7') {
         const isUnderFavored = under7Count >= over2Count;
-        if (isUnderFavored) {
+        if (isUnderFavored && (isUnderCondition || under7Pct >= 65)) {
             signal = 'UNDER';
             targetBarrier = 7;
-            signalConfidence = Math.min(95, Math.round(under7Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(95, Math.round(under7Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5, 6];
-            isTriggerReady = lastDigit <= 6;
-        } else {
+            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 6;
+        } else if (!isUnderFavored && (isOverCondition || over2Pct >= 65)) {
             signal = 'OVER';
             targetBarrier = 2;
-            signalConfidence = Math.min(95, Math.round(over2Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(95, Math.round(over2Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [3, 4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit >= 3;
+            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 3;
         }
     } else if (chosenStrategy === 'OVER_3_UNDER_6') {
         const isUnderFavored = under6Count >= over3Count;
-        if (isUnderFavored) {
+        if (isUnderFavored && (isUnderCondition || under6Pct >= 55)) {
             signal = 'UNDER';
             targetBarrier = 6;
-            signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + (last10Low >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
             triggerDigits = [0, 1, 2, 3, 4, 5];
-            isTriggerReady = lastDigit <= 5;
-        } else {
+            isTriggerReady = lastDigit === highestUnderDigit || lastDigit <= 5;
+        } else if (!isUnderFavored && (isOverCondition || over3Pct >= 55)) {
             signal = 'OVER';
             targetBarrier = 3;
-            signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + (last10High >= 5 ? 5 : 0)));
+            signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
             triggerDigits = [4, 5, 6, 7, 8, 9];
-            isTriggerReady = lastDigit >= 4;
+            isTriggerReady = lastDigit === highestOverDigit || lastDigit >= 4;
         }
     }
 
