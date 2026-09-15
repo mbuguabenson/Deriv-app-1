@@ -373,7 +373,7 @@ class CopyTradingEngine {
      * Connects to Deriv and validates an API token (PAT or OAuth).
      * Tests candidate App IDs and WebSocket endpoints in parallel for fast response.
      */
-    public async validateToken(token: string): Promise<{
+    public async validateToken(token: string, targetLoginid?: string): Promise<{
         valid: boolean;
         loginid: string;
         is_virtual: boolean;
@@ -407,7 +407,7 @@ class CopyTradingEngine {
             try {
                 const accounts = await DerivWSAccountsService.fetchAccountsList(cleaned);
                 if (accounts && accounts.length > 0) {
-                    const primary = accounts[0];
+                    const primary = (targetLoginid ? accounts.find(a => a.account_id === targetLoginid) : null) || accounts[0];
                     return {
                         valid: true,
                         loginid: primary.account_id,
@@ -421,12 +421,36 @@ class CopyTradingEngine {
                         app_id: getAppId() || '121856',
                     };
                 }
+                return {
+                    valid: false,
+                    loginid: '',
+                    is_virtual: false,
+                    balance: 0,
+                    currency: 'USD',
+                    scopes: [],
+                    has_trade_scope: false,
+                    fullname: '',
+                    email: '',
+                    error: 'No active trading accounts found for this Deriv API token.',
+                };
             } catch (e: any) {
-                console.warn('[validateToken] DerivWS REST verification fallback to WebSocket:', e);
+                console.warn('[validateToken] DerivWS REST verification failed:', e);
+                return {
+                    valid: false,
+                    loginid: '',
+                    is_virtual: false,
+                    balance: 0,
+                    currency: 'USD',
+                    scopes: [],
+                    has_trade_scope: false,
+                    fullname: '',
+                    email: '',
+                    error: e?.message || 'Invalid Deriv API token. Please ensure it has Read and Trade permissions.',
+                };
             }
         }
 
-        // Primary Candidate App IDs (1089 is universal Deriv PAT token App ID)
+        // Primary Candidate App IDs for legacy tokens (1089 is universal Deriv App ID)
         const primaryAppIds = Array.from(new Set(['1089', getAppId() || '121856']));
         const primaryAttempts = primaryAppIds.map(appId =>
             this.tryAuthorizeWithAppId(cleaned, appId, 'wss://ws.derivws.com/websockets/v3').then(res => ({
@@ -777,11 +801,27 @@ class CopyTradingEngine {
         // Refresh master if token available
         if (this.masterConfig.token) {
             try {
-                const res = await this.validateToken(this.masterConfig.token);
-                if (res.valid) {
-                    this.masterConfig.balance = res.balance;
-                    this.masterConfig.currency = res.currency;
-                    this.masterConfig.is_virtual = res.is_virtual;
+                const token = this.masterConfig.token;
+                const isNewApi =
+                    token.startsWith('pat_') ||
+                    token.startsWith('PAT_') ||
+                    token.startsWith('ey') ||
+                    (this.masterConfig.loginid && this.masterConfig.loginid.startsWith('DOT'));
+                if (isNewApi) {
+                    const accounts = await DerivWSAccountsService.fetchAccountsList(token);
+                    const matched = accounts.find(a => a.account_id === this.masterConfig.loginid) || accounts[0];
+                    if (matched) {
+                        this.masterConfig.balance = parseFloat(matched.balance) || 0;
+                        this.masterConfig.currency = matched.currency || 'USD';
+                        this.masterConfig.is_virtual = matched.account_type === 'demo';
+                    }
+                } else {
+                    const res = await this.validateToken(token, this.masterConfig.loginid);
+                    if (res.valid) {
+                        this.masterConfig.balance = res.balance;
+                        this.masterConfig.currency = res.currency;
+                        this.masterConfig.is_virtual = res.is_virtual;
+                    }
                 }
             } catch {}
         }
@@ -789,11 +829,27 @@ class CopyTradingEngine {
         // Refresh copier accounts
         for (const acc of this.accounts) {
             try {
-                const res = await this.validateToken(acc.token);
-                if (res.valid) {
-                    acc.balance = res.balance;
-                    acc.currency = res.currency;
-                    acc.is_virtual = res.is_virtual;
+                const token = acc.token;
+                const isNewApi =
+                    token.startsWith('pat_') ||
+                    token.startsWith('PAT_') ||
+                    token.startsWith('ey') ||
+                    (acc.loginid && acc.loginid.startsWith('DOT'));
+                if (isNewApi) {
+                    const accounts = await DerivWSAccountsService.fetchAccountsList(token);
+                    const matched = accounts.find(a => a.account_id === acc.loginid) || accounts[0];
+                    if (matched) {
+                        acc.balance = parseFloat(matched.balance) || 0;
+                        acc.currency = matched.currency || 'USD';
+                        acc.is_virtual = matched.account_type === 'demo';
+                    }
+                } else {
+                    const res = await this.validateToken(token, acc.loginid);
+                    if (res.valid) {
+                        acc.balance = res.balance;
+                        acc.currency = res.currency;
+                        acc.is_virtual = res.is_virtual;
+                    }
                 }
             } catch {}
         }
@@ -1101,10 +1157,8 @@ class CopyTradingEngine {
     /**
      * Executes a single contract on a specific Deriv account via WebSocket.
      * Flow:
-     * 1. Connect WS & Authorize with token (supports multi-appId fallback).
-     * 2. Request Proposal (price & proposal ID).
-     * 3. Send Buy request (with direct buy fallback).
-     * 4. Return result and new balance.
+     * - New Deriv API accounts (pat_..., DOT...): Request OTP WebSocket URL and execute immediately.
+     * - Legacy Deriv accounts: Connect WS & Authorize with token (supports multi-appId fallback).
      */
     public async executeTradeOnAccount(
         account: CopierAccount,
@@ -1116,6 +1170,14 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
+        const isNewApi =
+            (account.token && (account.token.startsWith('pat_') || account.token.startsWith('PAT_') || account.token.startsWith('ey'))) ||
+            (account.loginid && (account.loginid.startsWith('DOT') || account.loginid.startsWith('dot')));
+
+        if (isNewApi) {
+            return this.executeTradeOnNewApiAccount(account, trade, stake);
+        }
+
         const appIdsToTry = Array.from(
             new Set([account.app_id || '1089', '1089', getAppId() || '121856', '16929', '36544', '36545'])
         );
@@ -1146,6 +1208,159 @@ class CopyTradingEngine {
         }
 
         return { success: false, error: lastError };
+    }
+
+    /**
+     * Executes trade replication on New Deriv API (DOT... accounts and PAT / OAuth tokens)
+     * using the single-use OTP WebSocket URL.
+     * NOTE: The OTP WebSocket endpoint is already pre-authorized via URL parameter.
+     * Sending { authorize: token } will be rejected by Deriv as invalid token.
+     */
+    private async executeTradeOnNewApiAccount(
+        account: CopierAccount,
+        trade: TradeParameters,
+        stake: number
+    ): Promise<{
+        success: boolean;
+        contract_id?: string | number;
+        balance_after?: number;
+        error?: string;
+    }> {
+        return new Promise(async resolve => {
+            let ws: WebSocket | null = null;
+            let timeout: any = null;
+            let proposalId: string | null = null;
+            let askPrice: number = stake;
+            let accountCurrency = account.currency || 'USD';
+            let isDirectBuySent = false;
+            let isResolved = false;
+
+            const safeResolve = (res: {
+                success: boolean;
+                contract_id?: string | number;
+                balance_after?: number;
+                error?: string;
+            }) => {
+                if (isResolved) return;
+                isResolved = true;
+                if (timeout) clearTimeout(timeout);
+                if (ws) {
+                    try {
+                        ws.onopen = null;
+                        ws.onmessage = null;
+                        ws.onerror = null;
+                        ws.onclose = null;
+                        ws.close();
+                    } catch (e) {}
+                    ws = null;
+                }
+                resolve(res);
+            };
+
+            timeout = setTimeout(() => {
+                safeResolve({ success: false, error: 'OTP trade replication timed out.' });
+            }, 12000);
+
+            try {
+                console.log(`[CopyTrading] Fetching OTP WebSocket URL for follower ${account.loginid}...`);
+                const otpWsUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(account.token, account.loginid);
+                if (!otpWsUrl) {
+                    return safeResolve({ success: false, error: 'Failed to obtain OTP WebSocket URL from Deriv.' });
+                }
+
+                console.log(`[CopyTrading] Opening OTP WebSocket connection for ${account.loginid}...`);
+                ws = new WebSocket(otpWsUrl);
+
+                const sendProposal = () => {
+                    const proposalReq = buildProposalRequest(trade, stake, accountCurrency);
+                    console.log(`[CopyTrading] Sending trade proposal for follower ${account.loginid}:`, proposalReq);
+                    ws?.send(JSON.stringify(proposalReq));
+                };
+
+                ws.onopen = () => {
+                    console.log(`[CopyTrading] Follower ${account.loginid} connected to OTP WebSocket. Requesting trade proposal immediately...`);
+                    sendProposal();
+                };
+
+                ws.onmessage = event => {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        // Step 1: Handle Proposal Response
+                        if (data.msg_type === 'proposal') {
+                            if (data.error) {
+                                console.warn(`[CopyTrading] Follower ${account.loginid} proposal rejected (${data.error.message}), trying direct buy fallback...`);
+                                if (!isDirectBuySent) {
+                                    isDirectBuySent = true;
+                                    const directParams = buildProposalRequest(trade, stake, accountCurrency);
+                                    delete directParams.proposal;
+                                    ws?.send(
+                                        JSON.stringify({
+                                            buy: '1',
+                                            price: stake,
+                                            parameters: directParams,
+                                        })
+                                    );
+                                    return;
+                                }
+                                return safeResolve({
+                                    success: false,
+                                    error: `Proposal error: ${data.error.message}`,
+                                });
+                            }
+
+                            proposalId = data.proposal?.id;
+                            askPrice = Number(data.proposal?.ask_price ?? stake);
+
+                            if (!proposalId) {
+                                return safeResolve({ success: false, error: 'No proposal ID returned from Deriv.' });
+                            }
+
+                            console.log(`[CopyTrading] Proposal received (${proposalId}, $${askPrice}). Sending buy request for follower ${account.loginid}...`);
+                            ws?.send(
+                                JSON.stringify({
+                                    buy: proposalId,
+                                    price: askPrice,
+                                })
+                            );
+                            return;
+                        }
+
+                        // Step 2: Handle Buy Response
+                        if (data.msg_type === 'buy') {
+                            if (data.error) {
+                                console.error(`[CopyTrading] Follower ${account.loginid} buy failed:`, data.error.message);
+                                return safeResolve({
+                                    success: false,
+                                    error: `Buy error: ${data.error.message}`,
+                                });
+                            }
+
+                            console.log(`[CopyTrading] 🎯 Follower ${account.loginid} trade SUCCESS! Contract ID: ${data.buy?.contract_id}, Balance: ${data.buy?.balance_after}`);
+                            return safeResolve({
+                                success: true,
+                                contract_id: data.buy?.contract_id,
+                                balance_after: data.buy?.balance_after,
+                            });
+                        }
+                    } catch (err: any) {
+                        safeResolve({ success: false, error: 'Failed parsing trade response.' });
+                    }
+                };
+
+                ws.onerror = err => {
+                    console.error(`[CopyTrading] OTP WebSocket error for ${account.loginid}:`, err);
+                    safeResolve({ success: false, error: 'OTP WebSocket connection error during execution.' });
+                };
+
+                ws.onclose = () => {
+                    safeResolve({ success: false, error: 'OTP WebSocket closed during execution.' });
+                };
+            } catch (err: any) {
+                console.error(`[CopyTrading] Error executing OTP trade for ${account.loginid}:`, err);
+                safeResolve({ success: false, error: `Auth error: ${err?.message || 'Failed to authenticate follower'}` });
+            }
+        });
     }
 
     private async attemptExecuteTradeWithAppId(
