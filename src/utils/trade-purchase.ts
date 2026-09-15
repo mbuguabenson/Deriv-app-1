@@ -133,6 +133,19 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
             // Universal Copy Trading: Replicate trade to active follower accounts
             try {
+                const activeLoginId =
+                    (api_base as any)?.account_info?.loginid ||
+                    (api_base as any)?.account_id ||
+                    localStorage.getItem('active_loginid') ||
+                    '';
+                const isVirtual = Boolean(
+                    (api_base as any)?.account_info?.is_virtual === 1 ||
+                    (api_base as any)?.account_info?.is_virtual === true ||
+                    activeLoginId.startsWith('VR') ||
+                    activeLoginId.startsWith('VRTC') ||
+                    activeLoginId.startsWith('VRW')
+                );
+
                 copyTradingService.replicateFromAnySource(
                     {
                         symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
@@ -143,9 +156,10 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
                         barrier: normalized_parameters.barrier,
                         prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
                         currency: normalized_parameters.currency || 'USD',
+                        is_virtual: isVirtual,
                     },
                     source,
-                    (api_base as any)?.account_info?.loginid
+                    activeLoginId
                 );
             } catch (copyErr) {
                 console.warn('[CopyTrading] Universal mirror notice:', copyErr);
@@ -188,6 +202,19 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
     // Universal Copy Trading: Replicate trade to active follower accounts
     try {
+        const activeLoginId =
+            (api_base as any)?.account_info?.loginid ||
+            (api_base as any)?.account_id ||
+            localStorage.getItem('active_loginid') ||
+            '';
+        const isVirtual = Boolean(
+            (api_base as any)?.account_info?.is_virtual === 1 ||
+            (api_base as any)?.account_info?.is_virtual === true ||
+            activeLoginId.startsWith('VR') ||
+            activeLoginId.startsWith('VRTC') ||
+            activeLoginId.startsWith('VRW')
+        );
+
         copyTradingService.replicateFromAnySource(
             {
                 symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
@@ -198,9 +225,10 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
                 barrier: normalized_parameters.barrier,
                 prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
                 currency: normalized_parameters.currency || 'USD',
+                is_virtual: isVirtual,
             },
             source,
-            (api_base as any)?.account_info?.loginid
+            activeLoginId
         );
     } catch (copyErr) {
         console.warn('[CopyTrading] Universal mirror notice:', copyErr);

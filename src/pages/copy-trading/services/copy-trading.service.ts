@@ -4,7 +4,9 @@
  * Institutional Copy Trading & Account Replication Engine for Deriv
  * Supports:
  * - Real-time PAT (Personal Access Token) validation with account type (REAL vs DEMO) & live balance detection.
- * - Demo-to-Real, Real-to-Real, Demo-to-Demo, and Real-to-Demo trade mirroring.
+ * - Multi-appId fallback (1089, 121856, 16929, 36544, 36545) preventing "invalid api token" failures.
+ * - Demo-to-Real Protection Guard (DISABLED by default to prevent accidental real-money losses).
+ * - Real-to-Real, Demo-to-Demo, and Real-to-Demo trade mirroring.
  * - Proportional stake scaling (multiplier) or fixed stake mode.
  * - Global trade interception from Bot Builder, Quick Strategy, Free Bots, or direct manual triggers.
  * - Multi-account concurrent trade execution with isolated WebSocket pipelines.
@@ -29,11 +31,12 @@ export interface CopierAccount {
     multiplier: number; // e.g. 1.0 = exact stake, 0.5 = half stake, 2.0 = double
     fixed_stake?: number; // e.g. 1.00 USD
     is_active: boolean; // Active or Paused
+    allow_demo_to_real?: boolean; // Per-account override (defaults to false)
     scopes?: string[]; // Token permission scopes (read, trade, etc.)
     total_copied_trades?: number;
     total_profit?: number;
     last_trade_time?: string;
-    last_trade_status?: 'idle' | 'success' | 'failed';
+    last_trade_status?: 'idle' | 'success' | 'failed' | 'skipped';
     last_error?: string;
 }
 
@@ -65,6 +68,7 @@ export interface TradeParameters {
     prediction?: number;
     selected_tick?: number;
     currency?: string;
+    is_virtual?: boolean;
 }
 
 const STORAGE_KEY = 'deriv_copier_accounts';
@@ -79,6 +83,7 @@ export interface MasterAccountConfig {
     currency: string;
     alias: string;
     is_active: boolean; // Global master copier switch
+    allow_demo_to_real: boolean; // Safety guard: strictly FALSE by default
     max_stake_guard?: number; // Single trade maximum stake cap
     daily_loss_limit?: number; // Daily loss cutoff
 }
@@ -96,11 +101,13 @@ class CopyTradingEngine {
         currency: 'USD',
         alias: 'Active Session Account',
         is_active: true,
+        allow_demo_to_real: false, // strictly disabled by default
+        max_stake_guard: 50.0,
+        daily_loss_limit: 100.0,
     };
     private subscribers: Set<SubscriberCallback> = new Set();
     private isInitialized = false;
     private botObserverAttached = false;
-    private wsConnections: Map<string, WebSocket> = new Map();
     private recentReplications: Map<string, number> = new Map();
 
     constructor() {
@@ -148,7 +155,13 @@ class CopyTradingEngine {
 
             const rawMaster = localStorage.getItem(MASTER_CONFIG_KEY);
             if (rawMaster) {
-                this.masterConfig = { ...this.masterConfig, ...JSON.parse(rawMaster) };
+                const parsed = JSON.parse(rawMaster);
+                // Ensure allow_demo_to_real is safely initialized
+                this.masterConfig = {
+                    ...this.masterConfig,
+                    ...parsed,
+                    allow_demo_to_real: parsed.allow_demo_to_real === true, // default false if missing
+                };
             }
         } catch (e) {
             console.error('[CopyTradingEngine] Error loading storage:', e);
@@ -193,22 +206,12 @@ class CopyTradingEngine {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Connects to Deriv WebSocket and validates an API PAT token.
-     * Returns:
-     * - valid: boolean
-     * - loginid: string (e.g. CR12345 or VRTC12345)
-     * - is_virtual: boolean (true = DEMO, false = REAL)
-     * - balance: number
-     * - currency: string
-     * - scopes: string[]
-     */
-    /**
      * Cleans and sanitizes user-pasted Deriv tokens:
      * - Strips invisible BOM (\uFEFF) and zero-width spaces (\u200B-\u200D)
      * - Strips non-breaking spaces (\u00A0) and newlines
      * - Strips enclosing quotes, double quotes, and backticks
      * - Handles pasted JSON e.g. {"token":"..."}
-     * - Handles pasted URLs or query strings e.g. ?token1=xxx
+     * - Handles pasted URLs or query strings e.g. ?token1=xxx or &token=xxx
      * - Strips "Bearer " prefix
      * - Strips trailing dots/ellipses
      */
@@ -219,8 +222,8 @@ class CopyTradingEngine {
         // 1. Remove BOM, zero-width spaces, and control chars
         cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '');
 
-        // 2. Strip surrounding quotes and backticks
-        cleaned = cleaned.replace(/^['"`“”‘’]+|['"`“”‘’]+$/g, '').trim();
+        // 2. Strip surrounding quotes, backticks, brackets, semicolons
+        cleaned = cleaned.replace(/^['"`“”‘’\[\]{};\s]+|['"`“”‘’\[\]{};\s]+$/g, '').trim();
 
         // 3. Handle JSON input (e.g. {"token": "xxx"})
         if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
@@ -230,7 +233,16 @@ class CopyTradingEngine {
             } catch {}
         }
 
-        // 4. Handle URL or query parameter input (e.g. ?token1=xxx or &token=xxx or acct1=CR...&token1=xxx)
+        // 4. Handle "Account: Token" or "Account - Token" or "Token: xxx" input
+        if (cleaned.includes(':') || cleaned.includes(' - ')) {
+            const parts = cleaned.split(/[:\-]/).map(p => p.trim());
+            const tokenPart = parts.find(p => p.length >= 6 && !/^(CR|VRTC|VRW|MF|MLT)\d+$/i.test(p) && !/^(token|token1|name|deriv)$/i.test(p));
+            if (tokenPart) {
+                cleaned = tokenPart;
+            }
+        }
+
+        // 5. Handle URL or query parameter input (e.g. ?token1=xxx or &token=xxx or acct1=CR...&token1=xxx)
         if (cleaned.includes('token1=') || cleaned.includes('token=')) {
             const match = cleaned.match(/(?:token1|token)=([a-zA-Z0-9_-]+)/i);
             if (match && match[1]) {
@@ -238,18 +250,35 @@ class CopyTradingEngine {
             }
         }
 
-        // 5. Strip "Bearer " prefix if user copied from Authorization header
+        // 6. Handle multi-column paste from Deriv table (e.g. "MyToken a1-xxxxxxxxxx Read, Trade" or "pat_xxxx...")
+        if (cleaned.includes(' ') || cleaned.includes('\t')) {
+            const tokens = cleaned.split(/\s+/);
+            const patMatch = tokens.find(
+                t =>
+                    /^pat_[a-zA-Z0-9_-]{16,}$/i.test(t) ||
+                    /^a1-[a-zA-Z0-9]{8,}$/i.test(t) ||
+                    (/^[a-zA-Z0-9_-]{12,64}$/.test(t) && !/^(read|trade|admin|payments|never|active|demo|real)$/i.test(t))
+            );
+            if (patMatch) {
+                cleaned = patMatch;
+            }
+        }
+
+        // 7. Strip "Bearer " prefix if user copied from Authorization header
         cleaned = cleaned.replace(/^Bearer\s+/i, '').trim();
 
-        // 6. Remove any trailing ellipses if copied from truncated UI
+        // 8. Remove any trailing ellipses if copied from truncated UI
         cleaned = cleaned.replace(/\.{2,}$/, '').trim();
+
+        // 9. Strip surrounding quotes once more in case of double quotes
+        cleaned = cleaned.replace(/^['"`“”‘’]+|['"`“”‘’]+$/g, '').trim();
 
         return cleaned;
     }
 
     /**
      * Connects to Deriv and validates an API token (PAT or OAuth).
-     * Tests candidate App IDs in parallel for fast response.
+     * Tests candidate App IDs and WebSocket endpoints in parallel for fast response.
      */
     public async validateToken(token: string): Promise<{
         valid: boolean;
@@ -258,6 +287,7 @@ class CopyTradingEngine {
         balance: number;
         currency: string;
         scopes: string[];
+        has_trade_scope: boolean;
         fullname: string;
         email: string;
         app_id?: string;
@@ -272,14 +302,15 @@ class CopyTradingEngine {
                 balance: 0,
                 currency: 'USD',
                 scopes: [],
+                has_trade_scope: false,
                 fullname: '',
                 email: '',
                 error: 'Token must be a valid non-empty string.',
             };
         }
 
-        // Check if token is an OAuth JWT token (starts with 'ey')
-        if (cleaned.startsWith('ey')) {
+        // Check if token is a New Deriv API token (pat_...) or OAuth JWT token (ey...)
+        if (cleaned.startsWith('pat_') || cleaned.startsWith('PAT_') || cleaned.startsWith('ey')) {
             try {
                 const accounts = await DerivWSAccountsService.fetchAccountsList(cleaned);
                 if (accounts && accounts.length > 0) {
@@ -291,39 +322,71 @@ class CopyTradingEngine {
                         balance: parseFloat(primary.balance) || 0,
                         currency: primary.currency || 'USD',
                         scopes: ['read', 'trade'],
+                        has_trade_scope: true,
                         fullname: primary.account_id,
                         email: '',
                         app_id: getAppId() || '121856',
                     };
                 }
             } catch (e: any) {
-                console.warn('[validateToken] OAuth verification failed, checking WebSocket:', e);
+                console.warn('[validateToken] DerivWS REST verification fallback to WebSocket:', e);
             }
         }
 
-        // Candidate App IDs to test in parallel:
-        // 1089 (Universal PAT token ID), platform IDs, bot ID (16929), DBot (36544), SmartTrader (36545)
-        const candidateAppIds = Array.from(
-            new Set(['1089', getAppId() || '121856', '16929', '36544', '36545', '66723', '11780'])
-        );
-
-        // Test all candidate App IDs in parallel
-        const attempts = candidateAppIds.map(appId =>
-            this.tryAuthorizeWithAppId(cleaned, appId).then(res => ({ ...res, app_id: appId }))
+        // Primary Candidate App IDs (1089 is universal Deriv PAT token App ID)
+        const primaryAppIds = Array.from(new Set(['1089', getAppId() || '121856']));
+        const primaryAttempts = primaryAppIds.map(appId =>
+            this.tryAuthorizeWithAppId(cleaned, appId, 'wss://ws.derivws.com/websockets/v3').then(res => ({
+                ...res,
+                app_id: appId,
+            }))
         );
 
         try {
-            const results = await Promise.allSettled(attempts);
-            // Check if any attempt succeeded
-            for (const r of results) {
+            const primaryResults = await Promise.allSettled(primaryAttempts);
+            for (const r of primaryResults) {
                 if (r.status === 'fulfilled' && r.value.valid) {
-                    return r.value;
+                    const res = r.value;
+                    const hasTradeScope = Array.isArray(res.scopes) && (res.scopes.includes('trade') || res.scopes.includes('admin') || res.scopes.length === 0);
+                    return {
+                        ...res,
+                        has_trade_scope: hasTradeScope,
+                    };
+                }
+            }
+
+            // Fallback candidate App IDs
+            const fallbackAppIds = ['16929', '36544', '36545', '66723', '11780'];
+            const fallbackAttempts = fallbackAppIds.map(appId =>
+                this.tryAuthorizeWithAppId(cleaned, appId, 'wss://ws.derivws.com/websockets/v3').then(res => ({
+                    ...res,
+                    app_id: appId,
+                }))
+            );
+
+            // Also test on fallback endpoint wss://ws.binaryws.com/websockets/v3
+            const binarywsAttempts = ['1089', getAppId() || '121856'].map(appId =>
+                this.tryAuthorizeWithAppId(cleaned, appId, 'wss://ws.binaryws.com/websockets/v3').then(res => ({
+                    ...res,
+                    app_id: appId,
+                }))
+            );
+
+            const secondaryResults = await Promise.allSettled([...fallbackAttempts, ...binarywsAttempts]);
+            for (const r of secondaryResults) {
+                if (r.status === 'fulfilled' && r.value.valid) {
+                    const res = r.value;
+                    const hasTradeScope = Array.isArray(res.scopes) && (res.scopes.includes('trade') || res.scopes.includes('admin') || res.scopes.length === 0);
+                    return {
+                        ...res,
+                        has_trade_scope: hasTradeScope,
+                    };
                 }
             }
 
             // Find best error message from attempts
-            let lastError = 'The token is invalid. Please verify token permissions on Deriv.';
-            for (const r of results) {
+            let lastError = 'Invalid API token. Please verify token permissions on Deriv.';
+            for (const r of [...primaryResults, ...secondaryResults]) {
                 if (r.status === 'fulfilled' && r.value.error) {
                     lastError = r.value.error;
                     break;
@@ -337,6 +400,7 @@ class CopyTradingEngine {
                 balance: 0,
                 currency: 'USD',
                 scopes: [],
+                has_trade_scope: false,
                 fullname: '',
                 email: '',
                 error: lastError,
@@ -349,6 +413,7 @@ class CopyTradingEngine {
                 balance: 0,
                 currency: 'USD',
                 scopes: [],
+                has_trade_scope: false,
                 fullname: '',
                 email: '',
                 error: err?.message || 'Token validation failed.',
@@ -358,7 +423,8 @@ class CopyTradingEngine {
 
     private async tryAuthorizeWithAppId(
         token: string,
-        appId: string
+        appId: string,
+        wsBase = 'wss://ws.derivws.com/websockets/v3'
     ): Promise<{
         valid: boolean;
         loginid: string;
@@ -370,7 +436,7 @@ class CopyTradingEngine {
         email: string;
         error?: string;
     }> {
-        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
+        const wsUrl = `${wsBase}?app_id=${encodeURIComponent(appId)}&l=EN`;
 
         return new Promise(resolve => {
             let ws: WebSocket | null = null;
@@ -403,7 +469,7 @@ class CopyTradingEngine {
                     email: '',
                     error: 'Connection timed out validating token.',
                 });
-            }, 7000);
+            }, 6000);
 
             try {
                 ws = new WebSocket(wsUrl);
@@ -427,7 +493,7 @@ class CopyTradingEngine {
                                     scopes: [],
                                     fullname: '',
                                     email: '',
-                                    error: data.error?.message || 'Invalid token or permissions insufficient.',
+                                    error: data.error?.message || 'Invalid token or insufficient permissions.',
                                 });
                             }
 
@@ -435,7 +501,7 @@ class CopyTradingEngine {
                             const isVirtual = Boolean(
                                 auth.is_virtual === 1 ||
                                     (typeof auth.loginid === 'string' &&
-                                        (auth.loginid.startsWith('VRTC') || auth.loginid.startsWith('VRW')))
+                                        (auth.loginid.startsWith('VRTC') || auth.loginid.startsWith('VRW') || auth.loginid.startsWith('VR')))
                             );
 
                             return resolve({
@@ -479,6 +545,21 @@ class CopyTradingEngine {
                         error: 'WebSocket connection failure.',
                     });
                 };
+
+                ws.onclose = () => {
+                    cleanup();
+                    resolve({
+                        valid: false,
+                        loginid: '',
+                        is_virtual: false,
+                        balance: 0,
+                        currency: 'USD',
+                        scopes: [],
+                        fullname: '',
+                        email: '',
+                        error: 'WebSocket closed before authorization.',
+                    });
+                };
             } catch (e: any) {
                 cleanup();
                 resolve({
@@ -506,8 +587,14 @@ class CopyTradingEngine {
         sizing_mode?: 'multiplier' | 'fixed';
         multiplier?: number;
         fixed_stake?: number;
+        allow_demo_to_real?: boolean;
     }): Promise<{ success: boolean; account?: CopierAccount; error?: string }> {
-        const validation = await this.validateToken(params.token);
+        const cleanedToken = this.sanitizeToken(params.token);
+        if (!cleanedToken) {
+            return { success: false, error: 'Please enter a valid Deriv API token.' };
+        }
+
+        const validation = await this.validateToken(cleanedToken);
         if (!validation.valid) {
             return { success: false, error: validation.error || 'Token validation failed.' };
         }
@@ -516,7 +603,7 @@ class CopyTradingEngine {
         const existingIndex = this.accounts.findIndex(acc => acc.loginid === validation.loginid);
         const newAccount: CopierAccount = {
             id: validation.loginid || `acc_${Date.now()}`,
-            token: params.token.trim().replace(/^['"]+|['"]+$/g, ''),
+            token: cleanedToken,
             app_id: validation.app_id || '1089',
             loginid: validation.loginid,
             is_virtual: validation.is_virtual,
@@ -530,6 +617,7 @@ class CopyTradingEngine {
             multiplier: params.multiplier ?? 1.0,
             fixed_stake: params.fixed_stake ?? 1.0,
             is_active: true,
+            allow_demo_to_real: params.allow_demo_to_real ?? false,
             scopes: validation.scopes,
             total_copied_trades: 0,
             total_profit: 0,
@@ -582,7 +670,7 @@ class CopyTradingEngine {
 
         for (const [loginid, token] of Object.entries(list)) {
             if (token && typeof token === 'string' && token.length > 5) {
-                const is_virtual = loginid.startsWith('VRTC') || loginid.startsWith('VRW');
+                const is_virtual = loginid.startsWith('VRTC') || loginid.startsWith('VRW') || loginid.startsWith('VR');
                 results.push({ loginid, token, is_virtual });
             }
         }
@@ -636,6 +724,12 @@ class CopyTradingEngine {
 
                 const buy = data.buy;
                 const masterLoginid = this.masterConfig.loginid || 'MASTER_BOT';
+                const isVirtualMaster = Boolean(
+                    this.masterConfig.is_virtual ||
+                    masterLoginid.startsWith('VR') ||
+                    masterLoginid.startsWith('VRTC') ||
+                    masterLoginid.startsWith('VRW')
+                );
 
                 // Extract trade params from purchase response or context
                 const tradeParams: TradeParameters = {
@@ -647,6 +741,7 @@ class CopyTradingEngine {
                     barrier: buy.barrier,
                     prediction: buy.prediction,
                     currency: buy.currency || 'USD',
+                    is_virtual: isVirtualMaster,
                 };
 
                 this.replicateTradeToCopiers(tradeParams, masterLoginid);
@@ -682,6 +777,7 @@ class CopyTradingEngine {
 
     /**
      * Executes trade replication across all active follower accounts.
+     * Enforces Demo-to-Real safety protection (disabled by default).
      */
     public async replicateTradeToCopiers(
         trade: TradeParameters,
@@ -691,6 +787,15 @@ class CopyTradingEngine {
         if (!this.masterConfig.is_active) return [];
         const activeCopiers = this.accounts.filter(acc => acc.is_active);
         if (activeCopiers.length === 0) return [];
+
+        const isMasterVirtual = Boolean(
+            trade.is_virtual !== undefined
+                ? trade.is_virtual
+                : this.masterConfig.is_virtual ||
+                  masterLoginid.startsWith('VR') ||
+                  masterLoginid.startsWith('VRTC') ||
+                  masterLoginid.startsWith('VRW')
+        );
 
         // Deduplicate rapid dual-emits within 1200ms
         const barrierKey = trade.barrier ?? trade.prediction ?? '';
@@ -715,6 +820,32 @@ class CopyTradingEngine {
         // Execute concurrently on all active follower accounts
         await Promise.all(
             activeCopiers.map(async account => {
+                // Safety Guard: Check Demo-to-Real protection
+                if (isMasterVirtual && !account.is_virtual) {
+                    const isAllowed = Boolean(this.masterConfig.allow_demo_to_real || account.allow_demo_to_real);
+                    if (!isAllowed) {
+                        const skipLog: CopierTradeLog = {
+                            id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                            time: timestamp,
+                            master_loginid: masterLoginid,
+                            copier_loginid: account.loginid,
+                            is_virtual: account.is_virtual,
+                            symbol: trade.symbol,
+                            contract_type: trade.contract_type,
+                            source_tab: source,
+                            master_stake: trade.stake,
+                            copier_stake: 0,
+                            status: 'failed',
+                            error_message: '🛡️ Skipped (Demo to Real copy disabled to protect funds)',
+                        };
+                        account.last_trade_status = 'skipped';
+                        account.last_trade_time = timestamp;
+                        logs.push(skipLog);
+                        this.tradeLogs.unshift(skipLog);
+                        return;
+                    }
+                }
+
                 // Calculate copier stake
                 let copierStake = trade.stake;
                 if (account.sizing_mode === 'fixed' && account.fixed_stake && account.fixed_stake > 0) {
@@ -786,13 +917,22 @@ class CopyTradingEngine {
     ): Promise<CopierTradeLog[]> {
         if (!this.masterConfig.is_active) return [];
         const loginid = masterLoginid || this.masterConfig.loginid || 'MASTER_ACCOUNT';
-        return this.replicateTradeToCopiers(trade, loginid, source);
+        const isVirtual = Boolean(
+            trade.is_virtual !== undefined
+                ? trade.is_virtual
+                : this.masterConfig.is_virtual ||
+                  loginid.startsWith('VR') ||
+                  loginid.startsWith('VRTC') ||
+                  loginid.startsWith('VRW')
+        );
+
+        return this.replicateTradeToCopiers({ ...trade, is_virtual: isVirtual }, loginid, source);
     }
 
     /**
      * Executes a single contract on a specific Deriv account via WebSocket.
      * Flow:
-     * 1. Connect WS & Authorize with PAT token.
+     * 1. Connect WS & Authorize with PAT token (supports multi-appId fallback).
      * 2. Request Proposal (price & proposal ID).
      * 3. Send Buy request.
      * 4. Return result and new balance.
@@ -807,11 +947,56 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
-        const appId = account.app_id || '1089';
-        let wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
-        const isOAuth = account.token.startsWith('ey');
+        // App IDs to try: the one saved on account, then universal 1089, then platform appId
+        const appIdsToTry = Array.from(
+            new Set([account.app_id || '1089', '1089', getAppId() || '121856', '16929', '36544'])
+        );
 
-        if (isOAuth) {
+        let lastError = 'Execution failed.';
+
+        for (const appId of appIdsToTry) {
+            try {
+                const res = await this.attemptExecuteTradeWithAppId(account, trade, stake, appId);
+                if (res.success) {
+                    // Update working app_id if changed
+                    if (account.app_id !== appId) {
+                        account.app_id = appId;
+                        this.persist();
+                    }
+                    return res;
+                }
+                lastError = res.error || lastError;
+                // If the error was not auth-related (e.g. insufficient balance or market closed), don't retry other appIds
+                if (
+                    lastError.includes('InsufficientBalance') ||
+                    lastError.includes('MarketClosed') ||
+                    lastError.includes('ContractClosed')
+                ) {
+                    break;
+                }
+            } catch (e: any) {
+                lastError = e?.message || lastError;
+            }
+        }
+
+        return { success: false, error: lastError };
+    }
+
+    private async attemptExecuteTradeWithAppId(
+        account: CopierAccount,
+        trade: TradeParameters,
+        stake: number,
+        appId: string
+    ): Promise<{
+        success: boolean;
+        contract_id?: string | number;
+        balance_after?: number;
+        error?: string;
+    }> {
+        let wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
+        const isNewApiToken = account.token.startsWith('ey') || account.token.startsWith('pat_') || account.token.startsWith('PAT_');
+
+        if (isNewApiToken) {
             try {
                 const otpUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(account.token, account.loginid);
                 if (otpUrl) wsUrl = otpUrl;
@@ -869,7 +1054,7 @@ class CopyTradingEngine {
             timeout = setTimeout(() => {
                 cleanup();
                 resolve({ success: false, error: 'Trade replication timeout.' });
-            }, 18000);
+            }, 12000);
 
             try {
                 ws = new WebSocket(wsUrl);
@@ -917,7 +1102,7 @@ class CopyTradingEngine {
 
                             if (!proposalId) {
                                 cleanup();
-                                return resolve({ success: false, error: 'No proposal ID returned' });
+                                return resolve({ success: false, error: 'No proposal ID returned from Deriv.' });
                             }
 
                             // Step 4: Send Buy Request
@@ -936,7 +1121,7 @@ class CopyTradingEngine {
                             if (data.error) {
                                 return resolve({
                                     success: false,
-                                    error: `Buy failed: ${data.error.message}`,
+                                    error: `Buy error: ${data.error.message}`,
                                 });
                             }
 
@@ -954,7 +1139,7 @@ class CopyTradingEngine {
 
                 ws.onerror = () => {
                     cleanup();
-                    resolve({ success: false, error: 'WebSocket error during execution.' });
+                    resolve({ success: false, error: 'WebSocket connection error during execution.' });
                 };
             } catch (err: any) {
                 cleanup();

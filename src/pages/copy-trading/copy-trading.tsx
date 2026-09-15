@@ -6,7 +6,6 @@ import {
     CopierAccount,
     CopierTradeLog,
     MasterAccountConfig,
-    TradeParameters,
 } from './services/copy-trading.service';
 import { getAccountsList } from '@/utils/token-bridge';
 import './copy-trading.scss';
@@ -24,10 +23,6 @@ export const CopyTradingPage: React.FC = observer(() => {
     // Dock Tabs & Input state
     const [dockTab, setDockTab] = useState<'token' | 'stored'>('token');
     const [inputToken, setInputToken] = useState('');
-    const [inputAlias, setInputAlias] = useState('');
-    const [sizingMode, setSizingMode] = useState<'multiplier' | 'fixed'>('multiplier');
-    const [multiplierValue, setMultiplierValue] = useState<number>(1.0);
-    const [fixedStakeValue, setFixedStakeValue] = useState<number>(1.0);
 
     // Live validation state for dock
     const [isValidating, setIsValidating] = useState(false);
@@ -38,29 +33,32 @@ export const CopyTradingPage: React.FC = observer(() => {
         balance?: number;
         currency?: string;
         scopes?: string[];
+        has_trade_scope?: boolean;
         app_id?: string;
         error?: string;
     } | null>(null);
 
-    // Risk Controls state
-    const [maxStakeGuard, setMaxStakeGuard] = useState<number>(
-        copyTradingService.getMasterConfig().max_stake_guard || 50.0
-    );
-    const [dailyLossLimit, setDailyLossLimit] = useState<number>(
-        copyTradingService.getMasterConfig().daily_loss_limit || 100.0
+    // Capital Protection settings state (Demo to Real guard)
+    const [allowDemoToReal, setAllowDemoToReal] = useState<boolean>(
+        Boolean(copyTradingService.getMasterConfig().allow_demo_to_real)
     );
 
-    // Audit log filter
+    // Audit log filter & mobile tab
     const [logFilter, setLogFilter] = useState<'all' | 'real' | 'demo' | 'won' | 'lost'>('all');
+    const [mobileTab, setMobileTab] = useState<'copiers' | 'add' | 'history'>('copiers');
 
     // Synchronize with copyTradingService
     useEffect(() => {
         copyTradingService.init();
 
         const updateState = () => {
-            setAccounts(copyTradingService.getAccounts());
-            setTradeLogs(copyTradingService.getTradeLogs());
-            setMasterConfig(copyTradingService.getMasterConfig());
+            const currentAccs = copyTradingService.getAccounts();
+            const currentLogs = copyTradingService.getTradeLogs();
+            const currentCfg = copyTradingService.getMasterConfig();
+            setAccounts(currentAccs);
+            setTradeLogs(currentLogs);
+            setMasterConfig(currentCfg);
+            setAllowDemoToReal(Boolean(currentCfg.allow_demo_to_real));
         };
 
         updateState();
@@ -72,7 +70,8 @@ export const CopyTradingPage: React.FC = observer(() => {
             const isVirtual = Boolean(
                 client.is_virtual ||
                     client.loginid.startsWith('VRTC') ||
-                    client.loginid.startsWith('VRW')
+                    client.loginid.startsWith('VRW') ||
+                    client.loginid.startsWith('VR')
             );
             const currentBal = Number(client.balance || 0);
             const currentCurr = client.currency || 'USD';
@@ -121,9 +120,6 @@ export const CopyTradingPage: React.FC = observer(() => {
                 try {
                     const res = await copyTradingService.validateToken(cleaned);
                     setValidationResult(res);
-                    if (res.valid && !inputAlias) {
-                        setInputAlias(`${res.is_virtual ? 'Demo' : 'Real'} (${res.loginid})`);
-                    }
                 } catch (err: any) {
                     setValidationResult({
                         valid: false,
@@ -134,7 +130,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                 }
             }, 300);
         },
-        [inputAlias]
+        []
     );
 
     // Paste token directly from clipboard
@@ -156,18 +152,20 @@ export const CopyTradingPage: React.FC = observer(() => {
         const cleaned = copyTradingService.sanitizeToken(inputToken);
         if (!cleaned || !validationResult?.valid) return;
 
+        const autoAlias = `${validationResult.is_virtual ? 'Demo' : 'Real'} Account (${validationResult.loginid || 'Follower'})`;
         const res = await copyTradingService.addCopierAccount({
             token: cleaned,
-            alias: inputAlias,
-            sizing_mode: sizingMode,
-            multiplier: multiplierValue,
-            fixed_stake: fixedStakeValue,
+            alias: autoAlias,
+            sizing_mode: 'multiplier',
+            multiplier: 1.0,
         });
 
         if (res.success) {
             setInputToken('');
-            setInputAlias('');
             setValidationResult(null);
+            if (mobileTab === 'add') {
+                setMobileTab('copiers');
+            }
         } else {
             alert(res.error || 'Failed to save follower account');
         }
@@ -185,7 +183,11 @@ export const CopyTradingPage: React.FC = observer(() => {
             sizing_mode: 'multiplier',
             multiplier: 1.0,
         });
-        if (!res.success) {
+        if (res.success) {
+            if (mobileTab === 'add') {
+                setMobileTab('copiers');
+            }
+        } else {
             alert(res.error || 'Failed to add account');
         }
     };
@@ -197,15 +199,16 @@ export const CopyTradingPage: React.FC = observer(() => {
         });
     };
 
-    // Update risk guards
-    const handleUpdateMaxStakeGuard = (val: number) => {
-        setMaxStakeGuard(val);
-        copyTradingService.setMasterConfig({ max_stake_guard: val });
-    };
-
-    const handleUpdateDailyLossLimit = (val: number) => {
-        setDailyLossLimit(val);
-        copyTradingService.setMasterConfig({ daily_loss_limit: val });
+    // Toggle Demo-to-Real Protection
+    const handleToggleDemoToReal = (enabled: boolean) => {
+        if (enabled) {
+            const confirmed = confirm(
+                '⚠️ SAFETY WARNING:\n\nEnabling Demo-to-Real copying means any trade placed on DEMO (bots, manual trading, free bots, etc.) will place REAL MONEY trades on your connected Real accounts.\n\nAre you sure you want to enable Demo-to-Real copying?'
+            );
+            if (!confirmed) return;
+        }
+        setAllowDemoToReal(enabled);
+        copyTradingService.setMasterConfig({ allow_demo_to_real: enabled });
     };
 
     // Switch Master account source
@@ -249,8 +252,8 @@ export const CopyTradingPage: React.FC = observer(() => {
                 <div className='ct-header-bar__left'>
                     <div className='ct-header-bar__logo-badge'>
                         <svg
-                            width='24'
-                            height='24'
+                            width='22'
+                            height='22'
                             viewBox='0 0 24 24'
                             fill='none'
                             stroke='currentColor'
@@ -266,11 +269,11 @@ export const CopyTradingPage: React.FC = observer(() => {
                     </div>
                     <div className='ct-header-bar__title-group'>
                         <div className='ct-header-bar__title'>
-                            Copy Trading Suite
-                            <span className='ct-header-bar__badge-tag'>Universal Cross-Tab Mirror</span>
+                            Copy Trading
+                            <span className='ct-header-bar__badge-tag'>Universal Mirror</span>
                         </div>
                         <p className='ct-header-bar__desc'>
-                            Institutional low-latency trade replication across all Deriv accounts.
+                            Mirror trades across accounts with proportional risk sizing & capital guards.
                         </p>
                     </div>
                 </div>
@@ -278,12 +281,12 @@ export const CopyTradingPage: React.FC = observer(() => {
                 <div className='ct-header-bar__right'>
                     {/* Master Account Info Card */}
                     <div className='ct-header-bar__master-pill'>
-                        <span className='ct-header-bar__master-label'>Master Source:</span>
+                        <span className='ct-header-bar__master-label'>Source:</span>
                         <span className={`ct-header-bar__master-badge ${masterConfig.is_virtual ? 'demo' : 'real'}`}>
                             {masterConfig.is_virtual ? 'DEMO' : 'REAL'}
                         </span>
                         <span className='ct-header-bar__master-id'>
-                            {masterConfig.loginid || 'Session Active'}
+                            {masterConfig.loginid || 'Active Account'}
                         </span>
                         <span className='ct-header-bar__master-balance'>
                             ${masterConfig.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -305,23 +308,23 @@ export const CopyTradingPage: React.FC = observer(() => {
                     </div>
 
                     {/* Master Replication Toggle */}
-                    <div className='ct-header-bar__switch-container'>
-                        <button
-                            type='button'
-                            className={`ct-header-bar__toggle-btn ${masterConfig.is_active ? 'active' : 'paused'}`}
-                            onClick={handleToggleMasterCopier}
-                        >
-                            <span className='indicator-dot' />
-                            {masterConfig.is_active ? 'COPY TRADING ACTIVE' : 'REPLICATION PAUSED'}
-                        </button>
-                    </div>
+                    <button
+                        type='button'
+                        className={`ct-header-bar__toggle-btn ${masterConfig.is_active ? 'active' : 'paused'}`}
+                        onClick={handleToggleMasterCopier}
+                        title='Toggle global copy trading replication'
+                    >
+                        <span className='indicator-dot' />
+                        {masterConfig.is_active ? 'MIRROR ACTIVE' : 'PAUSED'}
+                    </button>
 
                     <button
+                        type='button'
                         className='ct-header-bar__btn ct-header-bar__btn--secondary'
                         onClick={() => copyTradingService.refreshAllBalances()}
-                        title='Fetch latest balances across all Deriv accounts'
+                        title='Refresh account balances'
                     >
-                        <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+                        <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
                             <path d='M23 4v6h-6' />
                             <path d='M1 20v-6h6' />
                             <path d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15' />
@@ -331,42 +334,52 @@ export const CopyTradingPage: React.FC = observer(() => {
                 </div>
             </header>
 
-            {/* 2. UNIVERSAL MIRROR NOTIFICATION BANNER */}
-            <div className={`ct-universal-banner ${masterConfig.is_active ? 'active' : 'paused'}`}>
-                <div className='ct-universal-banner__left'>
-                    <span className={`ct-pulse-dot ${masterConfig.is_active ? 'running' : 'paused'}`} />
-                    <span className='ct-universal-banner__text'>
-                        {masterConfig.is_active ? (
-                            <>
-                                <strong>Universal Real-Time Mirror Active:</strong> Any trade placed on <strong>Elite Pro</strong>, <strong>Overlord AI</strong>, <strong>Poverty Hunter</strong>, <strong>Auto X E/O</strong>, <strong>Scanner</strong>, <strong>Manual Trading</strong>, or <strong>Bot Builder</strong> automatically replicates to all active follower accounts.
-                            </>
-                        ) : (
-                            <>
-                                <strong>Replication Paused:</strong> Trades executed on other tabs are currently not being mirrored. Click <strong>COPY TRADING ACTIVE</strong> above to resume replication.
-                            </>
-                        )}
+            {/* 2. DEMO-TO-REAL SAFETY PROTECTION BANNER */}
+            <div className={`ct-safety-banner ${allowDemoToReal ? 'ct-safety-banner--warning' : 'ct-safety-banner--safe'}`}>
+                <div className='ct-safety-banner__left'>
+                    <span className='ct-safety-banner__icon'>
+                        {allowDemoToReal ? '⚠️' : '🛡️'}
                     </span>
+                    <div className='ct-safety-banner__content'>
+                        <div className='ct-safety-banner__heading'>
+                            {allowDemoToReal ? (
+                                <strong>Demo-to-Real Copying Is ACTIVE:</strong>
+                            ) : (
+                                <strong>Demo-to-Real Protection Active:</strong>
+                            )}
+                        </div>
+                        <div className='ct-safety-banner__sub'>
+                            {allowDemoToReal
+                                ? 'Demo trades will place REAL MONEY orders on connected Real accounts. Disable in Risk Settings below to prevent unexpected losses.'
+                                : 'Demo trades are blocked from copying to Real accounts to protect funds. Demo trades only mirror to Demo accounts.'}
+                        </div>
+                    </div>
                 </div>
-                <div className='ct-universal-banner__count'>
-                    {activeCount} of {accounts.length} Accounts Active
+
+                <div className='ct-safety-banner__action'>
+                    <button
+                        type='button'
+                        className={`ct-safety-banner__btn ${allowDemoToReal ? 'ct-safety-banner__btn--danger' : 'ct-safety-banner__btn--safe'}`}
+                        onClick={() => handleToggleDemoToReal(!allowDemoToReal)}
+                    >
+                        {allowDemoToReal ? 'Disable Demo-to-Real' : 'Enable Demo-to-Real'}
+                    </button>
                 </div>
             </div>
 
-            {/* 3. PERFORMANCE SUMMARY BAR */}
+            {/* 3. PERFORMANCE STATS CARDS */}
             <div className='ct-stats-bar'>
                 <div className='ct-stat-box'>
                     <div className='ct-stat-box__icon ct-stat-box__icon--emerald'>
-                        <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+                        <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
                             <path d='M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' />
                             <circle cx='9' cy='7' r='4' />
-                            <path d='M23 21v-2a4 4 0 0 0-3-3.87' />
-                            <path d='M16 3.13a4 4 0 0 1 0 7.75' />
                         </svg>
                     </div>
                     <div>
-                        <div className='ct-stat-box__label'>Follower Accounts</div>
+                        <div className='ct-stat-box__label'>Followers</div>
                         <div className='ct-stat-box__value'>
-                            {activeCount} <span style={{ fontSize: '0.82rem', color: 'var(--ct-text-subtle)' }}>/ {accounts.length} Active</span>
+                            {activeCount} <span className='ct-stat-box__small'>/ {accounts.length} Active</span>
                         </div>
                         <div className='ct-stat-box__sub'>{realCount} Real • {demoCount} Demo</div>
                     </div>
@@ -374,51 +387,61 @@ export const CopyTradingPage: React.FC = observer(() => {
 
                 <div className='ct-stat-box'>
                     <div className='ct-stat-box__icon ct-stat-box__icon--cyan'>
-                        <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+                        <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
                             <polyline points='23 6 13.5 15.5 8.5 10.5 1 18' />
                             <polyline points='17 6 23 6 23 12' />
                         </svg>
                     </div>
                     <div>
-                        <div className='ct-stat-box__label'>Total Replicated Trades</div>
+                        <div className='ct-stat-box__label'>Copied Trades</div>
                         <div className='ct-stat-box__value'>{tradeLogs.length}</div>
-                        <div className='ct-stat-box__sub'>All Connected Accounts</div>
-                    </div>
-                </div>
-
-                <div className='ct-stat-box'>
-                    <div className='ct-stat-box__icon ct-stat-box__icon--indigo'>
-                        <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
-                            <circle cx='12' cy='12' r='10' />
-                            <line x1='12' y1='8' x2='12' y2='12' />
-                            <line x1='12' y1='16' x2='12.01' y2='16' />
-                        </svg>
-                    </div>
-                    <div>
-                        <div className='ct-stat-box__label'>Max Stake Guard</div>
-                        <div className='ct-stat-box__value'>${maxStakeGuard.toFixed(2)}</div>
-                        <div className='ct-stat-box__sub'>Auto Stake Capping</div>
+                        <div className='ct-stat-box__sub'>Session Executions</div>
                     </div>
                 </div>
 
                 <div className='ct-stat-box'>
                     <div className='ct-stat-box__icon ct-stat-box__icon--amber'>
-                        <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+                        <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
                             <path d='M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' />
                         </svg>
                     </div>
                     <div>
-                        <div className='ct-stat-box__label'>Copied Trades P&L</div>
+                        <div className='ct-stat-box__label'>Copied P&L</div>
                         <div className={`ct-stat-box__value ${totalProfitCalculated >= 0 ? 'text-win' : 'text-loss'}`}>
                             {totalProfitCalculated >= 0 ? `+$${totalProfitCalculated.toFixed(2)}` : `-$${Math.abs(totalProfitCalculated).toFixed(2)}`}
                         </div>
-                        <div className='ct-stat-box__sub'>Session Replication Return</div>
+                        <div className='ct-stat-box__sub'>Max Stake Cap: ${maxStakeGuard.toFixed(2)}</div>
                     </div>
                 </div>
             </div>
 
+            {/* MOBILE NAV SWITCHER (Visible on small screens) */}
+            <div className='ct-mobile-nav'>
+                <button
+                    type='button'
+                    className={`ct-mobile-nav__btn ${mobileTab === 'copiers' ? 'active' : ''}`}
+                    onClick={() => setMobileTab('copiers')}
+                >
+                    Followers ({accounts.length})
+                </button>
+                <button
+                    type='button'
+                    className={`ct-mobile-nav__btn ${mobileTab === 'add' ? 'active' : ''}`}
+                    onClick={() => setMobileTab('add')}
+                >
+                    + Connect Account
+                </button>
+                <button
+                    type='button'
+                    className={`ct-mobile-nav__btn ${mobileTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setMobileTab('history')}
+                >
+                    Trades ({tradeLogs.length})
+                </button>
+            </div>
+
             {/* 4. MAIN WORKSPACE: FOLLOWER POOL & CONNECT DOCK */}
-            <div className='ct-workspace-grid'>
+            <div className={`ct-workspace-grid ct-workspace-grid--${mobileTab}`}>
                 {/* LEFT: Follower Copiers Pool */}
                 <section className='ct-copier-pool'>
                     <div className='ct-copier-pool__header'>
@@ -427,7 +450,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                                 <path d='M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' />
                                 <circle cx='9' cy='7' r='4' />
                             </svg>
-                            Target Follower Accounts
+                            Linked Follower Accounts
                         </h2>
                         <span className='ct-copier-pool__count-tag'>{accounts.length} Linked</span>
                     </div>
@@ -443,10 +466,10 @@ export const CopyTradingPage: React.FC = observer(() => {
                                 </svg>
                             </div>
                             <h3 className='ct-empty-pool-card__title'>
-                                Connect a Follower Account to Mirror Trades
+                                No Follower Accounts Connected
                             </h3>
                             <p className='ct-empty-pool-card__desc'>
-                                Use the Connect Dock on the right to paste a Deriv API Token (PAT) or pick an active session account to mirror demo or real trades automatically.
+                                Use the Connect Dock on the right to paste a Deriv API Token (PAT) or pick an active account from your current browser session.
                             </p>
                         </div>
                     ) : (
@@ -475,7 +498,12 @@ export const CopyTradingPage: React.FC = observer(() => {
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                        <div className='ct-pool-card__badges-group'>
+                                            {!acc.is_virtual && !allowDemoToReal && (
+                                                <span className='ct-pool-card__protect-badge' title='Demo trades will not copy to this real account'>
+                                                    🛡️ Demo Guarded
+                                                </span>
+                                            )}
                                             <span
                                                 className={`ct-pool-card__status-pill ${
                                                     acc.is_active
@@ -483,7 +511,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                         : 'ct-pool-card__status-pill--paused'
                                                 }`}
                                             >
-                                                {acc.is_active ? '● Active Mirror' : '○ Paused'}
+                                                {acc.is_active ? '● Active' : '○ Paused'}
                                             </span>
                                         </div>
                                     </div>
@@ -508,70 +536,27 @@ export const CopyTradingPage: React.FC = observer(() => {
                                             </span>
                                         </div>
 
-                                        <div className='ct-pool-card__metric-cell'>
-                                            <span className='ct-pool-card__metric-label'>Sizing Mode</span>
-                                            <span className='ct-pool-card__metric-value'>
-                                                {acc.sizing_mode === 'multiplier'
-                                                    ? `${acc.multiplier}x Stake`
-                                                    : `$${acc.fixed_stake?.toFixed(2)} Fixed`}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Quick Stake Sizing Presets */}
-                                    <div className='ct-pool-card__controls-row'>
-                                        <div className='ct-pool-card__sizing-pill-group'>
-                                            <span style={{ fontSize: '0.72rem', color: 'var(--ct-text-subtle)', fontWeight: 800, textTransform: 'uppercase', marginRight: '0.2rem' }}>
-                                                Multiplier:
-                                            </span>
-                                            {[0.5, 1.0, 1.5, 2.0].map(mult => (
+                                        <div className='ct-pool-card__metric-cell' style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                                            <div className='ct-pool-card__actions-group'>
                                                 <button
-                                                    key={mult}
                                                     type='button'
-                                                    className={acc.sizing_mode === 'multiplier' && acc.multiplier === mult ? 'active' : ''}
-                                                    onClick={() =>
-                                                        copyTradingService.updateCopierAccount(acc.id, {
-                                                            sizing_mode: 'multiplier',
-                                                            multiplier: mult,
-                                                        })
-                                                    }
+                                                    className='ct-pool-card__action-btn'
+                                                    onClick={() => copyTradingService.toggleCopierActive(acc.id)}
                                                 >
-                                                    {mult}x
+                                                    {acc.is_active ? 'Pause' : 'Activate'}
                                                 </button>
-                                            ))}
-                                            <button
-                                                type='button'
-                                                className={acc.sizing_mode === 'fixed' ? 'active' : ''}
-                                                onClick={() =>
-                                                    copyTradingService.updateCopierAccount(acc.id, {
-                                                        sizing_mode: 'fixed',
-                                                        fixed_stake: 1.0,
-                                                    })
-                                                }
-                                            >
-                                                Fixed $1
-                                            </button>
-                                        </div>
-
-                                        <div className='ct-pool-card__actions-group'>
-                                            <button
-                                                type='button'
-                                                className='ct-pool-card__action-btn'
-                                                onClick={() => copyTradingService.toggleCopierActive(acc.id)}
-                                            >
-                                                {acc.is_active ? 'Pause' : 'Activate'}
-                                            </button>
-                                            <button
-                                                type='button'
-                                                className='ct-pool-card__action-btn ct-pool-card__action-btn--danger'
-                                                onClick={() => {
-                                                    if (confirm(`Disconnect follower ${acc.alias} (${acc.loginid})?`)) {
-                                                        copyTradingService.removeCopierAccount(acc.id);
-                                                    }
-                                                }}
-                                            >
-                                                Disconnect
-                                            </button>
+                                                <button
+                                                    type='button'
+                                                    className='ct-pool-card__action-btn ct-pool-card__action-btn--danger'
+                                                    onClick={() => {
+                                                        if (confirm(`Disconnect follower ${acc.alias} (${acc.loginid})?`)) {
+                                                            copyTradingService.removeCopierAccount(acc.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    Disconnect
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -580,7 +565,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                     )}
                 </section>
 
-                {/* RIGHT: Connect Follower Account Dock & Risk Guards */}
+                {/* RIGHT: Connect Follower Account Dock */}
                 <div className='ct-sidebar-column'>
                     {/* Interactive Connect Follower Account Dock */}
                     <aside className='ct-connect-dock'>
@@ -597,7 +582,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                                 className={`ct-connect-dock__tab-btn ${dockTab === 'token' ? 'active' : ''}`}
                                 onClick={() => setDockTab('token')}
                             >
-                                Deriv API Token (PAT)
+                                API Token (PAT)
                             </button>
                             <button
                                 type='button'
@@ -610,56 +595,94 @@ export const CopyTradingPage: React.FC = observer(() => {
 
                         {dockTab === 'token' ? (
                             <>
-                                <div className='ct-connect-dock__field'>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <label>Deriv API Token (PAT)</label>
+                                {client?.loginid && !accounts.some(a => a.loginid === client.loginid) && (
+                                    <div className='ct-quick-link-banner'>
+                                        <div>
+                                            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--ct-text-title)' }}>
+                                                ⚡ Active Account Detected: {client.loginid}
+                                            </div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--ct-text-muted)' }}>
+                                                Link your current session account in 1 click without copying a token.
+                                            </div>
+                                        </div>
                                         <button
                                             type='button'
-                                            onClick={handlePasteFromClipboard}
-                                            style={{
-                                                background: 'rgba(6, 182, 212, 0.12)',
-                                                border: '1px solid rgba(6, 182, 212, 0.3)',
-                                                color: '#06b6d4',
-                                                borderRadius: '6px',
-                                                padding: '0.15rem 0.5rem',
-                                                fontSize: '0.72rem',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
+                                            className='ct-header-bar__btn ct-header-bar__btn--primary'
+                                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}
+                                            onClick={() => {
+                                                const currentToken = getAccountsList()[client.loginid] || '';
+                                                if (currentToken) {
+                                                    handleAddStoredAccount({
+                                                        loginid: client.loginid,
+                                                        token: currentToken,
+                                                        is_virtual: Boolean(client.is_virtual || client.loginid.startsWith('VR')),
+                                                    });
+                                                }
                                             }}
-                                            title='Paste token from clipboard and auto-clean'
                                         >
-                                            📋 Paste
+                                            + Link Active
                                         </button>
+                                    </div>
+                                )}
+
+                                <div className='ct-connect-dock__field'>
+                                    <div className='ct-connect-dock__field-head'>
+                                        <label>Deriv API Token (PAT)</label>
+                                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                            <a
+                                                href='https://app.deriv.com/account/api-token'
+                                                target='_blank'
+                                                rel='noopener noreferrer'
+                                                style={{
+                                                    fontSize: '0.7rem',
+                                                    color: '#06b6d4',
+                                                    fontWeight: 700,
+                                                    textDecoration: 'none',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.2rem',
+                                                }}
+                                                title='Open Deriv to generate a new API token'
+                                            >
+                                                Get Token ↗
+                                            </a>
+                                            <button
+                                                type='button'
+                                                className='ct-connect-dock__paste-btn'
+                                                onClick={handlePasteFromClipboard}
+                                                title='Paste token from clipboard and auto-clean'
+                                            >
+                                                📋 Paste
+                                            </button>
+                                        </div>
                                     </div>
                                     <input
                                         type='text'
-                                        placeholder='Paste Deriv API Token (e.g. a1-abcdef12345...)'
+                                        placeholder='Paste Deriv API Token (e.g. pat_... or a1-...)'
                                         value={inputToken}
                                         onChange={e => {
                                             setInputToken(e.target.value);
                                             handleValidateToken(e.target.value);
                                         }}
                                     />
-                                    <span style={{ fontSize: '0.72rem', color: 'var(--ct-text-subtle)' }}>
-                                        Generated on{' '}
+                                    <span className='ct-connect-dock__hint'>
+                                        Token must have both <strong>Read</strong> & <strong>Trade</strong> permissions selected on{' '}
                                         <a
                                             href='https://app.deriv.com/account/api-token'
                                             target='_blank'
                                             rel='noopener noreferrer'
-                                            style={{ color: '#06b6d4', textDecoration: 'underline' }}
                                         >
                                             app.deriv.com/account/api-token
-                                        </a>{' '}
-                                        with <strong>Read</strong> & <strong>Trade</strong> scopes.
+                                        </a>.
                                     </span>
                                 </div>
 
                                 {/* Live WebSocket validation preview */}
                                 {isValidating && (
                                     <div className='ct-connect-dock__live-preview'>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#06b6d4', fontSize: '0.82rem' }}>
-                                            <span className='ct-pulse-dot' />
-                                            Verifying Deriv token across API endpoints...
+                                        <div className='ct-connect-dock__validating-row'>
+                                            <span className='ct-pulse-dot running' />
+                                            Verifying token with Deriv servers...
                                         </div>
                                     </div>
                                 )}
@@ -700,93 +723,71 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                     <span>Login ID: <strong>{validationResult.loginid}</strong></span>
                                                     <span>Scopes: <strong>{validationResult.scopes?.join(', ') || 'read, trade'}</strong></span>
                                                 </div>
+                                                {!validationResult.has_trade_scope && (
+                                                    <div
+                                                        style={{
+                                                            marginTop: '0.4rem',
+                                                            padding: '0.4rem 0.6rem',
+                                                            borderRadius: '6px',
+                                                            background: 'rgba(245, 158, 11, 0.15)',
+                                                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                                                            color: '#fbbf24',
+                                                            fontSize: '0.72rem',
+                                                            lineHeight: '1.4',
+                                                        }}
+                                                    >
+                                                        ⚠️ <strong>Notice:</strong> This token only has <strong>Read</strong> scope. To execute copy trades, please generate a token with <strong>Trade</strong> scope checked on Deriv.
+                                                    </div>
+                                                )}
                                             </>
                                         ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                                <div style={{ color: '#f43f5e', fontSize: '0.84rem', fontWeight: 800 }}>
+                                            <div className='ct-connect-dock__error-block'>
+                                                <div className='ct-connect-dock__error-msg'>
                                                     ⚠️ {validationResult.error || 'The token is invalid.'}
                                                 </div>
-                                                <div
-                                                    style={{
-                                                        fontSize: '0.75rem',
-                                                        color: 'var(--ct-text-muted)',
-                                                        lineHeight: '1.45',
-                                                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                                                        paddingTop: '0.45rem',
-                                                    }}
-                                                >
-                                                    <strong style={{ color: 'var(--ct-text-title)' }}>How to fix this:</strong>
-                                                    <ol style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem' }}>
+                                                <div className='ct-connect-dock__error-help'>
+                                                    <strong>How to fix this:</strong>
+                                                    <ol>
                                                         <li>
                                                             Open{' '}
                                                             <a
                                                                 href='https://app.deriv.com/account/api-token'
                                                                 target='_blank'
                                                                 rel='noopener noreferrer'
-                                                                style={{ color: '#06b6d4', textDecoration: 'underline' }}
                                                             >
                                                                 app.deriv.com/account/api-token
                                                             </a>
                                                         </li>
                                                         <li>Switch to your target account (Demo or Real) on Deriv</li>
-                                                        <li>
-                                                            Check both <strong>Read</strong> and <strong>Trade</strong> checkboxes
-                                                        </li>
+                                                        <li>Check both <strong>Read</strong> and <strong>Trade</strong> checkboxes</li>
                                                         <li>Click <strong>Create</strong>, copy the new token and paste it here</li>
                                                     </ol>
-                                                    <div style={{ marginTop: '0.4rem', color: '#f59e0b' }}>
-                                                        💡 <em>Tip: You can also click the <strong>Session Accounts</strong> tab above to link your active accounts in 1 click!</em>
-                                                    </div>
+                                                    {storedAccounts.length > 0 && (
+                                                        <div style={{ marginTop: '0.5rem', paddingTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                                                            <span>Or link your active account without a token:</span>{' '}
+                                                            <button
+                                                                type='button'
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    color: '#06b6d4',
+                                                                    fontWeight: 700,
+                                                                    cursor: 'pointer',
+                                                                    textDecoration: 'underline',
+                                                                    padding: 0,
+                                                                    fontSize: '0.74rem',
+                                                                }}
+                                                                onClick={() => setDockTab('stored')}
+                                                            >
+                                                                View {storedAccounts.length} Logged-in Accounts ➔
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
                                     </div>
                                 )}
-
-                                <div className='ct-connect-dock__field'>
-                                    <label>Account Label / Alias</label>
-                                    <input
-                                        type='text'
-                                        placeholder='e.g. My Real Account 1'
-                                        value={inputAlias}
-                                        onChange={e => setInputAlias(e.target.value)}
-                                    />
-                                </div>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
-                                    <div className='ct-connect-dock__field'>
-                                        <label>Stake Sizing Mode</label>
-                                        <select
-                                            value={sizingMode}
-                                            onChange={e => setSizingMode(e.target.value as 'multiplier' | 'fixed')}
-                                        >
-                                            <option value='multiplier'>Multiplier (x)</option>
-                                            <option value='fixed'>Fixed Stake ($)</option>
-                                        </select>
-                                    </div>
-
-                                    <div className='ct-connect-dock__field'>
-                                        <label>{sizingMode === 'multiplier' ? 'Multiplier (x)' : 'Fixed Stake ($)'}</label>
-                                        {sizingMode === 'multiplier' ? (
-                                            <input
-                                                type='number'
-                                                step='0.1'
-                                                min='0.1'
-                                                max='10'
-                                                value={multiplierValue}
-                                                onChange={e => setMultiplierValue(parseFloat(e.target.value) || 1)}
-                                            />
-                                        ) : (
-                                            <input
-                                                type='number'
-                                                step='0.5'
-                                                min='0.35'
-                                                value={fixedStakeValue}
-                                                onChange={e => setFixedStakeValue(parseFloat(e.target.value) || 1)}
-                                            />
-                                        )}
-                                    </div>
-                                </div>
 
                                 <button
                                     type='button'
@@ -798,44 +799,31 @@ export const CopyTradingPage: React.FC = observer(() => {
                                         <line x1='12' y1='5' x2='12' y2='19' />
                                         <line x1='5' y1='12' x2='19' y2='12' />
                                     </svg>
-                                    Link & Enable Follower
+                                    Link Follower Account
                                 </button>
                             </>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                                <p style={{ fontSize: '0.8rem', color: 'var(--ct-text-muted)', margin: '0 0 0.4rem' }}>
-                                    Active Deriv accounts detected in your current browser session:
+                            <div className='ct-connect-dock__stored-list'>
+                                <p className='ct-connect-dock__stored-desc'>
+                                    Deriv accounts detected in your current session:
                                 </p>
                                 {storedAccounts.length === 0 ? (
-                                    <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--ct-text-subtle)', fontSize: '0.82rem' }}>
-                                        No other accounts detected in this browser session. Paste a PAT token in the first tab.
+                                    <div className='ct-connect-dock__stored-empty'>
+                                        No session accounts detected. Paste an API token in the first tab.
                                     </div>
                                 ) : (
                                     storedAccounts.map(acc => {
                                         const isAlreadyAdded = accounts.some(a => a.loginid === acc.loginid);
                                         return (
-                                            <div
-                                                key={acc.loginid}
-                                                style={{
-                                                    background: 'rgba(0,0,0,0.3)',
-                                                    border: '1px solid var(--ct-border)',
-                                                    borderRadius: '10px',
-                                                    padding: '0.7rem 0.9rem',
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                }}
-                                            >
+                                            <div key={acc.loginid} className='ct-connect-dock__stored-item'>
                                                 <div>
-                                                    <div style={{ fontWeight: 800, fontSize: '0.86rem', color: 'var(--ct-text-title)' }}>
+                                                    <div className='ct-connect-dock__stored-id'>
                                                         {acc.loginid}
                                                     </div>
                                                     <span
-                                                        style={{
-                                                            fontSize: '0.7rem',
-                                                            color: acc.is_virtual ? '#f59e0b' : '#10b981',
-                                                            fontWeight: 700,
-                                                        }}
+                                                        className={`ct-connect-dock__stored-tag ${
+                                                            acc.is_virtual ? 'demo' : 'real'
+                                                        }`}
                                                     >
                                                         {acc.is_virtual ? 'Demo Account' : 'Real Account'}
                                                     </span>
@@ -846,7 +834,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                     className='ct-header-bar__btn ct-header-bar__btn--primary'
                                                     disabled={isAlreadyAdded}
                                                     onClick={() => handleAddStoredAccount(acc)}
-                                                    style={{ padding: '0.35rem 0.7rem', fontSize: '0.76rem' }}
+                                                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                                                 >
                                                     {isAlreadyAdded ? 'Linked' : '+ Link'}
                                                 </button>
@@ -857,55 +845,17 @@ export const CopyTradingPage: React.FC = observer(() => {
                             </div>
                         )}
                     </aside>
-
-                    {/* Capital Protection & Risk Guards */}
-                    <div className='ct-action-card'>
-                        <h4 className='ct-action-card__title'>
-                            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
-                                <path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' />
-                            </svg>
-                            Capital Protection Guards
-                        </h4>
-
-                        <div className='ct-action-card__grid'>
-                            <div className='ct-action-card__input-wrap'>
-                                <label>Max Single Stake Cap ($)</label>
-                                <input
-                                    type='number'
-                                    step='5'
-                                    min='1'
-                                    value={maxStakeGuard}
-                                    onChange={e => handleUpdateMaxStakeGuard(parseFloat(e.target.value) || 50)}
-                                />
-                            </div>
-
-                            <div className='ct-action-card__input-wrap'>
-                                <label>Daily Loss Cutoff ($)</label>
-                                <input
-                                    type='number'
-                                    step='10'
-                                    min='5'
-                                    value={dailyLossLimit}
-                                    onChange={e => handleUpdateDailyLossLimit(parseFloat(e.target.value) || 100)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className='ct-risk-notice'>
-                            <strong>Risk Guard:</strong> If any tab places a stake that would scale above ${maxStakeGuard.toFixed(2)}, the follower stake is automatically capped at ${maxStakeGuard.toFixed(2)} to protect capital.
-                        </div>
-                    </div>
                 </div>
             </div>
 
             {/* 5. LIVE COPIED TRADES AUDIT TABLE & FILTERS */}
-            <section className='ct-audit-section'>
+            <section className={`ct-audit-section ${mobileTab === 'history' ? 'ct-audit-section--mobile-active' : ''}`}>
                 <div className='ct-audit-section__top'>
                     <div className='ct-audit-section__title-area'>
                         <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
                             <polyline points='22 12 18 12 15 21 9 3 6 12 2 12' />
                         </svg>
-                        <h3 className='ct-audit-section__title'>Real-Time Copied Trades Audit Log</h3>
+                        <h3 className='ct-audit-section__title'>Copied Trades History</h3>
                     </div>
 
                     <div className='ct-audit-section__filters'>
@@ -921,14 +871,14 @@ export const CopyTradingPage: React.FC = observer(() => {
                             className={`ct-audit-section__filter-btn ${logFilter === 'real' ? 'active' : ''}`}
                             onClick={() => setLogFilter('real')}
                         >
-                            Real Accounts
+                            Real
                         </button>
                         <button
                             type='button'
                             className={`ct-audit-section__filter-btn ${logFilter === 'demo' ? 'active' : ''}`}
                             onClick={() => setLogFilter('demo')}
                         >
-                            Demo Accounts
+                            Demo
                         </button>
                         <button
                             type='button'
@@ -951,34 +901,34 @@ export const CopyTradingPage: React.FC = observer(() => {
                                 className='ct-audit-section__filter-btn ct-audit-section__filter-btn--clear'
                                 onClick={() => copyTradingService.clearLogs()}
                             >
-                                Clear Log
+                                Clear
                             </button>
                         )}
                     </div>
                 </div>
 
-                <div className='ct-audit-section__table-wrap'>
+                {/* Desktop Streamlined Table View */}
+                <div className='ct-audit-section__table-wrap ct-desktop-only'>
                     <table className='ct-audit-section__table'>
                         <thead>
                             <tr>
                                 <th>Time</th>
-                                <th>Source Tab</th>
-                                <th>Master</th>
-                                <th>Follower Account</th>
-                                <th>Type</th>
+                                <th>Source</th>
+                                <th>Follower</th>
+                                <th>Account</th>
                                 <th>Market</th>
                                 <th>Contract</th>
                                 <th>Master Stake</th>
                                 <th>Copier Stake</th>
                                 <th>Status</th>
-                                <th>P&L Result</th>
+                                <th>Result / P&L</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredLogs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={11} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--ct-text-muted)' }}>
-                                        No copied trades yet. When you place a trade on Elite Pro, Overlord AI, Poverty Hunter, Auto X, Scanner, or Manual Trading, it will mirror and record here automatically.
+                                    <td colSpan={10} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--ct-text-muted)' }}>
+                                        No copied trades yet. When you place a trade on any bot or tab, it will mirror and record here.
                                     </td>
                                 </tr>
                             ) : (
@@ -992,11 +942,6 @@ export const CopyTradingPage: React.FC = observer(() => {
                                         </td>
                                         <td>
                                             <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                                                {log.master_loginid}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>
                                                 {log.copier_loginid}
                                             </span>
                                         </td>
@@ -1005,8 +950,8 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                 style={{
                                                     fontSize: '0.68rem',
                                                     fontWeight: 800,
-                                                    padding: '0.2rem 0.45rem',
-                                                    borderRadius: '5px',
+                                                    padding: '0.15rem 0.45rem',
+                                                    borderRadius: '4px',
                                                     background: log.is_virtual ? 'rgba(245, 158, 11, 0.18)' : 'rgba(16, 185, 129, 0.18)',
                                                     color: log.is_virtual ? '#f59e0b' : '#10b981',
                                                     border: `1px solid ${log.is_virtual ? '#f59e0b' : '#10b981'}`,
@@ -1037,7 +982,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                     {log.profit >= 0 ? `+$${log.profit.toFixed(2)}` : `-$${Math.abs(log.profit).toFixed(2)}`}
                                                 </span>
                                             ) : (
-                                                <span style={{ color: 'var(--ct-text-subtle)' }}>
+                                                <span style={{ color: 'var(--ct-text-subtle)', fontSize: '0.78rem' }}>
                                                     {log.error_message || 'In Execution'}
                                                 </span>
                                             )}
@@ -1047,6 +992,64 @@ export const CopyTradingPage: React.FC = observer(() => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Responsive Trade Cards View */}
+                <div className='ct-mobile-history-list'>
+                    {filteredLogs.length === 0 ? (
+                        <div className='ct-mobile-history-empty'>
+                            No copied trades yet.
+                        </div>
+                    ) : (
+                        filteredLogs.map(log => (
+                            <div key={log.id} className='ct-mobile-history-card'>
+                                <div className='ct-mobile-history-card__top'>
+                                    <div className='ct-mobile-history-card__symbol'>
+                                        <strong>{log.symbol}</strong> ({log.contract_type})
+                                    </div>
+                                    <span
+                                        className={`ct-audit-section__status-pill ct-audit-section__status-pill--${log.status}`}
+                                    >
+                                        {log.status}
+                                    </span>
+                                </div>
+
+                                <div className='ct-mobile-history-card__meta'>
+                                    <span>
+                                        Follower: <strong>{log.copier_loginid}</strong> (
+                                        <span style={{ color: log.is_virtual ? '#f59e0b' : '#10b981', fontWeight: 700 }}>
+                                            {log.is_virtual ? 'Demo' : 'Real'}
+                                        </span>
+                                        )
+                                    </span>
+                                    <span>Time: {log.time}</span>
+                                </div>
+
+                                <div className='ct-mobile-history-card__bottom'>
+                                    <div>
+                                        Stake: <strong>${log.copier_stake.toFixed(2)}</strong>
+                                    </div>
+                                    <div>
+                                        {log.profit !== undefined ? (
+                                            <span
+                                                style={{
+                                                    color: log.profit >= 0 ? '#10b981' : '#f43f5e',
+                                                    fontWeight: 800,
+                                                    fontSize: '0.9rem',
+                                                }}
+                                            >
+                                                {log.profit >= 0 ? `+$${log.profit.toFixed(2)}` : `-$${Math.abs(log.profit).toFixed(2)}`}
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: 'var(--ct-text-subtle)', fontSize: '0.74rem' }}>
+                                                {log.error_message || 'Executing'}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </section>
         </div>
