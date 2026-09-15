@@ -137,19 +137,28 @@ export function parseDerivShortcode(shortcode?: string): Partial<TradeParameters
 
 /**
  * Builds a valid Deriv proposal request payload matching exact Deriv contract rules.
+ * Automatically chooses `underlying_symbol` for New Deriv API and `symbol` for legacy API.
  */
-export function buildProposalRequest(trade: TradeParameters, stake: number, currency = 'USD'): Record<string, any> {
+export function buildProposalRequest(
+    trade: TradeParameters,
+    stake: number,
+    currency = 'USD',
+    isNewApi = false
+): Record<string, any> {
+    const symbolKey = isNewApi ? 'underlying_symbol' : 'symbol';
     const proposalReq: Record<string, any> = {
         proposal: 1,
         amount: stake,
         basis: 'stake',
         contract_type: trade.contract_type,
         currency: currency || 'USD',
-        symbol: trade.symbol,
+        [symbolKey]: trade.symbol,
     };
 
     if (trade.contract_type === 'ACCU') {
         proposalReq.growth_rate = Number((trade as any).growth_rate || 0.03);
+    } else if (['MULTUP', 'MULTDOWN'].includes(trade.contract_type)) {
+        proposalReq.multiplier = Number((trade as any).multiplier || 10);
     } else {
         proposalReq.duration = Number(trade.duration || 5);
         proposalReq.duration_unit = trade.duration_unit || 't';
@@ -1272,7 +1281,7 @@ class CopyTradingEngine {
                 ws = new WebSocket(otpWsUrl);
 
                 const sendProposal = () => {
-                    const proposalReq = buildProposalRequest(trade, stake, accountCurrency);
+                    const proposalReq = buildProposalRequest(trade, stake, accountCurrency, true);
                     console.log(`[CopyTrading] Sending trade proposal for follower ${account.loginid}:`, proposalReq);
                     ws?.send(JSON.stringify(proposalReq));
                 };
@@ -1292,7 +1301,7 @@ class CopyTradingEngine {
                                 console.warn(`[CopyTrading] Follower ${account.loginid} proposal rejected (${data.error.message}), trying direct buy fallback...`);
                                 if (!isDirectBuySent) {
                                     isDirectBuySent = true;
-                                    const directParams = buildProposalRequest(trade, stake, accountCurrency);
+                                    const directParams = buildProposalRequest(trade, stake, accountCurrency, true);
                                     delete directParams.proposal;
                                     ws?.send(
                                         JSON.stringify({
@@ -1399,7 +1408,7 @@ class CopyTradingEngine {
             };
 
             const sendProposal = () => {
-                const proposalReq = buildProposalRequest(trade, stake, accountCurrency);
+                const proposalReq = buildProposalRequest(trade, stake, accountCurrency, false);
                 console.log(`[CopyTrading] Requesting proposal for ${account.loginid} (app_id: ${appId}):`, proposalReq);
                 ws?.send(JSON.stringify(proposalReq));
             };
@@ -1448,7 +1457,7 @@ class CopyTradingEngine {
                                 console.warn(`[CopyTrading] Proposal rejected (${data.error.message}), trying direct buy fallback for ${account.loginid}...`);
                                 if (!isDirectBuySent) {
                                     isDirectBuySent = true;
-                                    const directParams = buildProposalRequest(trade, stake, accountCurrency);
+                                    const directParams = buildProposalRequest(trade, stake, accountCurrency, false);
                                     delete directParams.proposal;
                                     ws?.send(
                                         JSON.stringify({
