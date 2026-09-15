@@ -163,18 +163,36 @@ class APIBase {
     }
 
     unsubscribeAllSubscriptions = () => {
-        this.current_auth_subscriptions?.forEach(subscription_promise => {
-            subscription_promise
-                ?.then(({ subscription }: any) => {
-                    if (subscription?.id) {
-                        this.api
-                            ?.send({
-                                forget: subscription.id,
-                            })
-                            .catch(() => {});
+        if (!Array.isArray(this.current_auth_subscriptions)) {
+            this.current_auth_subscriptions = [];
+            return;
+        }
+
+        this.current_auth_subscriptions.forEach((sub: any) => {
+            if (!sub) return;
+            try {
+                if (typeof sub.then === 'function') {
+                    sub.then((res: any) => {
+                        const subId = res?.subscription?.id || res?.id || res?.subscription_id;
+                        if (subId && this.api) {
+                            this.api.send({ forget: subId }).catch(() => {});
+                        }
+                        if (typeof res?.unsubscribe === 'function') {
+                            res.unsubscribe();
+                        }
+                    }).catch(() => {});
+                } else {
+                    const subId = sub?.subscription?.id || sub?.id || sub?.subscription_id;
+                    if (subId && this.api) {
+                        this.api.send({ forget: subId }).catch(() => {});
                     }
-                })
-                .catch(() => {});
+                    if (typeof sub.unsubscribe === 'function') {
+                        sub.unsubscribe();
+                    }
+                }
+            } catch (err) {
+                console.warn('[APIBase] Error during subscription cleanup:', err);
+            }
         });
         this.current_auth_subscriptions = [];
     };
@@ -1039,19 +1057,16 @@ class APIBase {
     }
 
     clearSubscriptions() {
-        this.subscriptions.forEach(s => s.unsubscribe());
+        this.subscriptions.forEach(s => {
+            try {
+                if (typeof s?.unsubscribe === 'function') {
+                    s.unsubscribe();
+                }
+            } catch {}
+        });
         this.subscriptions = [];
 
-        if (this.current_auth_subscriptions && this.current_auth_subscriptions.length > 0) {
-            this.current_auth_subscriptions.forEach(s => {
-                try {
-                    if (typeof (s as any)?.unsubscribe === 'function') {
-                        (s as any).unsubscribe();
-                    }
-                } catch {}
-            });
-            this.current_auth_subscriptions = [];
-        }
+        this.unsubscribeAllSubscriptions();
 
         // Resetting timeout resolvers
         const global_timeouts = globalObserver.getState('global_timeouts') ?? [];

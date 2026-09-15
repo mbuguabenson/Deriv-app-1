@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { observer } from 'mobx-react-lite';
 import { useStore } from '@/hooks/useStore';
 import { useApiBase } from '@/hooks/useApiBase';
-import { getAccountsList, getActiveLoginId, getActiveToken, getLegacyDTraderToken, isInvalidBearerToken } from '@/utils/token-bridge';
+import { getAccountsList, getActiveLoginId, getActiveToken, getLegacyDTraderToken, isInvalidBearerToken, isLegacyToken } from '@/utils/token-bridge';
 import { getAppId } from '@/components/shared/utils/config/config';
 import './dtrader.scss';
 
@@ -50,32 +50,35 @@ export const DTrader: React.FC = observer(() => {
         } catch {}
 
         const activeId = currentActiveLoginId || Object.keys(accounts)[0] || '';
-        const activeToken =
-            (activeId && accounts[activeId]) ||
-            client?.token ||
-            getActiveToken(activeId) ||
-            getLegacyDTraderToken(activeId) ||
-            localStorage.getItem('token1') ||
-            localStorage.getItem('token') ||
-            '';
+        
+        // Find valid legacy token for active account (never pass OAuth JWT to DTrader URL)
+        let activeToken = getLegacyDTraderToken(activeId);
+        if (!activeToken && accounts[activeId] && isLegacyToken(accounts[activeId])) {
+            activeToken = accounts[activeId];
+        }
+        if (!activeToken && client?.token && isLegacyToken(client?.token)) {
+            activeToken = client?.token;
+        }
 
-        const appId = getAppId() || '110211';
+        const appId = '121856'; // DTrader Vercel App ID
 
         const params = new URLSearchParams();
         params.set('app_id', String(appId));
 
         let index = 1;
         // Set active account as primary acct1/token1/cur1
-        if (activeId && activeToken) {
+        if (activeId) {
             params.set(`acct${index}`, activeId);
-            params.set(`token${index}`, activeToken);
+            if (activeToken) {
+                params.set(`token${index}`, activeToken);
+            }
             params.set(`cur${index}`, activeCurrency);
             index++;
         }
 
-        // Add remaining accounts
+        // Add remaining accounts with legacy tokens only
         for (const [id, tok] of Object.entries(accounts)) {
-            if (id !== activeId && tok && !isInvalidBearerToken(tok)) {
+            if (id !== activeId && tok && isLegacyToken(tok)) {
                 const cur = parsedClientAccounts[id]?.currency || 'USD';
                 params.set(`acct${index}`, id);
                 params.set(`token${index}`, tok);
@@ -105,7 +108,7 @@ export const DTrader: React.FC = observer(() => {
         const activeAccount = (activeLoginId && accountsObj[activeLoginId]) ? accountsObj[activeLoginId] : {};
         const legacyToken = activeAccount.token || getLegacyDTraderToken(activeLoginId) || localStorage.getItem('token1') || '';
         const effectiveToken = legacyToken || activeAccount.token || client?.token || getActiveToken(activeLoginId) || '';
-        const appIdStr = String(getAppId() || '110211');
+        const appIdStr = '121856';
 
         const payload = {
             type: 'NEWDTRADER_BRIDGE_AUTH',
