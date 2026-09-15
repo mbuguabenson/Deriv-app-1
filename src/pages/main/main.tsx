@@ -768,7 +768,7 @@ const AppWrapper = observer(() => {
                         keep_alive={true}
                     >
                         {activeTabsList.map(tab => (
-                            <div key={tab.key} label={tab.label} id={tab.id}>
+                            <div key={tab.key} label={tab.label as any} id={tab.id}>
                                 {tab.content}
                             </div>
                         ))}
