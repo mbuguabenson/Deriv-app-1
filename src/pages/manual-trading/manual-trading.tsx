@@ -6,6 +6,7 @@ import Dialog from '@/components/shared_ui/dialog';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import { api_base } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
+import DTrader from '../dtrader/dtrader';
 import {
     DIGIT_STRATEGIES,
     SUPPORTED_VOLATILITY_MARKETS,
@@ -299,6 +300,15 @@ const getProposalPreview = (proposal: any, requestedStake: number, currency: str
 const ManualTrading = observer(() => {
     const { client, dashboard, run_panel, summary_card, transactions, ui } = useStore();
     const { active_tab } = dashboard;
+    const [viewMode, setViewMode] = useState<'dtrader' | 'digit_strike'>(() => {
+        return (localStorage.getItem('manual_trading_view_mode') as 'dtrader' | 'digit_strike') || 'dtrader';
+    });
+
+    const handleViewModeChange = (mode: 'dtrader' | 'digit_strike') => {
+        localStorage.setItem('manual_trading_view_mode', mode);
+        setViewMode(mode);
+    };
+
     const [selectedSymbol, setSelectedSymbol] = useState(MANUAL_MARKETS[0].symbol);
     const [tickCountInput, setTickCountInput] = useState(String(DEFAULT_TICK_COUNT));
     const [activeTickCount, setActiveTickCount] = useState(DEFAULT_TICK_COUNT);
@@ -1195,8 +1205,43 @@ const ManualTrading = observer(() => {
         <div
             className={classNames('manual-trading-page', {
                 'manual-trading-page--dark': ui.is_dark_mode_on,
+                'manual-trading-page--dtrader': viewMode === 'dtrader',
             })}
         >
+            {/* View Mode Switcher Header */}
+            <div className='manual-trading-mode-bar'>
+                <div className='manual-trading-mode-tabs'>
+                    <button
+                        type='button'
+                        className={classNames('manual-trading-mode-btn', {
+                            'manual-trading-mode-btn--active': viewMode === 'dtrader',
+                        })}
+                        onClick={() => handleViewModeChange('dtrader')}
+                    >
+                        <span className='mode-icon'>⚡</span>
+                        <span className='mode-title'>DTrader Terminal</span>
+                        <span className='mode-badge'>Institutional</span>
+                    </button>
+                    <button
+                        type='button'
+                        className={classNames('manual-trading-mode-btn', {
+                            'manual-trading-mode-btn--active': viewMode === 'digit_strike',
+                        })}
+                        onClick={() => handleViewModeChange('digit_strike')}
+                    >
+                        <span className='mode-icon'>🎯</span>
+                        <span className='mode-title'>Quick Strike Digits</span>
+                        <span className='mode-badge'>Fast Scalper</span>
+                    </button>
+                </div>
+            </div>
+
+            {viewMode === 'dtrader' ? (
+                <div className='manual-trading-dtrader-view'>
+                    <DTrader />
+                </div>
+            ) : (
+                <div className='manual-trading-content'>
             <section className='manual-trading-toolbar'>
                 <label className='manual-trading-field manual-trading-field--market'>
                     <span>Market</span>
@@ -1578,6 +1623,8 @@ const ManualTrading = observer(() => {
                     )}
                 </div>
             </Dialog>
+                </div>
+            )}
         </div>
     );
 });

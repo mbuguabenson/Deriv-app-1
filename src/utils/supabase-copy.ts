@@ -316,7 +316,7 @@ export const getDefaultTabConfig = (): TabConfigItem[] => [
     { key: 'tradingview', label: 'TradingView', enabled: true, order: 6 },
     { key: 'signals', label: 'Signals', enabled: true, order: 7 },
     { key: 'scanner', label: 'AI Strategy Scanner', enabled: true, order: 8 },
-    { key: 'manual_trading', label: 'Manual Trading', enabled: true, order: 9 },
+    { key: 'manual_trading', label: 'Manual Trading (DTrader)', enabled: true, order: 9 },
     { key: 'easy_tool', label: 'Easy Tool', enabled: true, order: 10 },
     { key: 'marketkiller', label: 'MarketKiller', enabled: true, order: 11 },
     { key: 'multi_trader', label: 'Multi Trader', enabled: true, order: 12 },

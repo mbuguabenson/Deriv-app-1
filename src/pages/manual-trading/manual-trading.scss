@@ -17,7 +17,7 @@
     box-sizing: border-box;
     width: 100%;
     min-height: 100%;
-    padding: 1.2rem 1.4rem calc(84px + env(safe-area-inset-bottom, 16px));
+    padding: 0;
     overflow-y: auto;
     background: var(--manual-page-bg);
     color: var(--manual-text);
@@ -28,6 +28,102 @@
     *::after {
         box-sizing: border-box;
     }
+
+    &--dtrader {
+        padding: 0 !important;
+        overflow: hidden !important;
+        height: calc(100vh - 120px);
+        min-height: 600px;
+        display: flex;
+        flex-direction: column;
+    }
+}
+
+.manual-trading-mode-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    background: rgba(13, 18, 30, 0.95);
+    border-bottom: 1px solid rgba(255, 68, 79, 0.2);
+    backdrop-filter: blur(14px);
+    z-index: 20;
+
+    .manual-trading-mode-tabs {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(30, 41, 59, 0.7);
+        padding: 3px;
+        border-radius: 9999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        gap: 4px;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .manual-trading-mode-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 1rem;
+        border-radius: 9999px;
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+        .mode-icon {
+            font-size: 0.9rem;
+        }
+
+        .mode-badge {
+            font-size: 0.62rem;
+            padding: 0.12rem 0.4rem;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #cbd5e1;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        &:hover {
+            color: #f8fafc;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        &--active {
+            background: linear-gradient(135deg, #ff444f 0%, #ff6b4a 100%);
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(255, 68, 79, 0.45);
+
+            .mode-badge {
+                background: rgba(0, 0, 0, 0.25);
+                color: #ffffff;
+            }
+        }
+    }
+}
+
+.manual-trading-dtrader-view {
+    flex: 1;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .dtrader-workstation {
+        height: 100% !important;
+        min-height: 0 !important;
+    }
+}
+
+.manual-trading-content {
+    padding: 1.2rem 1.4rem calc(84px + env(safe-area-inset-bottom, 16px));
+    width: 100%;
 }
 
 .manual-trading-page--dark {

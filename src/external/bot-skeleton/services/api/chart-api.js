@@ -13,8 +13,8 @@ class ChartAPI {
             if (window.api_base?.api?.connection?.readyState === WebSocket.OPEN) {
                 return window.api_base.api;
             }
-            if ((window as any)?.DerivAPI?.api?.connection?.readyState === WebSocket.OPEN) {
-                return (window as any).DerivAPI.api;
+            if (window?.DerivAPI?.api?.connection?.readyState === WebSocket.OPEN) {
+                return window.DerivAPI.api;
             }
         }
         return null;

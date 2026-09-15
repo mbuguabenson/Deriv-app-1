@@ -199,9 +199,8 @@ export const TabIcon: React.FC<TTabIconProps> = ({ iconKey, label }) => {
                         strokeLinecap='round'
                         strokeLinejoin='round'
                     >
-                        <circle cx='12' cy='12' r='9' />
-                        <path d='M12 8v4l3 3' />
-                        <path d='M8 3.5L12 2l4 1.5' />
+                        <path d='M3 3v18h18' />
+                        <path d='M18 9l-5 5-4-4-6 6' />
                     </svg>
                 );
             case 'easy_tool':

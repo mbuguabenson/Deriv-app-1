@@ -5,7 +5,11 @@ import { useApiBase } from '@/hooks/useApiBase';
 import { getAccountsList, getActiveLoginId, getActiveToken, getLegacyDTraderToken, isLegacyToken } from '@/utils/token-bridge';
 import './dtrader.scss';
 
-const DTRADER_BASE_URL = 'https://deriv-dtrader.vercel.app';
+const DTRADER_BASE_URL =
+    (typeof window !== 'undefined' && localStorage.getItem('custom_dtrader_url')) ||
+    (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? (localStorage.getItem('dev_dtrader_url') || 'https://localhost:8443')
+        : 'https://deriv-dtrader.vercel.app');
 
 export const DTrader: React.FC = observer(() => {
     const { client } = useStore();

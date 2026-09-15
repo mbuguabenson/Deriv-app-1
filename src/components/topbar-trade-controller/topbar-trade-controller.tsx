@@ -151,11 +151,12 @@ export const TopBarTradeController: React.FC<TopBarTradeControllerProps> = ({ cu
                     canToggle: true,
                 };
             case 'manual_trading':
+            case 'dtrader':
                 return {
-                    name: 'Manual Trading',
-                    startLabel: 'QUICK STRIKE TRADE',
+                    name: 'DTrader Terminal',
+                    startLabel: 'DTRADER LIVE',
                     stopLabel: 'CANCEL TRADE',
-                    icon: '🔥',
+                    icon: '⚡',
                     canToggle: false,
                 };
             default:
