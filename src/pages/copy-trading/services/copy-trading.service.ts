@@ -90,6 +90,99 @@ export interface MasterAccountConfig {
 
 type SubscriberCallback = () => void;
 
+/**
+ * Extracts contract parameters (symbol, contract_type, duration, barrier) from Deriv contract shortcodes.
+ * Example shortcodes:
+ * - DIGITDIFF_1HZ100V_1.09_1726388200_1T_5
+ * - CALL_R_100_19.50_1726388200_5T_S0P_0
+ * - ACCU_1HZ100V_10.00_1726388200_3_0_0.03
+ */
+export function parseDerivShortcode(shortcode?: string): Partial<TradeParameters> {
+    if (!shortcode || typeof shortcode !== 'string') return {};
+    const parts = shortcode.split('_');
+    if (parts.length < 2) return {};
+
+    const contract_type = parts[0];
+    const symbol = parts[1];
+
+    let duration = 5;
+    let duration_unit = 't';
+    const durMatch = shortcode.match(/_(\d+)([T|M|H|D|S])_/i);
+    if (durMatch) {
+        duration = parseInt(durMatch[1], 10);
+        duration_unit = durMatch[2].toLowerCase();
+    }
+
+    let barrier: string | undefined;
+    const cType = contract_type.toUpperCase();
+    if (['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].some(t => cType.startsWith(t))) {
+        const lastPart = parts[parts.length - 1];
+        if (/^\d+$/.test(lastPart)) {
+            barrier = lastPart;
+        }
+    } else if (['HIGHER', 'LOWER', 'TOUCH', 'NOTOUCH', 'ONETOUCH', 'EXPIRYRANGE', 'EXPIRYMISS'].includes(cType)) {
+        const lastPart = parts[parts.length - 1];
+        if (lastPart) barrier = lastPart;
+    }
+
+    return {
+        contract_type,
+        symbol,
+        duration,
+        duration_unit,
+        barrier,
+        prediction: barrier !== undefined ? Number(barrier) : undefined,
+    };
+}
+
+/**
+ * Builds a valid Deriv proposal request payload matching exact Deriv contract rules.
+ */
+export function buildProposalRequest(trade: TradeParameters, stake: number, currency = 'USD'): Record<string, any> {
+    const proposalReq: Record<string, any> = {
+        proposal: 1,
+        amount: stake,
+        basis: 'stake',
+        contract_type: trade.contract_type,
+        currency: currency || 'USD',
+        symbol: trade.symbol,
+    };
+
+    if (trade.contract_type === 'ACCU') {
+        proposalReq.growth_rate = Number((trade as any).growth_rate || 0.03);
+    } else {
+        proposalReq.duration = Number(trade.duration || 5);
+        proposalReq.duration_unit = trade.duration_unit || 't';
+    }
+
+    // Barrier handling according to Deriv contract specifications
+    const cType = trade.contract_type?.toUpperCase() || '';
+    if (['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(cType)) {
+        const rawBarrier = trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
+            ? trade.barrier
+            : trade.prediction;
+        if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+            proposalReq.barrier = String(Math.floor(Number(rawBarrier)));
+        } else {
+            proposalReq.barrier = '0';
+        }
+    } else if (['HIGHER', 'LOWER', 'TOUCH', 'NOTOUCH', 'ONETOUCH', 'EXPIRYRANGE', 'EXPIRYMISS'].includes(cType)) {
+        const rawBarrier = trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
+            ? trade.barrier
+            : trade.prediction;
+        if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+            proposalReq.barrier = String(rawBarrier);
+        }
+    }
+    // Note: DIGITEVEN, DIGITODD, CALL, PUT, CALLE, PUTE, ASIANU, ASIAND do not take barrier for tick durations
+
+    if (trade.selected_tick !== undefined) {
+        proposalReq.selected_tick = trade.selected_tick;
+    }
+
+    return proposalReq;
+}
+
 class CopyTradingEngine {
     private accounts: CopierAccount[] = [];
     private tradeLogs: CopierTradeLog[] = [];
@@ -717,37 +810,101 @@ class CopyTradingEngine {
         this.botObserverAttached = true;
 
         try {
-            // Listen to bot-skeleton purchase events
+            // 1. Listen to bot-skeleton & manual purchase events
             globalObserver.register('contract.status', (data: any) => {
                 if (!this.masterConfig.is_active) return;
                 if (!data || data.id !== 'contract.purchase_received' || !data.buy) return;
 
                 const buy = data.buy;
-                const masterLoginid = this.masterConfig.loginid || 'MASTER_BOT';
+                const req = data.request || {};
+                const params = data.parameters || req.parameters || req || {};
+                const parsedShortcode = parseDerivShortcode(buy.shortcode);
+
+                const activeLogin =
+                    data.account_id ||
+                    data.loginid ||
+                    this.masterConfig.loginid ||
+                    localStorage.getItem('active_loginid') ||
+                    '';
+
+                const masterLoginid = data.source === 'Manual Trading'
+                    ? (activeLogin || 'MANUAL_TRADER')
+                    : (activeLogin || 'MASTER_BOT');
+
                 const isVirtualMaster = Boolean(
-                    this.masterConfig.is_virtual ||
-                    masterLoginid.startsWith('VR') ||
-                    masterLoginid.startsWith('VRTC') ||
-                    masterLoginid.startsWith('VRW')
+                    data.is_virtual !== undefined
+                        ? data.is_virtual
+                        : this.masterConfig.is_virtual ||
+                          masterLoginid.startsWith('VR') ||
+                          masterLoginid.startsWith('VRTC') ||
+                          masterLoginid.startsWith('VRW')
                 );
 
-                // Extract trade params from purchase response or context
+                const symbol = (params.underlying_symbol || params.symbol || parsedShortcode.symbol || buy.symbol || 'R_100').toString();
+                const contract_type = (params.contract_type || parsedShortcode.contract_type || buy.contract_type || 'CALL').toString();
+                const stake = Number(buy.buy_price ?? params.amount ?? req.price ?? req.amount ?? 1);
+                const duration = Number(params.duration || parsedShortcode.duration || buy.duration || req.duration || 5);
+                const duration_unit = (params.duration_unit || parsedShortcode.duration_unit || buy.duration_unit || req.duration_unit || 't').toString();
+                const barrier = params.barrier !== undefined ? String(params.barrier) : parsedShortcode.barrier;
+                const prediction = barrier !== undefined ? Number(barrier) : parsedShortcode.prediction;
+
                 const tradeParams: TradeParameters = {
-                    symbol: buy.symbol || 'R_100',
-                    contract_type: buy.contract_type || 'CALL',
-                    stake: Number(buy.buy_price ?? 1),
-                    duration: Number(buy.duration ?? 5),
-                    duration_unit: buy.duration_unit || 't',
-                    barrier: buy.barrier,
-                    prediction: buy.prediction,
-                    currency: buy.currency || 'USD',
+                    symbol,
+                    contract_type,
+                    stake,
+                    duration,
+                    duration_unit,
+                    barrier,
+                    prediction,
+                    currency: buy.currency || params.currency || 'USD',
                     is_virtual: isVirtualMaster,
                 };
 
-                this.replicateTradeToCopiers(tradeParams, masterLoginid);
+                console.log(`[CopyTrading] Intercepted contract purchase: ${contract_type} on ${symbol} ($${stake}) from ${masterLoginid}`);
+                this.replicateTradeToCopiers(tradeParams, masterLoginid, data.source || 'Trading Engine');
             });
 
-            // Listen to open contract updates for profit/loss tracking
+            // 2. Listen to replicator.purchase events directly from Purchase.js
+            globalObserver.register('replicator.purchase', (data: any) => {
+                if (!this.masterConfig.is_active) return;
+                if (!data) return;
+
+                const req = data.request || {};
+                const opts = data.tradeOptions || {};
+                const contract_type = (data.contract_type || req.contract_type || opts.contract_type || 'CALL').toString();
+                const symbol = (req.symbol || req.underlying_symbol || opts.symbol || 'R_100').toString();
+                const stake = Number(req.amount ?? req.price ?? opts.amount ?? 1);
+                const duration = Number(req.duration ?? opts.duration ?? 5);
+                const duration_unit = (req.duration_unit || opts.duration_unit || 't').toString();
+                const barrier = req.barrier !== undefined ? String(req.barrier) : (opts.prediction !== undefined ? String(opts.prediction) : undefined);
+
+                const activeLogin = data.account_id || this.masterConfig.loginid || localStorage.getItem('active_loginid') || 'MASTER_ACCOUNT';
+                const isVirtualMaster = Boolean(
+                    this.masterConfig.is_virtual ||
+                    activeLogin.startsWith('VR') ||
+                    activeLogin.startsWith('VRTC') ||
+                    activeLogin.startsWith('VRW')
+                );
+
+                console.log(`[CopyTrading] Intercepted bot purchase event: ${contract_type} on ${symbol} ($${stake})`);
+                this.replicateTradeToCopiers(
+                    {
+                        symbol,
+                        contract_type,
+                        stake,
+                        duration,
+                        duration_unit,
+                        barrier,
+                        prediction: barrier !== undefined ? Number(barrier) : undefined,
+                        currency: req.currency || opts.currency || 'USD',
+                        is_virtual: isVirtualMaster,
+                    },
+                    activeLogin,
+                    'Bot Engine'
+                );
+            });
+
+            // 3. Listen to open contract updates for profit/loss tracking
             globalObserver.register('bot.contract', (contract: any) => {
                 if (!contract || !contract.contract_id) return;
                 if (contract.is_sold) {
@@ -784,9 +941,15 @@ class CopyTradingEngine {
         masterLoginid: string,
         source = 'Trading Engine'
     ): Promise<CopierTradeLog[]> {
-        if (!this.masterConfig.is_active) return [];
+        if (!this.masterConfig.is_active) {
+            console.log('[CopyTrading] Master copier is inactive, skipping replication.');
+            return [];
+        }
         const activeCopiers = this.accounts.filter(acc => acc.is_active);
-        if (activeCopiers.length === 0) return [];
+        if (activeCopiers.length === 0) {
+            console.log('[CopyTrading] No active copier accounts connected.');
+            return [];
+        }
 
         const isMasterVirtual = Boolean(
             trade.is_virtual !== undefined
@@ -817,6 +980,8 @@ class CopyTradingEngine {
         const logs: CopierTradeLog[] = [];
         const maxStakeGuard = this.masterConfig.max_stake_guard || 100;
 
+        console.log(`[CopyTrading] 🔄 Replicating trade (${trade.contract_type} on ${trade.symbol}) from ${masterLoginid} [${isMasterVirtual ? 'DEMO' : 'REAL'}] to ${activeCopiers.length} follower account(s)...`);
+
         // Execute concurrently on all active follower accounts
         await Promise.all(
             activeCopiers.map(async account => {
@@ -824,6 +989,7 @@ class CopyTradingEngine {
                 if (isMasterVirtual && !account.is_virtual) {
                     const isAllowed = Boolean(this.masterConfig.allow_demo_to_real || account.allow_demo_to_real);
                     if (!isAllowed) {
+                        console.warn(`[CopyTrading] 🛡️ Skipped replication to ${account.loginid} (REAL) because master is DEMO and allow_demo_to_real is disabled.`);
                         const skipLog: CopierTradeLog = {
                             id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                             time: timestamp,
@@ -846,7 +1012,7 @@ class CopyTradingEngine {
                     }
                 }
 
-                // Calculate copier stake
+                // Calculate copier stake (1:1 replication default)
                 let copierStake = trade.stake;
                 if (account.sizing_mode === 'fixed' && account.fixed_stake && account.fixed_stake > 0) {
                     copierStake = account.fixed_stake;
@@ -874,6 +1040,7 @@ class CopyTradingEngine {
                 };
 
                 try {
+                    console.log(`[CopyTrading] Executing trade on follower ${account.loginid} ($${copierStake})...`);
                     const result = await this.executeTradeOnAccount(account, trade, copierStake);
                     if (result.success) {
                         logEntry.status = 'success';
@@ -890,12 +1057,14 @@ class CopyTradingEngine {
                         logEntry.error_message = result.error || 'Execution failed';
                         account.last_trade_status = 'failed';
                         account.last_trade_time = timestamp;
+                        console.error(`[CopyTrading] Failed replicating to ${account.loginid}:`, result.error);
                     }
                 } catch (err: any) {
                     logEntry.status = 'failed';
                     logEntry.error_message = err?.message || 'Network error';
                     account.last_trade_status = 'failed';
                     account.last_trade_time = timestamp;
+                    console.error(`[CopyTrading] Error replicating to ${account.loginid}:`, err);
                 }
 
                 logs.push(logEntry);
@@ -916,7 +1085,7 @@ class CopyTradingEngine {
         masterLoginid?: string
     ): Promise<CopierTradeLog[]> {
         if (!this.masterConfig.is_active) return [];
-        const loginid = masterLoginid || this.masterConfig.loginid || 'MASTER_ACCOUNT';
+        const loginid = masterLoginid || this.masterConfig.loginid || localStorage.getItem('active_loginid') || 'MASTER_ACCOUNT';
         const isVirtual = Boolean(
             trade.is_virtual !== undefined
                 ? trade.is_virtual
@@ -932,9 +1101,9 @@ class CopyTradingEngine {
     /**
      * Executes a single contract on a specific Deriv account via WebSocket.
      * Flow:
-     * 1. Connect WS & Authorize with PAT token (supports multi-appId fallback).
+     * 1. Connect WS & Authorize with token (supports multi-appId fallback).
      * 2. Request Proposal (price & proposal ID).
-     * 3. Send Buy request.
+     * 3. Send Buy request (with direct buy fallback).
      * 4. Return result and new balance.
      */
     public async executeTradeOnAccount(
@@ -947,9 +1116,8 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
-        // App IDs to try: the one saved on account, then universal 1089, then platform appId
         const appIdsToTry = Array.from(
-            new Set([account.app_id || '1089', '1089', getAppId() || '121856', '16929', '36544'])
+            new Set([account.app_id || '1089', '1089', getAppId() || '121856', '16929', '36544', '36545'])
         );
 
         let lastError = 'Execution failed.';
@@ -958,7 +1126,6 @@ class CopyTradingEngine {
             try {
                 const res = await this.attemptExecuteTradeWithAppId(account, trade, stake, appId);
                 if (res.success) {
-                    // Update working app_id if changed
                     if (account.app_id !== appId) {
                         account.app_id = appId;
                         this.persist();
@@ -966,7 +1133,6 @@ class CopyTradingEngine {
                     return res;
                 }
                 lastError = res.error || lastError;
-                // If the error was not auth-related (e.g. insufficient balance or market closed), don't retry other appIds
                 if (
                     lastError.includes('InsufficientBalance') ||
                     lastError.includes('MarketClosed') ||
@@ -993,23 +1159,15 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
-        let wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
-        const isNewApiToken = account.token.startsWith('ey') || account.token.startsWith('pat_') || account.token.startsWith('PAT_');
-
-        if (isNewApiToken) {
-            try {
-                const otpUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(account.token, account.loginid);
-                if (otpUrl) wsUrl = otpUrl;
-            } catch (err) {
-                console.warn('[executeTradeOnAccount] Failed to get OTP URL, attempting direct WebSocket:', err);
-            }
-        }
+        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
 
         return new Promise(resolve => {
             let ws: WebSocket | null = null;
             let timeout: any = null;
             let proposalId: string | null = null;
             let askPrice: number = stake;
+            let accountCurrency = account.currency || 'USD';
+            let isDirectBuySent = false;
 
             const cleanup = () => {
                 if (timeout) clearTimeout(timeout);
@@ -1026,28 +1184,8 @@ class CopyTradingEngine {
             };
 
             const sendProposal = () => {
-                const proposalReq: Record<string, any> = {
-                    proposal: 1,
-                    amount: stake,
-                    basis: 'stake',
-                    contract_type: trade.contract_type,
-                    currency: account.currency || 'USD',
-                    symbol: trade.symbol,
-                    duration: trade.duration || 5,
-                    duration_unit: trade.duration_unit || 't',
-                };
-
-                const rawBarrier =
-                    trade.barrier !== undefined && trade.barrier !== null && trade.barrier !== ''
-                        ? trade.barrier
-                        : trade.prediction;
-                if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
-                    proposalReq.barrier = String(rawBarrier);
-                }
-                if (trade.selected_tick !== undefined) {
-                    proposalReq.selected_tick = trade.selected_tick;
-                }
-
+                const proposalReq = buildProposalRequest(trade, stake, accountCurrency);
+                console.log(`[CopyTrading] Requesting proposal for ${account.loginid} (app_id: ${appId}):`, proposalReq);
                 ws?.send(JSON.stringify(proposalReq));
             };
 
@@ -1060,12 +1198,8 @@ class CopyTradingEngine {
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
-                    if (isOAuth && wsUrl.includes('token=')) {
-                        // Already pre-authenticated with OTP
-                        sendProposal();
-                    } else {
-                        ws?.send(JSON.stringify({ authorize: account.token }));
-                    }
+                    console.log(`[CopyTrading] Connected WS for follower ${account.loginid}, authorizing...`);
+                    ws?.send(JSON.stringify({ authorize: account.token }));
                 };
 
                 ws.onmessage = event => {
@@ -1076,20 +1210,40 @@ class CopyTradingEngine {
                         if (data.msg_type === 'authorize') {
                             if (data.error) {
                                 cleanup();
+                                console.warn(`[CopyTrading] Follower ${account.loginid} auth failed:`, data.error.message);
                                 return resolve({
                                     success: false,
                                     error: `Auth error: ${data.error.message}`,
                                 });
                             }
 
-                            // Step 2: Send Proposal Request
+                            if (data.authorize?.currency) {
+                                accountCurrency = data.authorize.currency;
+                                account.currency = accountCurrency;
+                            }
+
+                            console.log(`[CopyTrading] Follower ${account.loginid} authorized. Requesting trade proposal...`);
                             sendProposal();
                             return;
                         }
 
-                        // Step 3: Handle Proposal Response
+                        // Step 2: Handle Proposal Response
                         if (data.msg_type === 'proposal') {
                             if (data.error) {
+                                console.warn(`[CopyTrading] Proposal rejected (${data.error.message}), trying direct buy fallback for ${account.loginid}...`);
+                                if (!isDirectBuySent) {
+                                    isDirectBuySent = true;
+                                    const directParams = buildProposalRequest(trade, stake, accountCurrency);
+                                    delete directParams.proposal;
+                                    ws?.send(
+                                        JSON.stringify({
+                                            buy: '1',
+                                            price: stake,
+                                            parameters: directParams,
+                                        })
+                                    );
+                                    return;
+                                }
                                 cleanup();
                                 return resolve({
                                     success: false,
@@ -1105,7 +1259,7 @@ class CopyTradingEngine {
                                 return resolve({ success: false, error: 'No proposal ID returned from Deriv.' });
                             }
 
-                            // Step 4: Send Buy Request
+                            console.log(`[CopyTrading] Proposal received (${proposalId}, $${askPrice}). Sending buy request for ${account.loginid}...`);
                             ws?.send(
                                 JSON.stringify({
                                     buy: proposalId,
@@ -1115,16 +1269,18 @@ class CopyTradingEngine {
                             return;
                         }
 
-                        // Step 5: Handle Buy Response
+                        // Step 3: Handle Buy Response
                         if (data.msg_type === 'buy') {
                             cleanup();
                             if (data.error) {
+                                console.error(`[CopyTrading] Follower ${account.loginid} buy failed:`, data.error.message);
                                 return resolve({
                                     success: false,
                                     error: `Buy error: ${data.error.message}`,
                                 });
                             }
 
+                            console.log(`[CopyTrading] 🎯 Follower ${account.loginid} trade SUCCESS! Contract ID: ${data.buy?.contract_id}, Balance: ${data.buy?.balance_after}`);
                             return resolve({
                                 success: true,
                                 contract_id: data.buy?.contract_id,
@@ -1141,6 +1297,11 @@ class CopyTradingEngine {
                     cleanup();
                     resolve({ success: false, error: 'WebSocket connection error during execution.' });
                 };
+
+                ws.onclose = () => {
+                    cleanup();
+                    resolve({ success: false, error: 'WebSocket closed during execution.' });
+                };
             } catch (err: any) {
                 cleanup();
                 resolve({ success: false, error: err?.message || 'Execution error.' });
@@ -1150,3 +1311,10 @@ class CopyTradingEngine {
 }
 
 export const copyTradingService = new CopyTradingEngine();
+
+// Auto-initialize copy trading service so listeners are active from startup
+try {
+    if (typeof window !== 'undefined') {
+        copyTradingService.init();
+    }
+} catch (e) {}

@@ -1,3 +1,5 @@
+import { observer as globalObserver } from '../../utils/observer';
+
 export const REQUESTS = [
     'active_symbols',
     'balance',
@@ -47,6 +49,19 @@ class APIMiddleware {
                 const res_type = this.getRequestType(res);
                 if (res_type) {
                     this.defineMeasure(res_type);
+                }
+
+                // Global Interceptor: notify copy trading engine when ANY buy order succeeds
+                if (res && res.buy && res.buy.contract_id) {
+                    try {
+                        globalObserver.emit('contract.status', {
+                            id: 'contract.purchase_received',
+                            data: res.buy.transaction_id,
+                            buy: res.buy,
+                            request,
+                            source: 'Deriv Platform',
+                        });
+                    } catch (e) {}
                 }
             })
             .catch(() => {});
