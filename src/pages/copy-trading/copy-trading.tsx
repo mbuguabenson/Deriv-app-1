@@ -26,6 +26,7 @@ export const CopyTradingPage: React.FC = observer(() => {
 
     // Live validation state for dock
     const [isValidating, setIsValidating] = useState(false);
+    const [selectedTargetLoginid, setSelectedTargetLoginid] = useState<string>('');
     const [validationResult, setValidationResult] = useState<{
         valid?: boolean;
         loginid?: string;
@@ -35,6 +36,12 @@ export const CopyTradingPage: React.FC = observer(() => {
         scopes?: string[];
         has_trade_scope?: boolean;
         app_id?: string;
+        available_accounts?: Array<{
+            loginid: string;
+            is_virtual: boolean;
+            balance: number;
+            currency: string;
+        }>;
         error?: string;
     } | null>(null);
 
@@ -103,11 +110,12 @@ export const CopyTradingPage: React.FC = observer(() => {
 
     // Handle token validation with auto cleaning & debouncing
     const handleValidateToken = useCallback(
-        (tokenToValidate: string) => {
+        (tokenToValidate: string, targetLoginid?: string) => {
             const cleaned = copyTradingService.sanitizeToken(tokenToValidate);
             if (!cleaned || cleaned.length < 4) {
                 setValidationResult(null);
                 setIsValidating(false);
+                setSelectedTargetLoginid('');
                 return;
             }
 
@@ -118,8 +126,11 @@ export const CopyTradingPage: React.FC = observer(() => {
             setIsValidating(true);
             validationTimerRef.current = setTimeout(async () => {
                 try {
-                    const res = await copyTradingService.validateToken(cleaned);
+                    const res = await copyTradingService.validateToken(cleaned, targetLoginid);
                     setValidationResult(res);
+                    if (res.loginid && !targetLoginid) {
+                        setSelectedTargetLoginid(res.loginid);
+                    }
                 } catch (err: any) {
                     setValidationResult({
                         valid: false,
@@ -152,9 +163,11 @@ export const CopyTradingPage: React.FC = observer(() => {
         const cleaned = copyTradingService.sanitizeToken(inputToken);
         if (!cleaned || !validationResult?.valid) return;
 
-        const autoAlias = `${validationResult.is_virtual ? 'Demo' : 'Real'} Account (${validationResult.loginid || 'Follower'})`;
+        const targetId = selectedTargetLoginid || validationResult.loginid || '';
+        const autoAlias = `${validationResult.is_virtual ? 'Demo' : 'Real'} Account (${targetId || 'Follower'})`;
         const res = await copyTradingService.addCopierAccount({
             token: cleaned,
+            target_loginid: targetId,
             alias: autoAlias,
             sizing_mode: 'multiplier',
             multiplier: 1.0,
@@ -162,6 +175,7 @@ export const CopyTradingPage: React.FC = observer(() => {
 
         if (res.success) {
             setInputToken('');
+            setSelectedTargetLoginid('');
             setValidationResult(null);
             if (mobileTab === 'add') {
                 setMobileTab('copiers');
@@ -723,6 +737,54 @@ export const CopyTradingPage: React.FC = observer(() => {
                                                     <span>Login ID: <strong>{validationResult.loginid}</strong></span>
                                                     <span>Scopes: <strong>{validationResult.scopes?.join(', ') || 'read, trade'}</strong></span>
                                                 </div>
+
+                                                {/* If token is linked to multiple accounts (Demo & Real), allow 1-click selection */}
+                                                {validationResult.available_accounts && validationResult.available_accounts.length > 1 && (
+                                                    <div style={{ marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--ct-text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                                                            Select Target Account (Demo vs Real):
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                                            {validationResult.available_accounts.map(acc => {
+                                                                const isSelected = (selectedTargetLoginid || validationResult.loginid) === acc.loginid;
+                                                                return (
+                                                                    <button
+                                                                        key={acc.loginid}
+                                                                        type='button'
+                                                                        style={{
+                                                                            padding: '0.35rem 0.6rem',
+                                                                            borderRadius: '6px',
+                                                                            border: isSelected
+                                                                                ? (acc.is_virtual ? '1px solid #f59e0b' : '1px solid #10b981')
+                                                                                : '1px solid rgba(255,255,255,0.12)',
+                                                                            background: isSelected
+                                                                                ? (acc.is_virtual ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)')
+                                                                                : 'rgba(255,255,255,0.04)',
+                                                                            color: isSelected
+                                                                                ? (acc.is_virtual ? '#f59e0b' : '#10b981')
+                                                                                : 'var(--ct-text-main)',
+                                                                            fontSize: '0.72rem',
+                                                                            cursor: 'pointer',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '0.35rem',
+                                                                            fontWeight: isSelected ? 700 : 500,
+                                                                        }}
+                                                                        onClick={() => {
+                                                                            setSelectedTargetLoginid(acc.loginid);
+                                                                            handleValidateToken(inputToken, acc.loginid);
+                                                                        }}
+                                                                    >
+                                                                        <span>{acc.is_virtual ? '🟡 Demo' : '🟢 Real'}</span>
+                                                                        <strong>{acc.loginid}</strong>
+                                                                        <span style={{ opacity: 0.8 }}>(${acc.balance.toFixed(2)})</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+
                                                 {!validationResult.has_trade_scope && (
                                                     <div
                                                         style={{

@@ -401,6 +401,12 @@ class CopyTradingEngine {
         fullname: string;
         email: string;
         app_id?: string;
+        available_accounts?: Array<{
+            loginid: string;
+            is_virtual: boolean;
+            balance: number;
+            currency: string;
+        }>;
         error?: string;
     }> {
         const cleaned = this.sanitizeToken(token);
@@ -425,6 +431,12 @@ class CopyTradingEngine {
                 const accounts = await DerivWSAccountsService.fetchAccountsList(cleaned);
                 if (accounts && accounts.length > 0) {
                     const primary = (targetLoginid ? accounts.find(a => a.account_id === targetLoginid) : null) || accounts[0];
+                    const available_accounts = accounts.map(a => ({
+                        loginid: a.account_id,
+                        is_virtual: a.account_type === 'demo',
+                        balance: parseFloat(a.balance) || 0,
+                        currency: a.currency || 'USD',
+                    }));
                     return {
                         valid: true,
                         loginid: primary.account_id,
@@ -436,6 +448,7 @@ class CopyTradingEngine {
                         fullname: primary.account_id,
                         email: '',
                         app_id: getAppId() || '121856',
+                        available_accounts,
                     };
                 }
                 return {
@@ -717,6 +730,7 @@ class CopyTradingEngine {
 
     public async addCopierAccount(params: {
         token: string;
+        target_loginid?: string;
         alias?: string;
         sizing_mode?: 'multiplier' | 'fixed';
         multiplier?: number;
@@ -728,7 +742,7 @@ class CopyTradingEngine {
             return { success: false, error: 'Please enter a valid Deriv API token.' };
         }
 
-        const validation = await this.validateToken(cleanedToken);
+        const validation = await this.validateToken(cleanedToken, params.target_loginid);
         if (!validation.valid) {
             return { success: false, error: validation.error || 'Token validation failed.' };
         }
