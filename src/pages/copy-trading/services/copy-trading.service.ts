@@ -189,7 +189,15 @@ export function buildProposalRequest(
         proposalReq.selected_tick = trade.selected_tick;
     }
 
-    return proposalReq;
+    // Clean any undefined or empty fields
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(proposalReq)) {
+        if (v !== undefined && v !== null && v !== '') {
+            cleaned[k] = v;
+        }
+    }
+
+    return cleaned;
 }
 
 class CopyTradingEngine {
