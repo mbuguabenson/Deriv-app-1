@@ -52,6 +52,7 @@ export const CopyTradingPage: React.FC = observer(() => {
 
     // Audit log filter & mobile tab
     const [logFilter, setLogFilter] = useState<'all' | 'real' | 'demo' | 'won' | 'lost'>('all');
+    const [selectedFollowerFilter, setSelectedFollowerFilter] = useState<string>('all');
     const [mobileTab, setMobileTab] = useState<'copiers' | 'add' | 'history'>('copiers');
 
     // Synchronize with copyTradingService
@@ -239,25 +240,49 @@ export const CopyTradingPage: React.FC = observer(() => {
         }
     };
 
+    // Navigate and filter history to a specific follower account
+    const handleFilterByUser = (loginid: string) => {
+        setSelectedFollowerFilter(loginid);
+        if (mobileTab !== 'history') {
+            setMobileTab('history');
+        }
+        setTimeout(() => {
+            const auditEl = document.getElementById('ct-audit-section');
+            if (auditEl) {
+                auditEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 50);
+    };
+
     // Derived metrics
     const activeCount = accounts.filter(a => a.is_active).length;
     const realCount = accounts.filter(a => !a.is_virtual).length;
     const demoCount = accounts.filter(a => a.is_virtual).length;
 
+    const selectedAccountObj = useMemo(() => {
+        if (selectedFollowerFilter === 'all') return null;
+        return accounts.find(a => a.loginid === selectedFollowerFilter);
+    }, [accounts, selectedFollowerFilter]);
+
     const totalProfitCalculated = useMemo(() => {
         return tradeLogs.reduce((acc, log) => acc + (log.profit || 0), 0);
     }, [tradeLogs]);
 
-    // Filtered audit logs
+    // Filtered audit logs (filtered by both status and selected follower account)
     const filteredLogs = useMemo(() => {
         return tradeLogs.filter(log => {
+            // 1. Account Filter
+            if (selectedFollowerFilter !== 'all' && log.copier_loginid !== selectedFollowerFilter) {
+                return false;
+            }
+            // 2. Status Filter
             if (logFilter === 'real') return !log.is_virtual;
             if (logFilter === 'demo') return log.is_virtual;
             if (logFilter === 'won') return log.status === 'won';
             if (logFilter === 'lost') return log.status === 'lost';
             return true;
         });
-    }, [tradeLogs, logFilter]);
+    }, [tradeLogs, logFilter, selectedFollowerFilter]);
 
     return (
         <div className='copy-trading-container'>
@@ -552,6 +577,14 @@ export const CopyTradingPage: React.FC = observer(() => {
 
                                         <div className='ct-pool-card__metric-cell' style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
                                             <div className='ct-pool-card__actions-group'>
+                                                <button
+                                                    type='button'
+                                                    className='ct-pool-card__action-btn ct-pool-card__action-btn--primary'
+                                                    onClick={() => handleFilterByUser(acc.loginid)}
+                                                    title={`View copied trades history for ${acc.alias} (${acc.loginid})`}
+                                                >
+                                                    Trades ({tradeLogs.filter(l => l.copier_loginid === acc.loginid).length})
+                                                </button>
                                                 <button
                                                     type='button'
                                                     className='ct-pool-card__action-btn'
@@ -911,7 +944,7 @@ export const CopyTradingPage: React.FC = observer(() => {
             </div>
 
             {/* 5. LIVE COPIED TRADES AUDIT TABLE & FILTERS */}
-            <section className={`ct-audit-section ${mobileTab === 'history' ? 'ct-audit-section--mobile-active' : ''}`}>
+            <section id='ct-audit-section' className={`ct-audit-section ${mobileTab === 'history' ? 'ct-audit-section--mobile-active' : ''}`}>
                 <div className='ct-audit-section__top'>
                     <div className='ct-audit-section__title-area'>
                         <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
@@ -969,6 +1002,73 @@ export const CopyTradingPage: React.FC = observer(() => {
                     </div>
                 </div>
 
+                {/* Follower Accounts Filter Bar (Quick switch between all or specific accounts) */}
+                {accounts.length > 0 && (
+                    <div className='ct-follower-filter-bar'>
+                        <span className='ct-follower-filter-bar__label'>Filter by User:</span>
+                        <div className='ct-follower-filter-bar__chips'>
+                            <button
+                                type='button'
+                                className={`ct-follower-chip ${selectedFollowerFilter === 'all' ? 'active' : ''}`}
+                                onClick={() => setSelectedFollowerFilter('all')}
+                            >
+                                <span className='ct-follower-chip__dot all' />
+                                <strong>All Accounts</strong>
+                                <span className='ct-follower-chip__badge'>{tradeLogs.length}</span>
+                            </button>
+
+                            {accounts.map(acc => {
+                                const count = tradeLogs.filter(l => l.copier_loginid === acc.loginid).length;
+                                const isSel = selectedFollowerFilter === acc.loginid;
+                                return (
+                                    <button
+                                        key={acc.id}
+                                        type='button'
+                                        className={`ct-follower-chip ${isSel ? 'active' : ''} ${acc.is_virtual ? 'demo' : 'real'}`}
+                                        onClick={() => setSelectedFollowerFilter(isSel ? 'all' : acc.loginid)}
+                                        title={`Filter history to ${acc.alias} (${acc.loginid})`}
+                                    >
+                                        <span className={`ct-follower-chip__dot ${acc.is_virtual ? 'demo' : 'real'}`} />
+                                        <span className='ct-follower-chip__alias'>{acc.alias || acc.loginid}</span>
+                                        <span className='ct-follower-chip__id'>({acc.loginid})</span>
+                                        <span className='ct-follower-chip__bal'>
+                                            ${acc.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className='ct-follower-chip__badge'>{count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Active Single User Filter Banner */}
+                {selectedFollowerFilter !== 'all' && (
+                    <div className='ct-active-filter-banner'>
+                        <div className='ct-active-filter-banner__left'>
+                            <span className='ct-active-filter-banner__icon'>🎯</span>
+                            <div>
+                                <div className='ct-active-filter-banner__title'>
+                                    Showing Trades for: <strong>{selectedAccountObj?.alias || selectedFollowerFilter}</strong> ({selectedFollowerFilter})
+                                </div>
+                                <div className='ct-active-filter-banner__sub'>
+                                    Account: <span className={selectedAccountObj?.is_virtual ? 'demo-text' : 'real-text'}>{selectedAccountObj?.is_virtual ? 'Demo' : 'Real'}</span> • 
+                                    Live Balance: <strong>${(selectedAccountObj?.balance ?? 0).toFixed(2)} {selectedAccountObj?.currency || 'USD'}</strong> • 
+                                    Showing: <strong>{filteredLogs.length}</strong> of {tradeLogs.length} total trades
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type='button'
+                            className='ct-active-filter-banner__reset-btn'
+                            onClick={() => setSelectedFollowerFilter('all')}
+                        >
+                            ✕ View All Accounts
+                        </button>
+                    </div>
+                )}
+
                 {/* Desktop Streamlined Table View */}
                 <div className='ct-audit-section__table-wrap ct-desktop-only'>
                     <table className='ct-audit-section__table'>
@@ -976,8 +1076,9 @@ export const CopyTradingPage: React.FC = observer(() => {
                             <tr>
                                 <th>Time</th>
                                 <th>Source</th>
-                                <th>Follower</th>
+                                <th>Follower / User</th>
                                 <th>Account</th>
+                                <th>Live Balance</th>
                                 <th>Market</th>
                                 <th>Contract</th>
                                 <th>Master Stake</th>
@@ -989,8 +1090,10 @@ export const CopyTradingPage: React.FC = observer(() => {
                         <tbody>
                             {filteredLogs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={10} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--ct-text-muted)' }}>
-                                        No copied trades yet. When you place a trade on any bot or tab, it will mirror and record here.
+                                    <td colSpan={11} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--ct-text-muted)' }}>
+                                        {selectedFollowerFilter !== 'all'
+                                            ? `No copied trades found for ${selectedAccountObj?.alias || selectedFollowerFilter} (${selectedFollowerFilter}).`
+                                            : 'No copied trades yet. When you place a trade on any bot or tab, it will mirror and record here.'}
                                     </td>
                                 </tr>
                             ) : (
@@ -1003,9 +1106,19 @@ export const CopyTradingPage: React.FC = observer(() => {
                                             </span>
                                         </td>
                                         <td>
-                                            <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                                                {log.copier_loginid}
-                                            </span>
+                                            <button
+                                                type='button'
+                                                className='ct-user-clickable-badge'
+                                                onClick={() => setSelectedFollowerFilter(log.copier_loginid)}
+                                                title={`Click to filter trades for ${log.account_alias || log.copier_loginid}`}
+                                            >
+                                                <span className='ct-user-clickable-badge__alias'>
+                                                    {log.account_alias || log.copier_loginid}
+                                                </span>
+                                                <span className='ct-user-clickable-badge__id'>
+                                                    {log.copier_loginid}
+                                                </span>
+                                            </button>
                                         </td>
                                         <td>
                                             <span
@@ -1021,6 +1134,9 @@ export const CopyTradingPage: React.FC = observer(() => {
                                             >
                                                 {log.is_virtual ? 'DEMO' : 'REAL'}
                                             </span>
+                                        </td>
+                                        <td style={{ fontWeight: 700, color: 'var(--ct-text-title)' }}>
+                                            ${(log.account_balance ?? accounts.find(a => a.loginid === log.copier_loginid)?.balance ?? 0).toFixed(2)}
                                         </td>
                                         <td><strong>{log.symbol}</strong></td>
                                         <td>{log.contract_type}</td>
@@ -1060,7 +1176,9 @@ export const CopyTradingPage: React.FC = observer(() => {
                 <div className='ct-mobile-history-list'>
                     {filteredLogs.length === 0 ? (
                         <div className='ct-mobile-history-empty'>
-                            No copied trades yet.
+                            {selectedFollowerFilter !== 'all'
+                                ? `No copied trades for ${selectedAccountObj?.alias || selectedFollowerFilter}.`
+                                : 'No copied trades yet.'}
                         </div>
                     ) : (
                         filteredLogs.map(log => (
@@ -1077,19 +1195,23 @@ export const CopyTradingPage: React.FC = observer(() => {
                                 </div>
 
                                 <div className='ct-mobile-history-card__meta'>
-                                    <span>
-                                        Follower: <strong>{log.copier_loginid}</strong> (
+                                    <button
+                                        type='button'
+                                        style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'inherit', cursor: 'pointer' }}
+                                        onClick={() => setSelectedFollowerFilter(log.copier_loginid)}
+                                    >
+                                        Follower: <strong>{log.account_alias || log.copier_loginid}</strong> (
                                         <span style={{ color: log.is_virtual ? '#f59e0b' : '#10b981', fontWeight: 700 }}>
                                             {log.is_virtual ? 'Demo' : 'Real'}
                                         </span>
                                         )
-                                    </span>
+                                    </button>
                                     <span>Time: {log.time}</span>
                                 </div>
 
                                 <div className='ct-mobile-history-card__bottom'>
                                     <div>
-                                        Stake: <strong>${log.copier_stake.toFixed(2)}</strong>
+                                        Stake: <strong>${log.copier_stake.toFixed(2)}</strong> • Bal: <strong>${(log.account_balance ?? accounts.find(a => a.loginid === log.copier_loginid)?.balance ?? 0).toFixed(2)}</strong>
                                     </div>
                                     <div>
                                         {log.profit !== undefined ? (

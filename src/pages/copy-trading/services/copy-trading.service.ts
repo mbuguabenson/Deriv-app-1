@@ -45,6 +45,8 @@ export interface CopierTradeLog {
     time: string;
     master_loginid: string;
     copier_loginid: string;
+    account_alias?: string;
+    account_balance?: number;
     is_virtual: boolean;
     symbol: string;
     contract_type: string;
@@ -56,6 +58,7 @@ export interface CopierTradeLog {
     profit?: number;
     error_message?: string;
     contract_id?: string | number;
+    master_contract_id?: string | number;
 }
 
 export interface TradeParameters {
@@ -69,6 +72,7 @@ export interface TradeParameters {
     selected_tick?: number;
     currency?: string;
     is_virtual?: boolean;
+    master_contract_id?: string | number;
 }
 
 const STORAGE_KEY = 'deriv_copier_accounts';
@@ -281,7 +285,7 @@ class CopyTradingEngine {
     private persist(): void {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(this.accounts));
-            localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(this.tradeLogs.slice(0, 100)));
+            localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(this.tradeLogs.slice(0, 250)));
             localStorage.setItem(MASTER_CONFIG_KEY, JSON.stringify(this.masterConfig));
         } catch (e) {
             console.error('[CopyTradingEngine] Error persisting:', e);
@@ -945,6 +949,7 @@ class CopyTradingEngine {
                     prediction,
                     currency: buy.currency || params.currency || 'USD',
                     is_virtual: isVirtualMaster,
+                    master_contract_id: buy.contract_id || data.data,
                 };
 
                 console.log(`[CopyTrading] Intercepted contract purchase: ${contract_type} on ${symbol} ($${stake}) from ${masterLoginid}`);
@@ -985,6 +990,7 @@ class CopyTradingEngine {
                         prediction: barrier !== undefined ? Number(barrier) : undefined,
                         currency: req.currency || opts.currency || 'USD',
                         is_virtual: isVirtualMaster,
+                        master_contract_id: data.contract_id || (data.buy && data.buy.contract_id),
                     },
                     activeLogin,
                     'Bot Engine'
@@ -998,16 +1004,32 @@ class CopyTradingEngine {
                     const profit = Number(contract.profit ?? 0);
                     const status = profit >= 0 ? 'won' : 'lost';
 
-                    // Update corresponding trade logs
+                    // Update corresponding trade logs across all followers
                     let updated = false;
                     this.tradeLogs.forEach(log => {
-                        if (log.contract_id === contract.contract_id || String(log.contract_id) === String(contract.contract_id)) {
+                        const isDirectMatch = log.contract_id && (log.contract_id === contract.contract_id || String(log.contract_id) === String(contract.contract_id));
+                        const isMasterMatch = log.master_contract_id && (log.master_contract_id === contract.contract_id || String(log.master_contract_id) === String(contract.contract_id));
+
+                        if (isDirectMatch || isMasterMatch) {
                             log.status = status;
-                            log.profit = profit;
+                            if (log.profit === undefined || isMasterMatch) {
+                                const masterProfit = Number(contract.profit ?? 0);
+                                const masterStake = log.master_stake || 1;
+                                const ratio = log.copier_stake / masterStake;
+                                log.profit = Math.round(masterProfit * ratio * 100) / 100;
+                            }
                             updated = true;
+
+                            const acc = this.accounts.find(a => a.loginid === log.copier_loginid);
+                            if (acc) {
+                                acc.total_profit = (acc.total_profit || 0) + (log.profit || 0);
+                            }
                         }
                     });
-                    if (updated) this.persist();
+                    if (updated) {
+                        this.persist();
+                        this.refreshAllBalances().catch(() => {});
+                    }
                 }
             });
         } catch (err) {
@@ -1078,10 +1100,12 @@ class CopyTradingEngine {
                     if (!isAllowed) {
                         console.warn(`[CopyTrading] 🛡️ Skipped replication to ${account.loginid} (REAL) because master is DEMO and allow_demo_to_real is disabled.`);
                         const skipLog: CopierTradeLog = {
-                            id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                            id: `log_${Date.now()}_${account.loginid}_${Math.random().toString(36).substring(2, 7)}`,
                             time: timestamp,
                             master_loginid: masterLoginid,
                             copier_loginid: account.loginid,
+                            account_alias: account.alias,
+                            account_balance: account.balance,
                             is_virtual: account.is_virtual,
                             symbol: trade.symbol,
                             contract_type: trade.contract_type,
@@ -1090,11 +1114,13 @@ class CopyTradingEngine {
                             copier_stake: 0,
                             status: 'failed',
                             error_message: '🛡️ Skipped (Demo to Real copy disabled to protect funds)',
+                            master_contract_id: trade.master_contract_id,
                         };
                         account.last_trade_status = 'skipped';
                         account.last_trade_time = timestamp;
                         logs.push(skipLog);
                         this.tradeLogs.unshift(skipLog);
+                        this.persist();
                         return;
                     }
                 }
@@ -1113,10 +1139,12 @@ class CopyTradingEngine {
                 }
 
                 const logEntry: CopierTradeLog = {
-                    id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                    id: `log_${Date.now()}_${account.loginid}_${Math.random().toString(36).substring(2, 7)}`,
                     time: timestamp,
                     master_loginid: masterLoginid,
                     copier_loginid: account.loginid,
+                    account_alias: account.alias,
+                    account_balance: account.balance,
                     is_virtual: account.is_virtual,
                     symbol: trade.symbol,
                     contract_type: trade.contract_type,
@@ -1124,6 +1152,7 @@ class CopyTradingEngine {
                     master_stake: trade.stake,
                     copier_stake: copierStake,
                     status: 'pending',
+                    master_contract_id: trade.master_contract_id,
                 };
 
                 try {
@@ -1138,6 +1167,7 @@ class CopyTradingEngine {
                         account.total_copied_trades = (account.total_copied_trades || 0) + 1;
                         if (typeof result.balance_after === 'number') {
                             account.balance = result.balance_after;
+                            logEntry.account_balance = result.balance_after;
                         }
                     } else {
                         logEntry.status = 'failed';
@@ -1156,6 +1186,7 @@ class CopyTradingEngine {
 
                 logs.push(logEntry);
                 this.tradeLogs.unshift(logEntry);
+                this.persist();
             })
         );
 
