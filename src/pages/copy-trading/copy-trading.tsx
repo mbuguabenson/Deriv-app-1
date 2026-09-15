@@ -410,7 +410,7 @@ export const CopyTradingPage: React.FC = observer(() => {
                         <div className={`ct-stat-box__value ${totalProfitCalculated >= 0 ? 'text-win' : 'text-loss'}`}>
                             {totalProfitCalculated >= 0 ? `+$${totalProfitCalculated.toFixed(2)}` : `-$${Math.abs(totalProfitCalculated).toFixed(2)}`}
                         </div>
-                        <div className='ct-stat-box__sub'>Max Stake Cap: ${maxStakeGuard.toFixed(2)}</div>
+                        <div className='ct-stat-box__sub'>Net Performance</div>
                     </div>
                 </div>
             </div>
