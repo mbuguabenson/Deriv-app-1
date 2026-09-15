@@ -2,15 +2,14 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { observer } from 'mobx-react-lite';
 import { useStore } from '@/hooks/useStore';
 import { useApiBase } from '@/hooks/useApiBase';
-import { getAccountsList, getActiveLoginId, getActiveToken, getLegacyDTraderToken, isInvalidBearerToken, isLegacyToken } from '@/utils/token-bridge';
-import { getAppId } from '@/components/shared/utils/config/config';
+import { getAccountsList, getActiveLoginId, getActiveToken, getLegacyDTraderToken, isLegacyToken } from '@/utils/token-bridge';
 import './dtrader.scss';
 
 const DTRADER_BASE_URL = 'https://deriv-dtrader.vercel.app';
 
 export const DTrader: React.FC = observer(() => {
     const { client } = useStore();
-    const { activeLoginid, isVirtual } = useApiBase();
+    const { activeLoginid, authData } = useApiBase();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
@@ -27,8 +26,8 @@ export const DTrader: React.FC = observer(() => {
         '';
 
     const isDemo =
-        isVirtual ||
-        client?.is_virtual ||
+        Boolean(authData?.is_virtual) ||
+        Boolean(client?.is_virtual) ||
         currentActiveLoginId.startsWith('VR') ||
         currentActiveLoginId.startsWith('DOT') ||
         currentActiveLoginId.startsWith('DEM');
@@ -55,9 +54,6 @@ export const DTrader: React.FC = observer(() => {
         let activeToken = getLegacyDTraderToken(activeId);
         if (!activeToken && accounts[activeId] && isLegacyToken(accounts[activeId])) {
             activeToken = accounts[activeId];
-        }
-        if (!activeToken && client?.token && isLegacyToken(client?.token)) {
-            activeToken = client?.token;
         }
 
         const appId = '121856'; // DTrader Vercel App ID
@@ -88,7 +84,7 @@ export const DTrader: React.FC = observer(() => {
         }
 
         return `${DTRADER_BASE_URL}/?${params.toString()}`;
-    }, [currentActiveLoginId, client?.token, activeCurrency, reloadKey]);
+    }, [currentActiveLoginId, activeCurrency, reloadKey]);
 
     // Send complete authentication and credential payloads to DTrader iframe
     const sendAuthBridgeHandshake = useCallback(() => {
@@ -107,7 +103,7 @@ export const DTrader: React.FC = observer(() => {
 
         const activeAccount = (activeLoginId && accountsObj[activeLoginId]) ? accountsObj[activeLoginId] : {};
         const legacyToken = activeAccount.token || getLegacyDTraderToken(activeLoginId) || localStorage.getItem('token1') || '';
-        const effectiveToken = legacyToken || activeAccount.token || client?.token || getActiveToken(activeLoginId) || '';
+        const effectiveToken = legacyToken || activeAccount.token || getActiveToken(activeLoginId) || '';
         const appIdStr = '121856';
 
         const payload = {
@@ -180,7 +176,7 @@ export const DTrader: React.FC = observer(() => {
                 intervalRef.current = null;
             }
         }, 5000);
-    }, [currentActiveLoginId, client?.token, activeCurrency]);
+    }, [currentActiveLoginId, activeCurrency]);
 
     // Handle postMessage events from DTrader iframe
     useEffect(() => {
