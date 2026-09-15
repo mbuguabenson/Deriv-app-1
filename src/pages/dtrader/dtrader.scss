@@ -1,310 +1,176 @@
-.dtrader-workstation {
-    width: 100%;
-    height: calc(100vh - 120px);
-    min-height: 560px;
+.prodb-import-page.prodb-iframe-page {
     display: flex;
     flex-direction: column;
-    background: #080b11;
+    width: 100%;
+    height: calc(100vh - 120px);
+    min-height: 650px;
+    padding: 1.25rem 1.5rem 2rem;
+    box-sizing: border-box;
+    background: #0d121e;
     color: #f8fafc;
-    position: relative;
-    overflow: hidden;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    margin: 0;
-    padding: 0;
+    font-family: var(--ph-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
 
-    &--fullscreen {
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+    }
+
+    &.is-fullscreen {
         position: fixed;
         inset: 0;
         z-index: 99999;
         height: 100vh !important;
         min-height: 100vh !important;
+        padding: 0.75rem 1rem;
+        background: #080b11;
     }
 
-    &__toolbar {
+    .prodb-import-header {
         display: flex;
-        align-items: center;
         justify-content: space-between;
-        padding: 0.6rem 1.25rem;
-        background: rgba(13, 18, 30, 0.92);
-        backdrop-filter: blur(14px);
-        border-bottom: 1px solid rgba(255, 68, 79, 0.2);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        z-index: 10;
-        gap: 1rem;
-        flex-wrap: wrap;
-
-        @media (max-width: 768px) {
-            padding: 0.45rem 0.75rem;
-            gap: 0.5rem;
-        }
-    }
-
-    &__brand {
-        display: flex;
         align-items: center;
-        gap: 0.75rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        flex: 0 0 auto;
 
-        .brand-logo {
-            width: 34px;
-            height: 34px;
-            border-radius: 9px;
-            background: linear-gradient(135deg, #ff444f 0%, #ff6b4a 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 16px rgba(255, 68, 79, 0.45);
-
-            svg {
-                color: #ffffff;
-            }
-        }
-
-        .brand-text {
+        > div {
             display: flex;
             flex-direction: column;
+            gap: 0.25rem;
 
-            .title {
-                font-size: 0.95rem;
+            span {
+                align-self: flex-start;
+                padding: 0.2rem 0.6rem;
+                border-radius: 9999px;
+                font-size: 0.68rem;
                 font-weight: 800;
-                letter-spacing: 0.5px;
-                background: linear-gradient(135deg, #ffffff 30%, #cbd5e1);
-                background-clip: text;
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                text-transform: uppercase;
-            }
-
-            .subtitle {
-                font-size: 0.7rem;
-                font-weight: 600;
-                color: #ff6b4a;
                 letter-spacing: 0.8px;
                 text-transform: uppercase;
+                background: rgba(0, 208, 156, 0.12);
+                color: #00d09c;
+                border: 1px solid rgba(0, 208, 156, 0.3);
+            }
+
+            h1 {
+                margin: 0;
+                font-size: 1.4rem;
+                font-weight: 700;
+                color: #ffffff;
+            }
+
+            p {
+                margin: 0;
+                font-size: 0.82rem;
+                color: #94a3b8;
             }
         }
     }
 
-    &__controls {
+    .prodb-header-actions {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
+        gap: 0.6rem;
 
-    &__account-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.35rem 0.8rem;
-        border-radius: 9999px;
-        background: rgba(30, 41, 59, 0.7);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #e2e8f0;
+        .prodb-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            height: 36px;
+            padding: 0 0.85rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.05);
+            color: #cbd5e1;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
 
-        &--real {
-            border-color: rgba(16, 185, 129, 0.4);
-            background: rgba(16, 185, 129, 0.12);
-            color: #34d399;
+            &:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: #ffffff;
+                border-color: rgba(255, 255, 255, 0.25);
+            }
 
-            .account-type-pill {
-                background: #10b981;
-                color: #022c22;
+            &--active {
+                background: rgba(0, 208, 156, 0.15);
+                border-color: #00d09c;
+                color: #00d09c;
             }
         }
-
-        &--demo {
-            border-color: rgba(245, 158, 11, 0.4);
-            background: rgba(245, 158, 11, 0.12);
-            color: #fbbf24;
-
-            .account-type-pill {
-                background: #f59e0b;
-                color: #451a03;
-            }
-        }
-
-        .account-type-pill {
-            font-size: 0.65rem;
-            font-weight: 800;
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .account-id {
-            font-family: 'JetBrains Mono', monospace, monospace;
-            font-weight: 700;
-        }
-
-        .account-cur {
-            opacity: 0.8;
-            font-size: 0.7rem;
-        }
     }
 
-    &__status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        padding: 0.35rem 0.75rem;
-        border-radius: 9999px;
-        background: rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #10b981;
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-
-        .pulse-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #10b981;
-            box-shadow: 0 0 10px #10b981;
-            animation: dtraderPulse 1.8s infinite ease-in-out;
-        }
-    }
-
-    &__action-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.4rem 0.8rem;
-        border-radius: 8px;
-        background: rgba(30, 41, 59, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #cbd5e1;
-        font-size: 0.78rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        text-decoration: none;
-
-        &:hover {
-            background: rgba(255, 68, 79, 0.18);
-            border-color: rgba(255, 68, 79, 0.5);
-            color: #ffffff;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(255, 68, 79, 0.25);
-        }
-
-        &:active {
-            transform: translateY(0);
-        }
-    }
-
-    &__iframe-container {
+    .prodb-iframe-wrapper {
+        position: relative;
         flex: 1;
         width: 100%;
-        height: 100%;
-        position: relative;
-        background: #060911;
+        min-height: 560px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #111827;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 
         iframe {
             width: 100%;
             height: 100%;
-            border: none;
+            min-height: 560px;
+            border: 0;
             display: block;
-            background: #060911;
+            background: #ffffff;
         }
 
-        .loading-overlay {
+        .prodb-loading-overlay {
             position: absolute;
             inset: 0;
-            background: #080b11;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 1.25rem;
+            background: rgba(13, 18, 30, 0.85);
+            backdrop-filter: blur(8px);
             z-index: 5;
-            transition: opacity 0.4s ease;
+            color: #f8fafc;
+            gap: 0.75rem;
 
-            .spinner-ring {
-                width: 50px;
-                height: 50px;
-                border: 3px solid rgba(255, 68, 79, 0.18);
-                border-top-color: #ff444f;
-                border-right-color: #ff6b4a;
+            .prodb-spinner {
+                width: 38px;
+                height: 38px;
+                border: 3px solid rgba(0, 208, 156, 0.2);
+                border-top-color: #00d09c;
                 border-radius: 50%;
-                animation: dtraderSpin 0.8s linear infinite;
+                animation: prodb-spin 0.8s linear infinite;
             }
 
-            .loading-text {
-                font-size: 0.85rem;
+            span {
+                font-size: 0.9rem;
                 font-weight: 600;
                 color: #94a3b8;
-                letter-spacing: 0.8px;
-                text-transform: uppercase;
-            }
-
-            .loading-subtext {
-                font-size: 0.75rem;
-                color: #64748b;
-            }
-        }
-
-        .error-overlay {
-            position: absolute;
-            inset: 0;
-            background: rgba(8, 11, 17, 0.95);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 1rem;
-            z-index: 10;
-            padding: 2rem;
-            text-align: center;
-
-            .error-card {
-                background: rgba(18, 24, 38, 0.9);
-                border: 1px solid rgba(239, 68, 68, 0.3);
-                padding: 2rem;
-                border-radius: 12px;
-                max-width: 460px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-
-                h3 {
-                    color: #f87171;
-                    font-size: 1.1rem;
-                    margin-bottom: 0.75rem;
-                }
-
-                p {
-                    color: #94a3b8;
-                    font-size: 0.85rem;
-                    line-height: 1.5;
-                    margin-bottom: 1.5rem;
-                }
-
-                .error-actions {
-                    display: flex;
-                    gap: 0.75rem;
-                    justify-content: center;
-                }
             }
         }
     }
 }
 
-@keyframes dtraderPulse {
-    0%, 100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(1.35);
-        opacity: 0.6;
-    }
-}
-
-@keyframes dtraderSpin {
+@keyframes prodb-spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 650px) {
+    .prodb-import-page.prodb-iframe-page {
+        padding: 1rem 0.75rem 4rem;
+
+        .prodb-import-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .prodb-iframe-wrapper iframe {
+            min-height: 480px;
+        }
     }
 }
