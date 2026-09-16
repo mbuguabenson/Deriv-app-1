@@ -109,10 +109,10 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
         },
         {
             id: 'smart-trader',
-            title: 'DTrader Terminal',
+            title: 'Manual Trading',
             subtitle: 'Live institutional manual trading',
             icon: <TrendingUp size={22} className='text-emerald' />,
-            badge: 'DTRADER',
+            badge: 'MANUAL',
             theme: 'card--emerald',
             callback: () => setActiveTab(DBOT_TABS.MANUAL_TRADING),
         },

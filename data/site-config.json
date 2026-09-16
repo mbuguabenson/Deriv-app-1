@@ -108,12 +108,6 @@
             "order": 16
         },
         {
-            "key": "dtrader",
-            "label": "DTrader",
-            "enabled": true,
-            "order": 17
-        },
-        {
             "key": "ai_trading_engine",
             "label": "AI Trading Engine 🤖",
             "enabled": true,

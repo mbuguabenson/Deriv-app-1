@@ -35,7 +35,6 @@ const TAB_ICONS: Record<string, TQuillIcon> = {
     auto_x_eo: LabelPairedBarsFilterSmRegularIcon,
     overlord_ai: LabelPairedBarsFilterSmRegularIcon,
     copy_trading: LabelPairedCircleUserSmRegularIcon,
-    dtrader: LabelPairedChartLineSmRegularIcon,
     account_center: LabelPairedCircleUserSmRegularIcon,
     pro_journal: LabelPairedBookCircleQuestionSmRegularIcon,
     reports: LabelPairedBookCircleQuestionSmRegularIcon,
@@ -482,22 +481,6 @@ export const TabIcon: React.FC<TTabIconProps> = ({ iconKey, label }) => {
                         <path d='M2 17l10 5 10-5' />
                         <path d='M2 12l10 5 10-5' />
                         <circle cx='12' cy='12' r='2' fill='#00f5ff' />
-                    </svg>
-                );
-            case 'dtrader':
-                return (
-                    <svg
-                        width='18'
-                        height='18'
-                        viewBox='0 0 24 24'
-                        fill='none'
-                        stroke='currentColor'
-                        strokeWidth='1.8'
-                        strokeLinecap='round'
-                        strokeLinejoin='round'
-                    >
-                        <path d='M3 3v18h18' />
-                        <path d='M18 9l-5 5-4-4-6 6' />
                     </svg>
                 );
             default:
