@@ -10,11 +10,13 @@ import { getAccountId, isDemoAccount } from '@/utils/account-helpers';
 import { ErrorLogger } from '@/utils/error-logger';
 import type { Balance } from '@deriv/api-types';
 import {
+    authData$,
     setAccountList,
     setAuthData,
     setIsAuthorized,
 } from '../external/bot-skeleton/services/api/observables/connection-status-stream';
 import type { TAuthData } from '../types/api-types';
+import { SharedActionsBridge } from '@/utils/shared-actions-bridge';
 
 export default class ClientStore {
     loginid = '';
@@ -341,6 +343,32 @@ export default class ClientStore {
             } catch (e: any) {
                 console.debug('[ClientStore] Could not update client.accounts in storage:', e?.message);
             }
+
+            // Sync authData$ observable so useActiveAccount and reactive headers update immediately
+            const currentAuth = authData$.getValue();
+            if (currentAuth && (!currentAuth.loginid || currentAuth.loginid === targetId)) {
+                authData$.next({
+                    ...currentAuth,
+                    balance: numBal,
+                });
+            }
+
+            if (api_base?.account_info && (api_base.account_info as any).loginid === targetId) {
+                (api_base.account_info as any).balance = numBal;
+            }
+
+            try {
+                localStorage.setItem('balance', String(numBal));
+            } catch {}
+
+            // Broadcast balance update across windows / iframes
+            try {
+                SharedActionsBridge.dispatch('BALANCE_UPDATE', {
+                    balance: numBal,
+                    loginid: targetId,
+                    currency: this.currency,
+                });
+            } catch {}
         }
     };
 
@@ -521,10 +549,11 @@ export default class ClientStore {
 
         // Create handler function
         this.tab_visibility_handler = async () => {
-            if (document.visibilityState === 'visible' && !this.is_regenerating) {
-                // Tab became visible - check if WebSocket needs regeneration
-                if (this.is_logged_in) {
+            if (document.visibilityState === 'visible') {
+                if (this.is_logged_in && !this.is_regenerating) {
                     this.checkAndRegenerateWebSocket();
+                    api_base.refreshBalance?.().catch(() => {});
+                    api_base.ensureAuthSubscriptions?.().catch(() => {});
                 }
             }
         };

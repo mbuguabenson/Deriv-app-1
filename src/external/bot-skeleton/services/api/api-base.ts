@@ -477,12 +477,21 @@ class APIBase {
                 );
                 const pingPromise = (this.api as any).send({ ping: 1 });
                 await Promise.race([pingPromise, timeoutPromise]);
+                // Proactively refresh balance and ensure subscriptions are healthy on tab/window resume
+                if (this.is_authorized) {
+                    this.refreshBalance().catch(() => {});
+                    this.ensureAuthSubscriptions().catch(() => {});
+                }
             } catch (err) {
                 if (this.api?.connection?.readyState !== 1) {
                     console.warn('[APIBase] Probed socket failed after page resume, re-initializing:', err);
                     this.reconnectIfNotConnected(true);
                 } else {
                     console.log('[APIBase] Ping probe timed out but socket readyState is OPEN; skipping aggressive reconnect.');
+                    if (this.is_authorized) {
+                        this.refreshBalance().catch(() => {});
+                        this.ensureAuthSubscriptions().catch(() => {});
+                    }
                 }
             }
         }
@@ -853,7 +862,7 @@ class APIBase {
             }
         };
 
-        const streamsToSubscribe = ['balance', 'transaction'];
+        const streamsToSubscribe = ['balance', 'transaction', 'proposal_open_contract'];
 
         await Promise.all(streamsToSubscribe.map(subscribeToStream));
     }
@@ -1048,6 +1057,37 @@ class APIBase {
         }
     };
 
+    refreshBalance = async (): Promise<void> => {
+        if (!this.api || !this.is_authorized || this.api.connection?.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        try {
+            const res = await this.api.send({ balance: 1 });
+            if (res?.balance && typeof res.balance.balance === 'number') {
+                const b = res.balance;
+                const loginid = b.loginid || this.account_id || (this.account_info as any)?.loginid;
+                const currentClientStore = globalObserver.getState('client.store');
+                if (currentClientStore?.setBalance) {
+                    currentClientStore.setBalance(b.balance.toString(), loginid);
+                }
+                if (b.currency && currentClientStore?.setCurrency) {
+                    currentClientStore.setCurrency(b.currency);
+                }
+            }
+        } catch (err) {
+            console.debug('[APIBase] refreshBalance notice:', err);
+        }
+    };
+
+    ensureAuthSubscriptions = async (): Promise<void> => {
+        if (!this.is_authorized || !this.api || this.api.connection?.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        if (!this.current_auth_subscriptions || this.current_auth_subscriptions.length === 0) {
+            await this.subscribe();
+        }
+    };
+
     setIsRunning(toggle = false) {
         this.is_running = toggle;
     }
@@ -1057,6 +1097,7 @@ class APIBase {
     }
 
     clearSubscriptions() {
+        // Clear transient bot/ticks subscriptions without destroying root auth streams (balance, transaction)
         this.subscriptions.forEach(s => {
             try {
                 if (typeof s?.unsubscribe === 'function') {
@@ -1066,7 +1107,10 @@ class APIBase {
         });
         this.subscriptions = [];
 
-        this.unsubscribeAllSubscriptions();
+        // Ensure permanent auth streams remain healthy and subscribed
+        if (this.is_authorized) {
+            this.ensureAuthSubscriptions().catch(() => {});
+        }
 
         // Resetting timeout resolvers
         const global_timeouts = globalObserver.getState('global_timeouts') ?? [];

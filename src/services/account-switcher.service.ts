@@ -163,7 +163,9 @@ export class AccountSwitcherService {
             api_base.token = targetToken || targetLoginId;
 
             // 5. Invalidate old subscriptions to prevent cross-account stream overwrite
-            api_base.unsubscribeAllSubscriptions();
+            if (typeof api_base.unsubscribeAllSubscriptions === 'function') {
+                api_base.unsubscribeAllSubscriptions();
+            }
 
             setIsAuthorizing(true);
 

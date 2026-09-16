@@ -123,6 +123,22 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
         const buy = buy_response?.buy;
         if (buy) {
+            const activeLoginId =
+                (api_base as any)?.account_info?.loginid ||
+                (api_base as any)?.account_id ||
+                localStorage.getItem('active_loginid') ||
+                '';
+
+            if (typeof buy.balance_after === 'number') {
+                try {
+                    const clientStore = globalObserver.getState('client.store');
+                    const targetId = activeLoginId || clientStore?.loginid;
+                    if (clientStore?.setBalance) {
+                        clientStore.setBalance(buy.balance_after.toString(), targetId);
+                    }
+                } catch {}
+            }
+
             globalObserver.emit('contract.status', {
                 id: 'contract.purchase_received',
                 data: buy.transaction_id,
@@ -133,11 +149,6 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
             // Universal Copy Trading: Replicate trade to active follower accounts
             try {
-                const activeLoginId =
-                    (api_base as any)?.account_info?.loginid ||
-                    (api_base as any)?.account_id ||
-                    localStorage.getItem('active_loginid') ||
-                    '';
                 const isVirtual = Boolean(
                     (api_base as any)?.account_info?.is_virtual === 1 ||
                     (api_base as any)?.account_info?.is_virtual === true ||
@@ -148,14 +159,14 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
                 copyTradingService.replicateFromAnySource(
                     {
-                        symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
-                        contract_type: (normalized_parameters.contract_type || 'CALL').toString(),
+                        symbol: ((normalized_parameters as any).underlying_symbol || (normalized_parameters as any).symbol || 'R_100').toString(),
+                        contract_type: ((normalized_parameters as any).contract_type || 'CALL').toString(),
                         stake: ask_price,
-                        duration: Number(normalized_parameters.duration || 1),
-                        duration_unit: (normalized_parameters.duration_unit || 't').toString(),
-                        barrier: normalized_parameters.barrier,
-                        prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
-                        currency: normalized_parameters.currency || 'USD',
+                        duration: Number((normalized_parameters as any).duration || 1),
+                        duration_unit: ((normalized_parameters as any).duration_unit || 't').toString(),
+                        barrier: (normalized_parameters as any).barrier,
+                        prediction: (normalized_parameters as any).barrier ? Number((normalized_parameters as any).barrier) : undefined,
+                        currency: (normalized_parameters as any).currency || 'USD',
                         is_virtual: isVirtual,
                     },
                     source,
@@ -192,6 +203,20 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
         throw new Error(`${source} did not receive a buy confirmation.`);
     }
 
+    if (typeof buy.balance_after === 'number') {
+        try {
+            const clientStore = globalObserver.getState('client.store');
+            const activeId =
+                (api_base as any)?.account_info?.loginid ||
+                (api_base as any)?.account_id ||
+                localStorage.getItem('active_loginid') ||
+                clientStore?.loginid;
+            if (clientStore?.setBalance) {
+                clientStore.setBalance(buy.balance_after.toString(), activeId);
+            }
+        } catch {}
+    }
+
     globalObserver.emit('contract.status', {
         id: 'contract.purchase_received',
         data: buy.transaction_id,
@@ -217,14 +242,14 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
         copyTradingService.replicateFromAnySource(
             {
-                symbol: (normalized_parameters.underlying_symbol || normalized_parameters.symbol || 'R_100').toString(),
-                contract_type: (normalized_parameters.contract_type || 'CALL').toString(),
+                symbol: ((normalized_parameters as any).underlying_symbol || (normalized_parameters as any).symbol || 'R_100').toString(),
+                contract_type: ((normalized_parameters as any).contract_type || 'CALL').toString(),
                 stake: price,
-                duration: Number(normalized_parameters.duration || 1),
-                duration_unit: (normalized_parameters.duration_unit || 't').toString(),
-                barrier: normalized_parameters.barrier,
-                prediction: normalized_parameters.barrier ? Number(normalized_parameters.barrier) : undefined,
-                currency: normalized_parameters.currency || 'USD',
+                duration: Number((normalized_parameters as any).duration || 1),
+                duration_unit: ((normalized_parameters as any).duration_unit || 't').toString(),
+                barrier: (normalized_parameters as any).barrier,
+                prediction: (normalized_parameters as any).barrier ? Number((normalized_parameters as any).barrier) : undefined,
+                currency: (normalized_parameters as any).currency || 'USD',
                 is_virtual: isVirtual,
             },
             source,
@@ -255,6 +280,16 @@ export const sellContractForUi = async ({
     const sell = sell_response?.sell;
     if (!sell) {
         throw new Error(`${source} did not receive a cashout confirmation.`);
+    }
+
+    if (typeof sell.balance_after === 'number') {
+        try {
+            const clientStore = globalObserver.getState('client.store');
+            const targetId = (api_base as any)?.account_info?.loginid || clientStore?.loginid;
+            if (clientStore?.setBalance) {
+                clientStore.setBalance(sell.balance_after.toString(), targetId);
+            }
+        } catch {}
     }
 
     globalObserver.emit('contract.status', {
@@ -444,6 +479,32 @@ export const streamContractUntilSettled = ({
             finish(getAbortedContractSnapshot(contractId, fallback));
         };
 
+        const reconcileSettledBalance = (snap: Record<string, any>) => {
+            try {
+                const clientStore = globalObserver.getState('client.store');
+                const payout = parseFloat(snap.sell_price ?? snap.payout ?? 0) || 0;
+                const targetId = (api_base as any)?.account_info?.loginid || clientStore?.loginid;
+                if (clientStore && typeof clientStore.balance !== 'undefined' && payout > 0) {
+                    const currentBal = parseFloat(String(clientStore.balance).replace(/,/g, '')) || 0;
+                    if (clientStore.setBalance && currentBal > 0) {
+                        clientStore.setBalance((currentBal + payout).toFixed(2), targetId);
+                    }
+                }
+                if (api_base.api) {
+                    api_base.api.send({ balance: 1 }).then((res: any) => {
+                        if (res?.balance && typeof res.balance.balance === 'number') {
+                            if (clientStore?.setBalance) {
+                                clientStore.setBalance(
+                                    res.balance.balance.toString(),
+                                    res.balance.loginid || targetId
+                                );
+                            }
+                        }
+                    }).catch(() => {});
+                }
+            } catch {}
+        };
+
         const handleContractUpdate = (contract: Record<string, any>) => {
             if (finished || !contract) return;
 
@@ -452,6 +513,7 @@ export const streamContractUntilSettled = ({
 
             if (snapshot.is_sold) {
                 emitContractSoldStatus(snapshot);
+                reconcileSettledBalance(snapshot);
                 finish(snapshot);
             }
         };
@@ -493,6 +555,7 @@ export const streamContractUntilSettled = ({
                 if (snapshot.is_sold) {
                     onUpdate?.(snapshot, transaction);
                     emitContractSoldStatus(snapshot);
+                    reconcileSettledBalance(snapshot);
                     finish(snapshot);
                 }
             } catch (profitTableError) {

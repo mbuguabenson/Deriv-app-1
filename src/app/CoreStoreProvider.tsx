@@ -87,15 +87,22 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
         const updateServerTime = () => {
             // Fixed type safety: replaced 'as any' with proper interface and runtime check
             // Ensures time() method exists before calling it
-            if (!api_base.api || !('time' in api_base.api)) return;
-            (api_base.api as ApiWithTime)
-                .time()
-                .then((res: TSocketResponseData<'time'>) => {
-                    common.setServerTime(toMoment(res.time), false);
-                })
-                .catch(() => {
-                    common.setServerTime(toMoment(Date.now()), true);
-                });
+            if (api_base.api && 'time' in api_base.api) {
+                (api_base.api as ApiWithTime)
+                    .time()
+                    .then((res: TSocketResponseData<'time'>) => {
+                        common.setServerTime(toMoment(res.time), false);
+                    })
+                    .catch(() => {
+                        common.setServerTime(toMoment(Date.now()), true);
+                    });
+            }
+
+            // Periodic balance refresh fallback (ensures balance never gets stuck or delayed)
+            if (isAuthorized && !isAuthorizing && api_base?.is_authorized) {
+                api_base.refreshBalance?.().catch(() => {});
+                api_base.ensureAuthSubscriptions?.().catch(() => {});
+            }
         };
 
         // Clear any existing interval before setting up a new one
@@ -122,7 +129,7 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                 timeInterval.current = null;
             }
         };
-    }, [client, common]);
+    }, [client, common, isAuthorized, isAuthorizing]);
 
     const handleMessages = useCallback(
         // Changed parameter type from Record<string, unknown> to unknown to match onMessage signature
@@ -191,7 +198,7 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                 }
             } else if (msg_type === 'proposal_open_contract' && data && !error) {
                 const poc = data.proposal_open_contract;
-                if (poc && poc.is_sold === 1 && typeof poc.balance_after === 'number') {
+                if (poc && (poc.is_sold === 1 || poc.status === 'won' || poc.status === 'lost') && typeof poc.balance_after === 'number') {
                     client.setBalance(poc.balance_after.toString(), client.loginid);
                 }
             }
