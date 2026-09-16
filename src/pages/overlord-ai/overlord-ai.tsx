@@ -4,7 +4,7 @@ import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe } from '@/utils/websocket-handler';
+import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { isLoggedIn } from '@/utils/token-bridge';
 import {
     BarChart2,
@@ -398,22 +398,58 @@ const OverlordAi: React.FC = observer(() => {
         }
     }, []);
 
+    // ── Stream Refresh Listener ──
+    const [streamRefreshKey, setStreamRefreshKey] = useState(0);
+    useEffect(() => {
+        const handleRefresh = () => {
+            subscriptionsRef.current.forEach(sub => {
+                try {
+                    sub?.unsubscribe?.();
+                } catch {
+                    /* ignore */
+                }
+            });
+            subscriptionsRef.current.clear();
+            setStreamRefreshKey(k => k + 1);
+        };
+
+        const handleVisibility = () => {
+            if (!document.hidden) {
+                derivTickManager.healStalledStreams();
+                setStreamRefreshKey(k => k + 1);
+            }
+        };
+
+        window.addEventListener('account_switched', handleRefresh);
+        document.addEventListener('visibilitychange', handleVisibility);
+        globalObserver.register('api.authorize', handleRefresh);
+
+        return () => {
+            window.removeEventListener('account_switched', handleRefresh);
+            document.removeEventListener('visibilitychange', handleVisibility);
+            globalObserver.unregister('api.authorize', handleRefresh);
+        };
+    }, []);
+
     // ── WebSocket Tick Ingestion ──
     useEffect(() => {
         isMountedRef.current = true;
         const activeSymbols = scanAllMarkets
             ? DERIVED_SYNTHETIC_MARKETS.map(m => m.symbol)
             : [selectedSymbol];
+        const activeSubs = subscriptionsRef.current;
 
         const subscribeSymbol = async (sym: string) => {
             if (!isMountedRef.current || !api_base?.api) return;
+            if (activeSubs.has(sym)) return;
+
             try {
                 const marketMeta = DERIVED_SYNTHETIC_MARKETS.find(m => m.symbol === sym);
                 const pip = marketMeta?.pip || 2;
 
                 // 1. Fetch initial tick history so the UI is immediately populated
                 const mData = marketsDataRef.current.get(sym);
-                if (mData && mData.digits.length === 0) {
+                if (mData && mData.digits.length < 20) {
                     const res = await api_base.api.send({
                         ticks_history: sym,
                         end: 'latest',
@@ -433,36 +469,30 @@ const OverlordAi: React.FC = observer(() => {
                     }
                 }
 
-                // 2. Subscribe to real-time live ticks
-                if (!subscriptionsRef.current.has(sym) && isMountedRef.current) {
-                    const tickObservable = (api_base.api as any).subscribe({ ticks: sym });
-                    const sub = safeSubscribe(
-                        tickObservable,
-                        (res: any) => {
-                            if (!isMountedRef.current) return;
-                            if (res?.tick && res.tick.symbol === sym) {
-                                const quote = res.tick.quote;
-                                const digit = extractLastDigit(quote, pip);
-                                const activeM = marketsDataRef.current.get(sym);
-                                if (activeM) {
-                                    activeM.digits.push(digit);
-                                    if (activeM.digits.length > MAX_HISTORY_TICKS) {
-                                        activeM.digits.shift();
-                                    }
-                                    activeM.currentPrice = Number(quote).toFixed(pip);
-                                    activeM.lastDigit = digit;
-                                    activeM.tickCount = (activeM.tickCount || 0) + 1;
-                                    throttleRender();
-                                }
-                            }
-                        },
-                        (err: any) => {
-                            console.warn(`[Overlord AI] Tick subscription warning for ${sym}:`, err);
-                        }
-                    );
+                if (activeSubs.has(sym)) return;
 
-                    subscriptionsRef.current.set(sym, sub);
-                }
+                // 2. Subscribe to real-time live ticks via centralized multiplexer
+                const sub = subscribeTicks(sym, (res: Record<string, unknown>) => {
+                    if (!isMountedRef.current) return;
+                    const tickData = res?.tick as { quote?: number | string } | undefined;
+                    const quote = tickData?.quote;
+                    if (quote !== undefined && quote !== null) {
+                        const digit = extractLastDigit(quote, pip);
+                        const activeM = marketsDataRef.current.get(sym);
+                        if (activeM) {
+                            activeM.digits.push(digit);
+                            if (activeM.digits.length > MAX_HISTORY_TICKS) {
+                                activeM.digits.shift();
+                            }
+                            activeM.currentPrice = Number(quote).toFixed(pip);
+                            activeM.lastDigit = digit;
+                            activeM.tickCount = (activeM.tickCount || 0) + 1;
+                            throttleRender();
+                        }
+                    }
+                });
+
+                activeSubs.set(sym, sub);
             } catch (err) {
                 console.warn(`[Overlord AI] Stream setup error for ${sym}:`, err);
             }
@@ -497,9 +527,9 @@ const OverlordAi: React.FC = observer(() => {
         void initAll();
 
         return () => {
-            // Keep persistent socket stream open for seamless trading
+            // Streams persist across renders
         };
-    }, [scanAllMarkets, selectedSymbol, throttleRender]);
+    }, [scanAllMarkets, selectedSymbol, throttleRender, streamRefreshKey]);
 
     // Current Selected Market State
     const currentMarket = useMemo(() => {
@@ -938,7 +968,7 @@ const evaluateOverlordAnalysis = (
 
     // Start Auto Trading Engine Loop
     const startAutoTrading = useCallback(async () => {
-        const loggedIn = client?.is_logged_in ?? isLoggedIn();
+        const loggedIn = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
         if (!loggedIn) {
             const oauthUrl = await generateOAuthURL();
             if (oauthUrl) window.location.href = oauthUrl;
@@ -1032,7 +1062,7 @@ const evaluateOverlordAnalysis = (
                     if (botStateRef.current !== 'WAITING_SIGNAL') {
                         setBotStateSync('WAITING_SIGNAL');
                     }
-                    await new Promise(r => setTimeout(r, 350));
+                    await new Promise(r => setTimeout(r, 100));
                     continue;
                 }
 
@@ -1040,62 +1070,50 @@ const evaluateOverlordAnalysis = (
                     if (botStateRef.current !== 'WAITING_TRIGGER') {
                         setBotStateSync('WAITING_TRIGGER');
                     }
-                    await new Promise(r => setTimeout(r, 80));
+                    await new Promise(r => setTimeout(r, 60));
                     continue;
                 }
 
-                // Signal & Trigger confirmed -> Execute burst streak
+                // Signal & Trigger confirmed -> Execute 1 verified trade in the burst sequence
                 setBotStateSync('BURST_TRADING');
                 const targetBurstSize = Math.max(1, burstRunSize);
+                const currentRunNumber = burstRunRef.current + 1;
+                burstRunRef.current = currentRunNumber;
+                setCurrentBurstRun(currentRunNumber);
+                runsOnMarketRef.current += 1;
 
-                while (
-                    !abortSignal.aborted &&
-                    botStateRef.current === 'BURST_TRADING' &&
-                    burstRunRef.current < targetBurstSize
-                ) {
-                    // Pre-trade TP / SL risk check
-                    if (sessionProfitRef.current >= tp && tp > 0) {
-                        setBotStateSync('TP_REACHED');
-                        if (soundEnabled) playSoundCue('burst_complete');
-                        setMilestone({ isOpen: true, type: 'tp' });
-                        break;
-                    }
-                    if (sessionProfitRef.current <= -sl && sl > 0) {
-                        setBotStateSync('SL_REACHED');
-                        if (soundEnabled) playSoundCue('loss');
-                        setMilestone({ isOpen: true, type: 'sl' });
-                        break;
-                    }
+                const contractType = signal === 'OVER' ? 'DIGITOVER' : 'DIGITUNDER';
+                const stakeToUse = currentStakeRef.current;
 
-                    const currentRunNumber = burstRunRef.current + 1;
-                    burstRunRef.current = currentRunNumber;
-                    setCurrentBurstRun(currentRunNumber);
-                    runsOnMarketRef.current += 1;
-
-                    const contractType = signal === 'OVER' ? 'DIGITOVER' : 'DIGITUNDER';
-                    const stakeToUse = currentStakeRef.current;
-
-                    try {
-                        await executeTradeOrder(
-                            targetSym,
-                            contractType,
-                            barrier,
-                            stakeToUse,
-                            currentRunNumber
-                        );
-
-                        if (burstRunRef.current < targetBurstSize && botStateRef.current === 'BURST_TRADING') {
-                            await new Promise(r => setTimeout(r, 350));
-                        }
-                    } catch (tradeError) {
-                        console.error('[Overlord AI] Error executing burst trade:', tradeError);
-                        await new Promise(r => setTimeout(r, 800));
-                    }
+                try {
+                    await executeTradeOrder(
+                        targetSym,
+                        contractType,
+                        barrier,
+                        stakeToUse,
+                        currentRunNumber
+                    );
+                } catch (tradeError) {
+                    console.error('[Overlord AI] Error executing trade:', tradeError);
                 }
 
                 if (abortSignal.aborted || (botStateRef.current as string) === 'IDLE') break;
 
-                // Full burst streak completed
+                // Check Take Profit / Stop Loss immediately after settlement
+                if (sessionProfitRef.current >= tp && tp > 0) {
+                    setBotStateSync('TP_REACHED');
+                    if (soundEnabled) playSoundCue('burst_complete');
+                    setMilestone({ isOpen: true, type: 'tp' });
+                    break;
+                }
+                if (sessionProfitRef.current <= -sl && sl > 0) {
+                    setBotStateSync('SL_REACHED');
+                    if (soundEnabled) playSoundCue('loss');
+                    setMilestone({ isOpen: true, type: 'sl' });
+                    break;
+                }
+
+                // Check if full burst streak completed
                 if (burstRunRef.current >= targetBurstSize) {
                     if (soundEnabled) playSoundCue('burst_complete');
                     burstRunRef.current = 0;
@@ -1127,6 +1145,10 @@ const evaluateOverlordAnalysis = (
                     if (!abortSignal.aborted && botStateRef.current === 'BURST_PAUSED') {
                         setBotStateSync('SCANNING');
                     }
+                } else {
+                    // Continue burst streak on next tick
+                    setBotStateSync('SCANNING');
+                    await new Promise(r => setTimeout(r, 400));
                 }
             }
         };

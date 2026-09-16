@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { TradingMilestoneModal } from '@/components/shared';
+import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
+import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe } from '@/utils/websocket-handler';
+import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import {
     Activity,
     ArrowUpRight,
@@ -374,6 +375,7 @@ const AutoXEo: React.FC = observer(() => {
 
         const handleVisibility = () => {
             if (!document.hidden) {
+                derivTickManager.healStalledStreams();
                 setStreamRefreshKey(k => k + 1);
             }
         };
@@ -397,6 +399,7 @@ const AutoXEo: React.FC = observer(() => {
 
         const subscribeSymbol = async (sym: string) => {
             if (!api_base.api || !isMountedRef.current) return;
+            if (activeSubs.has(sym)) return;
             const pip = MARKETS.find(m => m.symbol === sym)?.pip || 2;
 
             try {
@@ -425,12 +428,14 @@ const AutoXEo: React.FC = observer(() => {
                     }
                 }
 
-                // Subscribe to real-time live ticks via observable
-                const tickObservable = (api_base.api as any)?.subscribe?.({ ticks: sym });
-                const sub = safeSubscribe(tickObservable, (tickRes: any) => {
+                if (activeSubs.has(sym)) return;
+
+                // Subscribe to real-time live ticks via centralized multiplexer
+                const sub = subscribeTicks(sym, (tickRes: Record<string, unknown>) => {
                     if (!isMountedRef.current) return;
-                    if (tickRes?.tick?.symbol === sym && tickRes?.tick?.quote !== undefined) {
-                        const quote = Number(tickRes.tick.quote);
+                    const tickData = tickRes?.tick as { quote?: number | string; symbol?: string } | undefined;
+                    if (tickData?.symbol === sym && tickData?.quote !== undefined) {
+                        const quote = Number(tickData.quote);
                         const lastD = extractLastDigit(quote, pip);
                         const item = marketsDataRef.current.get(sym);
                         if (item) {
@@ -443,10 +448,7 @@ const AutoXEo: React.FC = observer(() => {
                     }
                 });
 
-                if (isMountedRef.current) {
-                    activeSubs.get(sym)?.unsubscribe?.();
-                    activeSubs.set(sym, sub);
-                }
+                activeSubs.set(sym, sub);
             } catch (err) {
                 console.error(`AUTO X E/O: Error subscribing to ${sym}:`, err);
             }
@@ -467,22 +469,8 @@ const AutoXEo: React.FC = observer(() => {
 
         void initAll();
 
-        // Unsubscribe removed if single market mode
-        if (!scanAllMarkets) {
-            activeSubs.forEach((sub, sym) => {
-                if (sym !== selectedSymbol) {
-                    try {
-                        sub?.unsubscribe?.();
-                    } catch {
-                        /* ignore */
-                    }
-                    activeSubs.delete(sym);
-                }
-            });
-        }
-
         return () => {
-            // Keep active streams alive
+            // Streams persist across renders
         };
     }, [scanAllMarkets, selectedSymbol, throttleRender, streamRefreshKey]);
 
@@ -975,6 +963,8 @@ const AutoXEo: React.FC = observer(() => {
                     continue;
                 }
 
+                let targetSym = selectedSymbolRef.current;
+
                 // Check TP / SL Limits
                 if (sessionProfitRef.current >= tpVal && tpVal > 0) {
                     setBotStateSync('IDLE');
@@ -988,8 +978,6 @@ const AutoXEo: React.FC = observer(() => {
                     setMilestone({ isOpen: true, type: 'sl' });
                     break;
                 }
-
-                let targetSym = selectedSymbolRef.current;
 
                 // Market Auto-Switch Check after max consecutive runs
                 if (autoSwitchMarkets && consecutiveRunsRef.current >= maxRunsBeforeCheck) {
@@ -1061,19 +1049,33 @@ const AutoXEo: React.FC = observer(() => {
 
                 // 2. Base Even / Odd Strategy Branch
                 const last3 = digits.slice(-3);
-                // Canonical Auto X Reversal Patterns
-                const isOddOddEven =
-                    last3.length >= 3 && last3[0] % 2 !== 0 && last3[1] % 2 !== 0 && last3[2] % 2 === 0;
-                const isEvenEvenOdd =
-                    last3.length >= 3 && last3[0] % 2 === 0 && last3[1] % 2 === 0 && last3[2] % 2 !== 0;
+                const recent60 = digits.slice(-60);
+                const total60 = recent60.length || 1;
+                const evenCount = recent60.filter(d => d % 2 === 0).length;
+                const oddCount = recent60.filter(d => d % 2 !== 0).length;
+                const evenPct = Math.round((evenCount / total60) * 100);
+                const oddPct = Math.round((oddCount / total60) * 100);
 
-                // Watch states (waiting for final confirmation tick)
-                const isAwaitingEvenTick =
-                    last3.length >= 2 && last3[last3.length - 2] % 2 !== 0 && last3[last3.length - 1] % 2 !== 0;
-                const isAwaitingOddTick =
-                    last3.length >= 2 && last3[last3.length - 2] % 2 === 0 && last3[last3.length - 1] % 2 === 0;
+                const last15 = digits.slice(-15);
+                const prev15 = digits.slice(-30, -15);
+                const isEvenIncreasing = last15.filter(d => d % 2 === 0).length >= prev15.filter(d => d % 2 === 0).length;
+                const isOddIncreasing = last15.filter(d => d % 2 !== 0).length >= prev15.filter(d => d % 2 !== 0).length;
 
-                if (isOddOddEven) {
+                // Reversal Triggers: 2 consecutive Odds -> Buy Even; 2 consecutive Evens -> Buy Odd
+                const isTwoOdds =
+                    last3.length >= 2 &&
+                    last3[last3.length - 2] % 2 !== 0 &&
+                    last3[last3.length - 1] % 2 !== 0;
+                const isTwoEvens =
+                    last3.length >= 2 &&
+                    last3[last3.length - 2] % 2 === 0 &&
+                    last3[last3.length - 1] % 2 === 0;
+
+                // Momentum Triggers: Probability >= threshold and increasing trend
+                const isEvenMomentum = evenPct >= targetProbabilityThreshold && isEvenIncreasing && lastDigit % 2 === 0;
+                const isOddMomentum = oddPct >= targetProbabilityThreshold && isOddIncreasing && lastDigit % 2 !== 0;
+
+                if (isTwoOdds || isEvenMomentum) {
                     setBotStateSync('TRADING');
                     scanningCycles = 0;
                     try {
@@ -1085,7 +1087,7 @@ const AutoXEo: React.FC = observer(() => {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
-                } else if (isEvenEvenOdd) {
+                } else if (isTwoEvens || isOddMomentum) {
                     setBotStateSync('TRADING');
                     scanningCycles = 0;
                     try {
@@ -1097,13 +1099,13 @@ const AutoXEo: React.FC = observer(() => {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
-                } else if (isAwaitingEvenTick || isAwaitingOddTick) {
-                    scanningCycles++;
-                    if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
-                    await new Promise(r => setTimeout(r, 40));
                 } else {
                     scanningCycles++;
-                    if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
+                    if (last3.length >= 1 && (lastDigit % 2 !== 0 ? isTwoOdds : isTwoEvens)) {
+                        if (botStateRef.current !== 'WAITING_TRIGGER') setBotStateSync('WAITING_TRIGGER');
+                    } else {
+                        if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
+                    }
 
                     // If current market has no pattern forming, switch after 10 cycles if autoSwitchMarkets is enabled
                     if (autoSwitchMarkets && scanningCycles >= 10 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
@@ -1129,12 +1131,21 @@ const AutoXEo: React.FC = observer(() => {
         maxRunsBeforeCheck,
         bestMarketCandidate,
         recoveryType,
+        targetProbabilityThreshold,
         setBotStateSync,
         executeTradeOrder,
+        addLogEntry,
     ]);
 
     // ── Bot Start / Pause / Stop Handlers ──
-    const handleStartBot = useCallback(() => {
+    const handleStartBot = useCallback(async () => {
+        const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
+        if (!logged_in) {
+            const oauthUrl = await generateOAuthURL();
+            if (oauthUrl) window.location.href = oauthUrl;
+            return;
+        }
+
         const baseStk = parseFloat(initialStake) || 0.5;
         currentStakeRef.current = baseStk;
         setCurrentStake(baseStk);
@@ -1149,7 +1160,7 @@ const AutoXEo: React.FC = observer(() => {
         setAccumulatedLoss(0);
         setBotStateSync('SCANNING');
         void startAutoTradingLoop();
-    }, [initialStake, setBotStateSync, startAutoTradingLoop]);
+    }, [client?.is_logged_in, initialStake, setBotStateSync, startAutoTradingLoop]);
 
     const handlePauseBot = useCallback(() => {
         if (botStateRef.current === 'PAUSED') {

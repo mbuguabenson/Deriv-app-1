@@ -219,7 +219,7 @@ const ElitePro = observer(() => {
     const { client, run_panel, summary_card, transactions } = store;
     const showElitePro = true;
     const currency = client?.currency || 'USD';
-    const logged_in = client?.is_logged_in ?? isLoggedIn();
+    const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
     // ── Mode Toggle state ──
     const [executionMode, setExecutionMode] = useState<ExecutionMode>('local');
@@ -1206,6 +1206,8 @@ const ElitePro = observer(() => {
                             if (readyMarket) {
                                 setSelectedSymbol(readyMarket.symbol);
                                 selectedSymbolRef.current = readyMarket.symbol;
+                                targetStrategyRef.current = 'AUTO';
+                                setActiveTargetStrategy('AUTO');
                                 lastProcessedTick = -1;
                                 addLogEntry(
                                     'SMART SWITCH',
@@ -1227,6 +1229,8 @@ const ElitePro = observer(() => {
                                 if (bestCandidate) {
                                     setSelectedSymbol(bestCandidate.symbol);
                                     selectedSymbolRef.current = bestCandidate.symbol;
+                                    targetStrategyRef.current = 'AUTO';
+                                    setActiveTargetStrategy('AUTO');
                                     lastProcessedTick = -1;
                                     addLogEntry(
                                         'SMART SWITCH',
@@ -1353,6 +1357,9 @@ const ElitePro = observer(() => {
                                 ) {
                                     setSelectedSymbol(bestCandidate.symbol);
                                     selectedSymbolRef.current = bestCandidate.symbol;
+                                    targetStrategyRef.current = 'AUTO';
+                                    setActiveTargetStrategy('AUTO');
+                                    lastProcessedTick = -1;
                                     addLogEntry(
                                         'SMART SWITCH',
                                         bestCandidate.label,
