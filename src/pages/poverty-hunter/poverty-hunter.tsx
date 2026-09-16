@@ -19,6 +19,7 @@ export interface MarketDigitState {
     lastDigit: number;
     pip: number;
     tickCount?: number;
+    lastTickTime?: number;
 }
 
 export interface DigitStat {
@@ -201,7 +202,8 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
 
 // ─── Digit Extraction Helper ───────────────────────────────────────────────────
 
-const extractLastDigit = (quote: number | string, pip = 2): number => {
+const extractLastDigit = (quote: number | string | undefined | null, pip = 2): number => {
+    if (quote === undefined || quote === null) return 0;
     const p = Number(quote);
     if (isNaN(p)) return 0;
     const fixed = p.toFixed(pip);
@@ -232,9 +234,8 @@ const PovertyHunter: React.FC = observer(() => {
     const [takeProfit, setTakeProfit] = useState<string>('10.00');
     const [stopLoss, setStopLoss] = useState<string>('25.00');
     const [tickDuration, setTickDuration] = useState<string>('1');
-    const [bulkCount, setBulkCount] = useState<string>('6');
     const [autoRecoveryMode, setAutoRecoveryMode] = useState<boolean>(true);
-    const [recoveryType, setRecoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
+    const [recoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
 
     // ── Bot Running State ──
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
@@ -243,23 +244,12 @@ const PovertyHunter: React.FC = observer(() => {
     const [lossesCount, setLossesCount] = useState<number>(0);
     const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
-    const [accumulatedLoss, setAccumulatedLoss] = useState<number>(0);
+    const [, setAccumulatedLoss] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'tp' | 'sl' | null }>({
         isOpen: false,
         type: null,
     });
-
-    // ── Differs Automation Condition States ──
-    const [differTargetDigit, setDifferTargetDigit] = useState<number | null>(null);
-    const [waitingForAppear, setWaitingForAppear] = useState<boolean>(false);
-    const [confirmationTicksRemaining, setConfirmationTicksRemaining] = useState<number>(0);
-
-    // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
-    const recoveryTypeRef = useRef<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>(recoveryType);
-    useEffect(() => {
-        recoveryTypeRef.current = recoveryType;
-    }, [recoveryType]);
 
     // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
     const botStateRef = useRef<AutoRunState>('IDLE');
@@ -269,6 +259,7 @@ const PovertyHunter: React.FC = observer(() => {
     const consecutiveRunsRef = useRef<number>(0);
     const currentStakeRef = useRef<number>(0.5);
     const isInRecoveryRef = useRef<boolean>(false);
+    const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => {
         selectedSymbolRef.current = selectedSymbol;
@@ -294,7 +285,7 @@ const PovertyHunter: React.FC = observer(() => {
     const isMountedRef = useRef<boolean>(true);
     const executionLockRef = useRef<boolean>(false);
 
-    // Initialize market entries
+    // Initialize all market entries in ref map
     useEffect(() => {
         MARKETS.forEach(m => {
             if (!marketsDataRef.current.has(m.symbol)) {
@@ -305,6 +296,8 @@ const PovertyHunter: React.FC = observer(() => {
                     currentPrice: '0.00',
                     lastDigit: 0,
                     pip: m.pip,
+                    tickCount: 0,
+                    lastTickTime: 0,
                 });
             }
         });
@@ -314,17 +307,44 @@ const PovertyHunter: React.FC = observer(() => {
     const lastRenderTime = useRef<number>(0);
     const throttleRender = useCallback(() => {
         const now = Date.now();
-        if (now - lastRenderTime.current > 120) {
+        if (now - lastRenderTime.current > 80) {
             lastRenderTime.current = now;
             setRenderTrigger(t => t + 1);
         }
     }, []);
 
-    const [streamRefreshKey, setStreamRefreshKey] = useState(0);
+    // ── Dynamic Prediction & Confirmation Counter State ──
+    const [differTargetDigit, setDifferTargetDigit] = useState<number>(4);
+    const [confirmationTicksRemaining, setConfirmationTicksRemaining] = useState<number>(2);
+    const [waitingForAppear, setWaitingForAppear] = useState<boolean>(true);
 
-    // Listen to account switch, WebSocket re-auth, and visibility change to refresh live streams
+    // ── Safe Manual Market Selection ──
+    const handleManualMarketSelect = useCallback(
+        (sym: string) => {
+            setSelectedSymbol(sym);
+            selectedSymbolRef.current = sym;
+            lastProcessedTicksRef.current.set(sym, -1);
+            setWaitingForAppear(true);
+            setConfirmationTicksRemaining(2);
+            throttleRender();
+        },
+        [throttleRender]
+    );
+
+    // ── Manage Subscriptions & Stream Refresh Watchdog ──
+    const [streamRefreshKey, setStreamRefreshKey] = useState<number>(0);
+
     useEffect(() => {
         const handleRefresh = () => {
+            subscriptionsRef.current.forEach(sub => {
+                try {
+                    sub?.unsubscribe?.();
+                } catch {
+                    /* ignore */
+                }
+            });
+            subscriptionsRef.current.clear();
+            derivTickManager.healStalledStreams();
             setStreamRefreshKey(k => k + 1);
         };
 
@@ -336,13 +356,26 @@ const PovertyHunter: React.FC = observer(() => {
         };
 
         window.addEventListener('account_switched', handleRefresh);
+        window.addEventListener('online', handleRefresh);
         document.addEventListener('visibilitychange', handleVisibility);
         globalObserver.register('api.authorize', handleRefresh);
 
+        // 3-second watchdog timer to auto-heal stalled streams
+        const watchdog = setInterval(() => {
+            if (!isMountedRef.current || document.hidden) return;
+            const current = marketsDataRef.current.get(selectedSymbolRef.current);
+            const now = Date.now();
+            if (current && current.lastTickTime && now - current.lastTickTime > 4000) {
+                derivTickManager.healStalledStreams();
+            }
+        }, 3000);
+
         return () => {
             window.removeEventListener('account_switched', handleRefresh);
+            window.removeEventListener('online', handleRefresh);
             document.removeEventListener('visibilitychange', handleVisibility);
             globalObserver.unregister('api.authorize', handleRefresh);
+            clearInterval(watchdog);
         };
     }, []);
 
@@ -359,7 +392,7 @@ const PovertyHunter: React.FC = observer(() => {
 
             try {
                 const mData = marketsDataRef.current.get(sym);
-                // 1. Fetch initial tick history (50 ticks) if empty or few
+                // Fetch initial tick history if missing or short
                 if (!mData || mData.digits.length < 20) {
                     const res = await api_base.api.send({
                         ticks_history: sym,
@@ -373,11 +406,12 @@ const PovertyHunter: React.FC = observer(() => {
                     if (mData && res?.history?.prices) {
                         const prices: number[] = res.history.prices || [];
                         const digits = prices.map(p => extractLastDigit(p, pip));
-                        mData.digits = digits.slice(-MAX_TICKS_STORED);
+                        mData.digits = digits;
                         if (prices.length > 0) {
-                            const lastPrice = prices[prices.length - 1];
-                            mData.currentPrice = Number(lastPrice).toFixed(pip);
-                            mData.lastDigit = extractLastDigit(lastPrice, pip);
+                            const lastP = prices[prices.length - 1];
+                            mData.currentPrice = Number(lastP).toFixed(pip);
+                            mData.lastDigit = digits[digits.length - 1];
+                            mData.lastTickTime = Date.now();
                         }
                         throttleRender();
                     }
@@ -385,28 +419,28 @@ const PovertyHunter: React.FC = observer(() => {
 
                 if (activeSubs.has(sym)) return;
 
-                // 2. Subscribe to real-time live ticks via centralized multiplexer
-                const sub = subscribeTicks(sym, (data: Record<string, unknown>) => {
+                // Subscribe to real-time live ticks via centralized multiplexer
+                const sub = subscribeTicks(sym, (tickRes: Record<string, unknown>) => {
                     if (!isMountedRef.current) return;
-                    const activeM = marketsDataRef.current.get(sym);
-                    if (!activeM) return;
-
-                    const tick = data?.tick as { quote?: number | string } | undefined;
-                    const quote = tick?.quote;
-                    if (quote !== undefined && quote !== null) {
-                        const d = extractLastDigit(quote, pip);
-                        activeM.digits.push(d);
-                        if (activeM.digits.length > MAX_TICKS_STORED) activeM.digits.shift();
-                        activeM.currentPrice = Number(quote).toFixed(pip);
-                        activeM.lastDigit = d;
-                        activeM.tickCount = (activeM.tickCount || 0) + 1;
-                        throttleRender();
+                    const tickData = tickRes?.tick as { quote?: number | string; symbol?: string } | undefined;
+                    if (tickData?.symbol === sym && tickData?.quote !== undefined) {
+                        const quote = Number(tickData.quote);
+                        const lastD = extractLastDigit(quote, pip);
+                        const item = marketsDataRef.current.get(sym);
+                        if (item) {
+                            item.currentPrice = quote.toFixed(pip);
+                            item.lastDigit = lastD;
+                            item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
+                            item.tickCount = (item.tickCount || 0) + 1;
+                            item.lastTickTime = Date.now();
+                            throttleRender();
+                        }
                     }
                 });
 
                 activeSubs.set(sym, sub);
             } catch (err) {
-                console.warn(`[PovertyHunter] Stream error for ${sym}:`, err);
+                console.error(`Poverty Hunter: Error subscribing to ${sym}:`, err);
             }
         };
 
@@ -418,192 +452,118 @@ const PovertyHunter: React.FC = observer(() => {
             for (const sym of symbolsToStream) {
                 if (!isMountedRef.current) break;
                 await subscribeSymbol(sym);
-                await new Promise(r => setTimeout(r, 120)); // Rate-limiting guard
+                await new Promise(r => setTimeout(r, 60));
             }
         };
 
         void initAll();
 
-        // Unsubscribe unused symbols
-        activeSubs.forEach((sub, sym) => {
-            if (!symbolsToStream.includes(sym)) {
-                try {
-                    sub.unsubscribe();
-                } catch {
-                    /* ignore */
-                }
-                activeSubs.delete(sym);
-            }
-        });
+        return () => {
+            // Streams persist across renders
+        };
+    }, [scanAllMarkets, selectedSymbol, throttleRender, streamRefreshKey]);
 
+    // Cleanup on component unmount
+    useEffect(() => {
         return () => {
             isMountedRef.current = false;
-            activeSubs.forEach(sub => {
+            subscriptionsRef.current.forEach(sub => {
                 try {
-                    sub.unsubscribe();
+                    sub?.unsubscribe?.();
                 } catch {
                     /* ignore */
                 }
             });
-            activeSubs.clear();
+            subscriptionsRef.current.clear();
         };
-    }, [scanAllMarkets, selectedSymbol, throttleRender, streamRefreshKey]);
+    }, []);
 
-    // ── Current Active Market Data ──
+    // ── Current Active Market State ──
     const currentMarket = useMemo(() => {
-        return (
-            marketsDataRef.current.get(selectedSymbol) || {
-                symbol: selectedSymbol,
-                label: selectedSymbol,
-                digits: [],
-                currentPrice: '0.00',
-                lastDigit: 0,
-                pip: 2,
-            }
-        );
+        const m = marketsDataRef.current.get(selectedSymbol);
+        if (m) return m;
+        return {
+            symbol: selectedSymbol,
+            label: MARKETS.find(x => x.symbol === selectedSymbol)?.label || selectedSymbol,
+            digits: [],
+            currentPrice: '0.00',
+            lastDigit: 0,
+            pip: 2,
+        };
     }, [selectedSymbol, renderTrigger]);
 
-    // ── Calculate 0-9 Digit Analytics (Last 60 Ticks) ──
+    // ── Digit Distribution Analysis (0-9 in Last 60 Ticks) ──
     const digitStats: DigitStat[] = useMemo(() => {
-        const last60 = currentMarket.digits.slice(-60);
-        const total = last60.length || 1;
-        const counts = Array(10).fill(0);
-        last60.forEach(d => {
+        const recent60 = currentMarket.digits.slice(-60);
+        const total = recent60.length || 1;
+        const counts = new Array(10).fill(0);
+
+        recent60.forEach(d => {
             if (d >= 0 && d <= 9) counts[d]++;
         });
 
-        // Compute power in last 20 vs previous 20 to detect if increasing
-        const last20 = currentMarket.digits.slice(-20);
-        const prev20 = currentMarket.digits.slice(-40, -20);
-        const cLast20 = Array(10).fill(0);
-        const cPrev20 = Array(10).fill(0);
-        last20.forEach(d => cLast20[d]++);
-        prev20.forEach(d => cPrev20[d]++);
+        // Calculate trend (last 15 vs previous 15)
+        const last15 = currentMarket.digits.slice(-15);
+        const prev15 = currentMarket.digits.slice(-30, -15);
 
-        const stats = counts.map((count, digit) => {
-            const percentage = (count / total) * 100;
+        const stats: DigitStat[] = counts.map((count, digit) => {
+            const percentage = Math.round((count / total) * 1000) / 10;
+            const c15 = last15.filter(d => d === digit).length;
+            const p15 = prev15.filter(d => d === digit).length;
+            const isIncreasing = c15 > p15;
             const isExcluded = EXCLUDED_DIGITS.includes(digit);
-            const isIncreasing = cLast20[digit] > cPrev20[digit];
+
             return {
                 digit,
                 count,
                 percentage,
                 rank: 0,
-                power: Math.round(percentage),
+                power: Math.min(100, Math.round((percentage / 20) * 100)),
                 isIncreasing,
                 isExcluded,
             };
         });
 
-        // Sort to assign rankings
-        const sortedIndices = [...stats].map((s, idx) => ({ idx, count: s.count })).sort((a, b) => b.count - a.count);
-
-        sortedIndices.forEach((item, rankIdx) => {
-            stats[item.idx].rank = rankIdx + 1;
+        // Assign ranks
+        const sorted = [...stats].sort((a, b) => b.count - a.count);
+        sorted.forEach((item, index) => {
+            const original = stats.find(s => s.digit === item.digit);
+            if (original) original.rank = index + 1;
         });
 
         return stats;
     }, [currentMarket.digits]);
 
-    // Summary Rankings (Most, 2nd Highest, Least)
-    const mostAppearing = useMemo(() => {
-        const sorted = [...digitStats].sort((a, b) => b.count - a.count);
-        return sorted[0]?.digit ?? null;
+    // ── Filter Valid Digits for Differs Candidate (Excluding 0, 1, 8, 9) ──
+    const validDifferStats = useMemo(() => {
+        return digitStats.filter(s => !s.isExcluded).sort((a, b) => a.count - b.count);
     }, [digitStats]);
 
-    const secondHighest = useMemo(() => {
-        const sorted = [...digitStats].sort((a, b) => b.count - a.count);
-        return sorted[1]?.digit ?? null;
-    }, [digitStats]);
-
-    const leastAppearing = useMemo(() => {
-        const sorted = [...digitStats].sort((a, b) => a.count - b.count);
-        return sorted[0]?.digit ?? null;
-    }, [digitStats]);
-
-    // ── Over/Under Statistics (Last 50 Ticks) ──
-    const ouAnalysis = useMemo(() => {
-        const last50 = currentMarket.digits.slice(-50);
-        const total = last50.length || 1;
-
-        // Split 1: Under 0-4 vs Over 5-9
-        const under04 = last50.filter(d => d <= 4).length;
-        const over59 = last50.filter(d => d >= 5).length;
-        const under04Pct = Math.round((under04 / total) * 100);
-        const over59Pct = Math.round((over59 / total) * 100);
-
-        // Split 2: Under 0-5 vs Over 4-9
-        const under05 = last50.filter(d => d <= 5).length;
-        const over49 = last50.filter(d => d >= 4).length;
-        const under05Pct = Math.round((under05 / total) * 100);
-        const over49Pct = Math.round((over49 / total) * 100);
-
-        // Highest Entry Digit in Under (0-4) and Over (5-9)
-        const underDigits = digitStats.filter(s => s.digit <= 4).sort((a, b) => b.count - a.count);
-        const overDigits = digitStats.filter(s => s.digit >= 5).sort((a, b) => b.count - a.count);
-        const highestUnderEntryDigit = underDigits[0]?.digit ?? 2;
-        const highestOverEntryDigit = overDigits[0]?.digit ?? 7;
-
-        // Last 10 Ticks direction check
-        const last10 = currentMarket.digits.slice(-10);
-        const last10Under = last10.filter(d => d <= 4).length;
-        const last10Over = last10.filter(d => d >= 5).length;
-
-        // Bias calculation
-        let bias: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
-        if (under04Pct >= 55 && under05 > over49 && last10Under >= 7) {
-            bias = 'UNDER';
-        } else if (over59Pct >= 55 && over49 > under05 && last10Over >= 7) {
-            bias = 'OVER';
-        }
-
-        return {
-            under04,
-            over59,
-            under04Pct,
-            over59Pct,
-            under05,
-            over49,
-            under05Pct,
-            over49Pct,
-            highestUnderEntryDigit,
-            highestOverEntryDigit,
-            last10Under,
-            last10Over,
-            bias,
-        };
-    }, [currentMarket.digits, digitStats]);
-
-    // ── Differs Candidate Auto-Selection (Safe Middle Digits 2 to 7) ──
+    // ── Automatically Selected Least Appearing Digit (Range 2-7) ──
     const autoDifferCandidate = useMemo(() => {
-        // Safe middle candidate pool: digits 2 to 7 (excluding edge digits 0, 1, 8, 9)
-        const middleCandidates = digitStats.filter(
-            s => s.digit >= 2 && s.digit <= 7 && s.digit !== mostAppearing
-        );
-        if (middleCandidates.length > 0) {
-            // Pick lowest frequency safe digit
-            middleCandidates.sort((a, b) => a.count - b.count);
-            return middleCandidates[0].digit;
-        }
-        return 4;
-    }, [digitStats, mostAppearing]);
+        if (validDifferStats.length === 0) return 4;
+        return validDifferStats[0].digit;
+    }, [validDifferStats]);
 
-    // Auto update differ target digit continuously to track safest middle digit dynamically
-    useEffect(() => {
-        setDifferTargetDigit(autoDifferCandidate);
-    }, [autoDifferCandidate]);
-
-    // ── Best Market Auto-Selector for Switcher ──
+    // ── Best Market Candidate for Auto-Switching ──
     const bestMarketCandidate = useMemo(() => {
         let bestSym = selectedSymbol;
         let bestScore = -1;
 
         marketsDataRef.current.forEach((mState, sym) => {
             if (mState.digits.length < 30) return;
-            const last50 = mState.digits.slice(-50);
-            const uCount = last50.filter(d => d <= 4).length;
-            const oCount = last50.filter(d => d >= 5).length;
-            const score = Math.max(uCount, oCount);
+            const last60 = mState.digits.slice(-60);
+            const counts = new Array(10).fill(0);
+            last60.forEach(d => {
+                if (d >= 0 && d <= 9) counts[d]++;
+            });
+
+            const validCounts = counts.filter((_, d) => !EXCLUDED_DIGITS.includes(d));
+            const minCount = Math.min(...validCounts);
+            const total = last60.length || 1;
+            const minPct = (minCount / total) * 100;
+            const score = Math.round(100 - minPct * 5);
+
             if (score > bestScore) {
                 bestScore = score;
                 bestSym = sym;
@@ -617,9 +577,9 @@ const PovertyHunter: React.FC = observer(() => {
     const pushContractToDrawer = useCallback(
         (contractSnapshot: Record<string, unknown>) => {
             try {
-                transactions.pushTransaction({ ...contractSnapshot, run_id: run_panel.run_id });
-                run_panel.onBotContractEvent(contractSnapshot);
-                summary_card.onBotContractEvent(contractSnapshot);
+                transactions?.pushTransaction?.({ ...contractSnapshot, run_id: run_panel?.run_id });
+                run_panel?.onBotContractEvent?.(contractSnapshot);
+                summary_card?.onBotContractEvent?.(contractSnapshot);
             } catch {
                 // Ignore if core stores aren't initialized
             }
@@ -630,153 +590,147 @@ const PovertyHunter: React.FC = observer(() => {
     const addLogEntry = useCallback(
         (
             market: string,
-            strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER',
+            strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY',
             contractType: string,
             prediction: number,
             stake: number,
             result: 'WIN' | 'LOSS' | 'PENDING',
             profit: number
         ) => {
-            setTradeLog(prev =>
-                [
-                    {
-                        id: `PH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                        time: new Date().toLocaleTimeString(),
-                        market,
-                        strategy,
-                        contractType,
-                        prediction,
-                        stake,
-                        result,
-                        profit,
-                    },
-                    ...prev,
-                ].slice(0, 80)
-            );
+            const item: TradeLogItem = {
+                id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                time: new Date().toLocaleTimeString(),
+                market,
+                strategy,
+                contractType,
+                prediction,
+                stake,
+                result,
+                profit,
+            };
+            setTradeLog(prev => [item, ...prev.slice(0, 49)]);
+            return item.id;
         },
         []
     );
 
-    // ── Execute Trade Order (Single or Bulk) ──
+    const updateLogResult = useCallback((id: string, result: 'WIN' | 'LOSS', profit: number) => {
+        setTradeLog(prev => prev.map(item => (item.id === id ? { ...item, result, profit } : item)));
+    }, []);
+
+    // ── Execute Trade Order ──
     const executeTradeOrder = useCallback(
         async (
-            symbol: string,
+            market: string,
             contractType: 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER',
             barrier: number,
-            stakeAmount: number,
-            isRecoveryTrade = false
+            stake: number,
+            isRecovery = false
         ) => {
             if (executionLockRef.current) return;
             executionLockRef.current = true;
+            setBotState('TRADING');
 
-            const dur = parseInt(tickDuration, 10) || 1;
-            const count = Math.max(1, parseInt(bulkCount, 10) || 1);
-            const marketLabel = MARKETS.find(m => m.symbol === symbol)?.label || symbol;
-
-            const params = {
-                amount: stakeAmount,
-                basis: 'stake',
-                contract_type: contractType,
-                currency: currency || 'USD',
-                duration: dur,
-                duration_unit: 't',
-                symbol,
-                barrier: String(barrier),
-            };
-
-            const stratType = isRecoveryTrade
+            const stratName = isRecovery
                 ? contractType === 'DIGITOVER'
                     ? 'RECOVERY_OVER'
                     : 'RECOVERY_UNDER'
-                : contractType === 'DIGITDIFF'
-                  ? 'DIFFERS'
-                  : 'OVER_UNDER';
+                : 'DIFFERS';
+            const logId = addLogEntry(market, stratName, contractType, barrier, stake, 'PENDING', 0);
 
             try {
-                // Execute batch (Bulk purchases executed in parallel with same entry/exit)
-                const buyPromises = Array.from({ length: count }, () =>
-                    buyContractForUi({ parameters: params, price: stakeAmount, source: 'PovertyHunter' })
-                );
-
-                const buyResults = await Promise.all(buyPromises);
-                let totalBatchProfit = 0;
-                let batchWon = true;
-
-                for (const buy of buyResults) {
-                    if (!buy?.contract_id) continue;
-                    const startTime = Math.floor(Date.now() / 1000);
-                    const initSnapshot = {
-                        buy_price: buy.buy_price,
-                        contract_id: buy.contract_id,
-                        transaction_ids: { buy: buy.transaction_id },
-                        date_start: startTime,
-                        display_name: marketLabel,
-                        underlying_symbol: symbol,
-                        shortcode: `PH_${contractType}_${barrier}`,
+                const duration = parseInt(tickDuration, 10) || 1;
+                const buyResult = await buyContractForUi({
+                    parameters: {
+                        amount: stake,
+                        basis: 'stake',
                         contract_type: contractType,
-                        currency: currency || 'USD',
+                        currency,
+                        duration,
+                        duration_unit: 't',
+                        symbol: market,
                         barrier: String(barrier),
-                    };
+                    },
+                    price: stake,
+                    source: 'Poverty Hunter',
+                });
 
-                    pushContractToDrawer(initSnapshot);
-
-                    const settled = await streamContractUntilSettled({
-                        contractId: buy.contract_id,
-                        fallback: initSnapshot,
-                        onUpdate: snap => pushContractToDrawer(snap),
-                        source: 'PovertyHunter',
-                    });
-
-                    const p = Number(settled.profit || 0);
-                    totalBatchProfit += p;
-                    if (settled.status === 'lost' || p < 0) {
-                        batchWon = false;
-                    }
+                if (!buyResult?.contract_id) {
+                    throw new Error('No contract ID returned');
                 }
 
-                // Post-trade handling
-                const roundedProfit = Number(totalBatchProfit.toFixed(2));
-                const nextP = Number((sessionProfitRef.current + roundedProfit).toFixed(2));
-                sessionProfitRef.current = nextP;
-                setSessionProfit(nextP);
+                const contractId = buyResult.contract_id;
+                const transactionId = buyResult.transaction_id || contractId;
+                const startTime = Math.floor(Date.now() / 1000);
+                const marketLabel = MARKETS.find(m => m.symbol === market)?.label || market;
 
-                if (batchWon) {
-                    setWinsCount(w => w + count);
-                    addLogEntry(symbol, stratType, contractType, barrier, stakeAmount * count, 'WIN', roundedProfit);
+                const initSnapshot = {
+                    contract_id: contractId,
+                    transaction_ids: { buy: transactionId },
+                    buy_price: stake,
+                    underlying: market,
+                    underlying_symbol: market,
+                    display_name: marketLabel,
+                    shortcode: `PH_${contractType}_${barrier}`,
+                    contract_type: contractType,
+                    currency: currency || 'USD',
+                    date_start: startTime,
+                    status: 'open',
+                    barrier: String(barrier),
+                };
+                pushContractToDrawer(initSnapshot);
 
-                    // Recovery logic check
-                    if (isRecoveryTrade || isInRecoveryRef.current) {
-                        const newAccLoss = accumulatedLoss - roundedProfit;
-                        if (newAccLoss <= 0) {
-                            // Fully recovered! Revert to Differs with original base stake
-                            setIsInRecovery(false);
-                            isInRecoveryRef.current = false;
-                            setAccumulatedLoss(0);
-                            const baseStk = parseFloat(initialStake) || 0.5;
-                            currentStakeRef.current = baseStk;
-                            setCurrentStake(baseStk);
-                            addLogEntry(symbol, 'RECOVERY', 'RECOVERED_TO_DIFFERS', 0, 0, 'WIN', roundedProfit);
-                        } else {
-                            setAccumulatedLoss(newAccLoss);
-                        }
+                // Stream until settled
+                const settledSnapshot = await streamContractUntilSettled({
+                    contractId,
+                    fallback: initSnapshot,
+                    onUpdate: snapshot => {
+                        pushContractToDrawer(snapshot);
+                    },
+                    source: 'Poverty Hunter',
+                });
+
+                pushContractToDrawer(settledSnapshot);
+                const profitVal = Number(settledSnapshot?.profit || 0);
+                const isWin = profitVal > 0;
+
+                if (isWin) {
+                    updateLogResult(logId, 'WIN', profitVal);
+                    setWinsCount(w => w + 1);
+                    const nextP = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextP;
+                    setSessionProfit(nextP);
+
+                    if (isInRecoveryRef.current) {
+                        setIsInRecovery(false);
+                        isInRecoveryRef.current = false;
+                        setAccumulatedLoss(0);
+                        const baseStk = parseFloat(initialStake) || 0.5;
+                        currentStakeRef.current = baseStk;
+                        setCurrentStake(baseStk);
                     } else {
                         const baseStk = parseFloat(initialStake) || 0.5;
                         currentStakeRef.current = baseStk;
                         setCurrentStake(baseStk);
                     }
                 } else {
-                    setLossesCount(l => l + count);
-                    addLogEntry(symbol, stratType, contractType, barrier, stakeAmount * count, 'LOSS', roundedProfit);
+                    updateLogResult(logId, 'LOSS', profitVal);
+                    setLossesCount(l => l + 1);
+                    const nextP = Math.round((sessionProfitRef.current + profitVal) * 100) / 100;
+                    sessionProfitRef.current = nextP;
+                    setSessionProfit(nextP);
 
-                    // Single Loss -> Trigger Over/Under Recovery
                     if (autoRecoveryMode) {
                         setIsInRecovery(true);
                         isInRecoveryRef.current = true;
-                        const lost = Math.abs(roundedProfit);
-                        setAccumulatedLoss(al => al + lost);
-
-                        const mult = parseFloat(martingale) || 2.6;
-                        const nextStake = Number((stakeAmount * mult).toFixed(2));
+                        const martMult = parseFloat(martingale) || 2.6;
+                        const nextStake = Math.round(stake * martMult * 100) / 100;
+                        currentStakeRef.current = nextStake;
+                        setCurrentStake(nextStake);
+                        setAccumulatedLoss(prev => prev + Math.abs(profitVal));
+                    } else {
+                        const martMult = parseFloat(martingale) || 2.0;
+                        const nextStake = Math.round(stake * martMult * 100) / 100;
                         currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
                     }
@@ -784,43 +738,40 @@ const PovertyHunter: React.FC = observer(() => {
 
                 consecutiveRunsRef.current += 1;
                 setConsecutiveRuns(consecutiveRunsRef.current);
-                return roundedProfit;
-            } catch (err) {
-                console.error('[PovertyHunter] Order execution error:', err);
-                addLogEntry(symbol, stratType, contractType, barrier, stakeAmount, 'LOSS', 0);
-                return -stakeAmount;
+                return profitVal;
+            } catch (err: any) {
+                console.error('Poverty Hunter Trade execution failed:', err);
+                updateLogResult(logId, 'LOSS', -stake);
+                return -stake;
             } finally {
                 executionLockRef.current = false;
             }
         },
         [
+            addLogEntry,
+            updateLogResult,
             tickDuration,
-            bulkCount,
             currency,
             pushContractToDrawer,
-            addLogEntry,
-            accumulatedLoss,
             initialStake,
             autoRecoveryMode,
             martingale,
         ]
     );
 
-    // ── Dedicated Asynchronous Trading Engine Loop ──
+    // ── Dedicated Asynchronous Trading Engine Loop (Zero-Freeze) ──
     const startAutoTradingLoop = useCallback(async () => {
         autoAbortRef.current?.abort();
         const abortCtrl = new AbortController();
         autoAbortRef.current = abortCtrl;
         const signal = abortCtrl.signal;
 
-        const tp = parseFloat(takeProfit) || 9999;
-        const sl = parseFloat(stopLoss) || 9999;
+        const tpVal = parseFloat(takeProfit) || 10;
+        const slVal = parseFloat(stopLoss) || 25;
 
         setBotStateSync('SCANNING');
-
+        let ticksRemaining = 2;
         let waitingForCandidate = true;
-        let ticksRemaining = 3;
-        let lastProcessedTick = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -829,72 +780,68 @@ const PovertyHunter: React.FC = observer(() => {
                     continue;
                 }
 
-                // Check Take Profit & Stop Loss
-                if (sessionProfitRef.current >= tp) {
+                let targetSym = selectedSymbolRef.current;
+
+                // Check TP / SL Limits
+                if (sessionProfitRef.current >= tpVal && tpVal > 0) {
                     setBotStateSync('IDLE');
-                    addLogEntry(selectedSymbolRef.current, 'TAKE_PROFIT', 'DOLLARS_PRINTED 💵💸', 0, 0, 'WIN', sessionProfitRef.current);
+                    addLogEntry(targetSym, 'TAKE_PROFIT', 'TARGET ACHIEVED 🎯', 0, 0, 'WIN', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'tp' });
                     break;
                 }
-                if (sessionProfitRef.current <= -sl) {
+                if (sessionProfitRef.current <= -slVal && slVal > 0) {
                     setBotStateSync('IDLE');
-                    addLogEntry(selectedSymbolRef.current, 'STOP_LOSS', 'CAPITAL_PROTECTED 🛡️', 0, 0, 'LOSS', sessionProfitRef.current);
+                    addLogEntry(targetSym, 'STOP_LOSS', 'SAFETY STOP HIT 🛑', 0, 0, 'LOSS', sessionProfitRef.current);
                     setMilestone({ isOpen: true, type: 'sl' });
                     break;
                 }
 
-                let targetSym = selectedSymbolRef.current;
-
-                // Check Max Runs threshold (default 7 runs) -> Auto-pause, re-analyze & resume/switch
-                if (consecutiveRunsRef.current >= maxRunsBeforeCheck) {
+                // Market Auto-Switch Check after max consecutive runs
+                if (autoSwitchMarkets && consecutiveRunsRef.current >= maxRunsBeforeCheck) {
                     consecutiveRunsRef.current = 0;
                     setConsecutiveRuns(0);
-                    // Soft cooldown pause to re-analyze conditions
-                    if (bestMarketCandidate && bestMarketCandidate !== targetSym && autoSwitchMarkets) {
+                    if (bestMarketCandidate && bestMarketCandidate !== targetSym) {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
-                        lastProcessedTick = -1;
+                        lastProcessedTicksRef.current.set(targetSym, -1);
+                        waitingForCandidate = true;
+                        ticksRemaining = 2;
+                        setWaitingForAppear(true);
+                        setConfirmationTicksRemaining(2);
+                        await new Promise(r => setTimeout(r, 200));
                     }
-                    waitingForCandidate = true;
-                    ticksRemaining = 3;
-                    setWaitingForAppear(true);
-                    setConfirmationTicksRemaining(3);
-                    if (botStateRef.current !== 'PAUSED' && botStateRef.current !== 'IDLE') {
-                        setBotStateSync('SCANNING');
-                    }
-                    await new Promise(r => setTimeout(r, 600));
                 }
 
                 const mData = marketsDataRef.current.get(targetSym);
                 if (!mData || mData.digits.length < 15) {
                     if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 300));
                     continue;
                 }
 
                 const digits = mData.digits;
                 const currLastDigit = mData.lastDigit;
                 const currTickCount = mData.tickCount || 0;
+                const lastProcessed = lastProcessedTicksRef.current.get(targetSym) ?? -1;
 
-                // Wait for a fresh live tick from the stream before processing
-                if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                // Independent per-symbol fresh tick gate
+                if (lastProcessed !== -1 && currTickCount <= lastProcessed) {
                     await new Promise(r => setTimeout(r, 40));
                     continue;
                 }
-                lastProcessedTick = currTickCount;
+                lastProcessedTicksRef.current.set(targetSym, currTickCount);
 
-                // 1. RECOVERY MODE: Over / Under Execution (Over 1,2,3 or Under 8,7,6)
+                // 1. RECOVERY MODE BRANCH: High-Frequency Over / Under Strategy
                 if (isInRecoveryRef.current) {
                     const last50 = digits.slice(-50);
                     const under05 = last50.filter(d => d <= 5).length;
                     const over49 = last50.filter(d => d >= 4).length;
                     const isUnderFavored = under05 >= over49;
 
-                    const activeRecMode = recoveryTypeRef.current;
                     const barrier = isUnderFavored
-                        ? (activeRecMode === 'OVER_1_UNDER_8' ? 8 : activeRecMode === 'OVER_2_UNDER_7' ? 7 : 6)
-                        : (activeRecMode === 'OVER_1_UNDER_8' ? 1 : activeRecMode === 'OVER_2_UNDER_7' ? 2 : 3);
+                        ? (recoveryType === 'OVER_1_UNDER_8' ? 8 : recoveryType === 'OVER_2_UNDER_7' ? 7 : 6)
+                        : (recoveryType === 'OVER_1_UNDER_8' ? 1 : recoveryType === 'OVER_2_UNDER_7' ? 2 : 3);
                     const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
 
                     // High-probability trigger entry
@@ -1008,6 +955,7 @@ const PovertyHunter: React.FC = observer(() => {
         setBotStateSync,
         executeTradeOrder,
         addLogEntry,
+        recoveryType,
     ]);
 
     // ── Handlers ──
@@ -1033,6 +981,7 @@ const PovertyHunter: React.FC = observer(() => {
         setAccumulatedLoss(0);
         setWaitingForAppear(true);
         setConfirmationTicksRemaining(2);
+        lastProcessedTicksRef.current.clear();
         setBotStateSync('SCANNING');
         void startAutoTradingLoop();
     }, [client?.is_logged_in, initialStake, setBotStateSync, startAutoTradingLoop]);
@@ -1047,7 +996,7 @@ const PovertyHunter: React.FC = observer(() => {
 
     const handlePauseBot = useCallback(() => {
         if (botStateRef.current === 'PAUSED') {
-            setBotStateSync('TRADING');
+            setBotStateSync('SCANNING');
         } else if (botStateRef.current !== 'IDLE') {
             setBotStateSync('PAUSED');
         }
@@ -1180,7 +1129,10 @@ const PovertyHunter: React.FC = observer(() => {
             <div className='poverty-hunter__market-bar'>
                 <div className='ph-select-group'>
                     <label>Active Market:</label>
-                    <select value={selectedSymbol} onChange={e => setSelectedSymbol(e.target.value)}>
+                    <select
+                        value={selectedSymbol}
+                        onChange={e => handleManualMarketSelect(e.target.value)}
+                    >
                         {MARKETS.map(m => (
                             <option key={m.symbol} value={m.symbol}>
                                 {m.label} ({m.symbol})
@@ -1239,7 +1191,7 @@ const PovertyHunter: React.FC = observer(() => {
                                 key={m.symbol}
                                 className={`ph-wide-card ${isSelected ? 'ph-wide-card--selected' : ''}`}
                                 onClick={() => {
-                                    setSelectedSymbol(m.symbol);
+                                    handleManualMarketSelect(m.symbol);
                                     setShowWideView(false);
                                 }}
                             >
@@ -1286,7 +1238,7 @@ const PovertyHunter: React.FC = observer(() => {
                                     <div
                                         key={m.symbol}
                                         className={`ph-market-card ${isSelected ? 'ph-market-card--active' : ''}`}
-                                        onClick={() => setSelectedSymbol(m.symbol)}
+                                        onClick={() => handleManualMarketSelect(m.symbol)}
                                     >
                                         <div className='ph-market-card__top'>
                                             <span className='symbol-name'>{m.label}</span>
@@ -1398,7 +1350,7 @@ const PovertyHunter: React.FC = observer(() => {
                                                 marginTop: '0.3rem',
                                             }}
                                         >
-                                            🎯 DIFFERS PICK
+                                            ⭐ Differs Target
                                         </span>
                                     )}
                                 </div>
@@ -1406,379 +1358,198 @@ const PovertyHunter: React.FC = observer(() => {
                         })}
                     </div>
 
-                    {/* Rankings Strip & Excluded Digits Legend */}
-                    <div className='poverty-hunter__ranks-strip'>
-                        <div className='ph-rank-item'>
-                            <span className='rank-pill rank-pill--most'>Most Appearing</span>
-                            <span className='rank-digit'>{mostAppearing ?? '—'}</span>
-                        </div>
-                        <div className='ph-rank-item'>
-                            <span className='rank-pill rank-pill--second'>2nd Highest</span>
-                            <span className='rank-digit'>{secondHighest ?? '—'}</span>
-                        </div>
-                        <div className='ph-rank-item'>
-                            <span className='rank-pill rank-pill--least'>Least Appearing</span>
-                            <span className='rank-digit'>{leastAppearing ?? '—'}</span>
-                        </div>
-                        <div className='ph-excluded-notice'>
-                            <strong>Edge Digits 0, 1 & 8, 9:</strong> Excluded from Differs calculation (Fainted)
-                        </div>
-                    </div>
-
-                    {/* Two Strategic Engines: Differs Engine & Over/Under Recovery Analytics */}
-                    <div className='poverty-hunter__strategy-grid'>
-                        {/* Differs Primary Strategy Card */}
-                        <div className='ph-card-box'>
-                            <div className='ph-card-box__header'>
+                    {/* Strategy Status & Trigger Progress Meter */}
+                    <div className='poverty-hunter__meter-card'>
+                        <div className='ph-meter-header'>
+                            <div className='ph-meter-title-wrap'>
                                 <h3>
-                                    <span>🎯</span> Differs Primary Strategy
+                                    {isInRecovery ? '⚡ RECOVERY PROTOCOL ACTIVE' : '🎯 DIFFERS VERIFICATION MATRIX'}
                                 </h3>
-                                <span className='badge badge--differs'>AUTOMATED (Digits 2–7)</span>
-                            </div>
-
-                            <div className='ph-differ-details'>
-                                <div className='ph-pick-banner'>
-                                    <div className='label-group'>
-                                        <span className='subtitle'>AI AUTO-SELECTED PREDICTION</span>
-                                        <span className='title'>DIFFER DIGIT: {differTargetDigit ?? '—'}</span>
-                                    </div>
-                                    <div className='digit-circle'>{differTargetDigit ?? '—'}</div>
-                                </div>
-
-                                <div className='ph-conditions-list'>
-                                    <div className='condition-row'>
-                                        <span>Candidate Range (2–7 &amp; Non-Edge):</span>
-                                        <span className='status status--met'>✓ VERIFIED</span>
-                                    </div>
-                                    <div className='condition-row'>
-                                        <span>Frequency in Last 60 Ticks (&lt; 10%):</span>
-                                        <span className='status status--met'>
-                                            {digitStats.find(s => s.digit === differTargetDigit)?.percentage.toFixed(1)}
-                                            % (Pass)
-                                        </span>
-                                    </div>
-                                    <div className='condition-row'>
-                                        <span>Not Increasing in Power:</span>
-                                        <span className='status status--met'>✓ PASS</span>
-                                    </div>
-                                    <div className='condition-row'>
-                                        <span>Appeared ≤ 3 Times in Last 15 Ticks:</span>
-                                        <span className='status status--met'>✓ PASS</span>
-                                    </div>
-                                    <div className='condition-row'>
-                                        <span>Entry Confirmation Status:</span>
-                                        <span
-                                            className={`status ${confirmationTicksRemaining === 0 ? 'status--met' : 'status--waiting'}`}
-                                        >
-                                            {botState === 'TRADING'
-                                                ? waitingForAppear
-                                                    ? 'Waiting for digit to appear'
-                                                    : `Confirming 3 ticks (${confirmationTicksRemaining} left)`
-                                                : 'Ready'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Over / Under Recovery & Analytics Card */}
-                        <div className='ph-card-box'>
-                            <div className='ph-card-box__header'>
-                                <h3>
-                                    <span>🛡️</span> Over / Under Recovery Engine
-                                </h3>
-                                <span className='badge badge--recovery'>
-                                    {isInRecovery ? '⚡ RECOVERY ACTIVE' : 'HEDGING STANDBY'}
+                                <span className='sub'>
+                                    {isInRecovery
+                                        ? 'Under 8 / Over 1 Adaptive Martingale Stabilization'
+                                        : `Watching Target Digit [${differTargetDigit}] — Confirmation Status`}
                                 </span>
                             </div>
 
-                            <div className='ph-ou-details'>
-                                {/* Under 0-4 vs Over 5-9 */}
-                                <div className='ph-split-stat'>
-                                    <div className='ph-split-header'>
-                                        <span className='under-side'>
-                                            Under 0–4: {ouAnalysis.under04} ({ouAnalysis.under04Pct}%)
-                                        </span>
-                                        <span className='over-side'>
-                                            Over 5–9: {ouAnalysis.over59} ({ouAnalysis.over59Pct}%)
-                                        </span>
-                                    </div>
-                                    <div className='ph-split-bar'>
-                                        <div className='under-fill' style={{ width: `${ouAnalysis.under04Pct}%` }} />
-                                        <div className='over-fill' style={{ width: `${ouAnalysis.over59Pct}%` }} />
-                                    </div>
-                                </div>
-
-                                {/* Under 0-5 vs Over 4-9 */}
-                                <div className='ph-split-stat'>
-                                    <div className='ph-split-header'>
-                                        <span className='under-side'>
-                                            Under 0–5: {ouAnalysis.under05} ({ouAnalysis.under05Pct}%)
-                                        </span>
-                                        <span className='over-side'>
-                                            Over 4–9: {ouAnalysis.over49} ({ouAnalysis.over49Pct}%)
-                                        </span>
-                                    </div>
-                                    <div className='ph-split-bar'>
-                                        <div className='under-fill' style={{ width: `${ouAnalysis.under05Pct}%` }} />
-                                        <div className='over-fill' style={{ width: `${ouAnalysis.over49Pct}%` }} />
-                                    </div>
-                                </div>
-
-                                {/* Glowing Entry Digit Card */}
-                                <div className='ph-glowing-entry-card'>
-                                    <div className='entry-box entry-box--under'>
-                                        <span className='tag'>HIGHEST UNDER ENTRY</span>
-                                        <span className='digit-glowing'>{ouAnalysis.highestUnderEntryDigit}</span>
-                                        <span className='desc'>Prediction Under 6 / 8</span>
-                                    </div>
-                                    <div className='entry-box entry-box--over'>
-                                        <span className='tag'>HIGHEST OVER ENTRY</span>
-                                        <span className='digit-glowing'>{ouAnalysis.highestOverEntryDigit}</span>
-                                        <span className='desc'>Prediction Over 3 / 2</span>
-                                    </div>
-                                </div>
+                            <div className='ph-counter-badge'>
+                                <span className='count-label'>
+                                    {isInRecovery
+                                        ? 'MODE'
+                                        : waitingForAppear
+                                          ? 'AWAITING CANDIDATE'
+                                          : 'COUNTDOWN CONFIRMATION'}
+                                </span>
+                                <span className='count-num'>
+                                    {isInRecovery ? 'OVER/UNDER' : waitingForAppear ? 'WAIT' : `${confirmationTicksRemaining} TICKS`}
+                                </span>
                             </div>
                         </div>
-                    </div>
 
-                    {/* ── Trading Controls & Risk Management ── */}
-                    <div className='poverty-hunter__controls-grid'>
-                        <div className='ph-input-group'>
-                            <label>Base Stake ({currency})</label>
-                            <input
-                                type='number'
-                                step='0.1'
-                                value={initialStake}
-                                onChange={e => {
-                                    setInitialStake(e.target.value);
-                                    if (!isInRecovery) setCurrentStake(parseFloat(e.target.value) || 0.5);
-                                }}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Martingale (Recovery)</label>
-                            <input
-                                type='number'
-                                step='0.1'
-                                value={martingale}
-                                onChange={e => setMartingale(e.target.value)}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Take Profit ({currency})</label>
-                            <input
-                                type='number'
-                                step='1'
-                                value={takeProfit}
-                                onChange={e => setTakeProfit(e.target.value)}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Stop Loss ({currency})</label>
-                            <input
-                                type='number'
-                                step='1'
-                                value={stopLoss}
-                                onChange={e => setStopLoss(e.target.value)}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Ticks Duration</label>
-                            <input
-                                type='number'
-                                min='1'
-                                max='10'
-                                value={tickDuration}
-                                onChange={e => setTickDuration(e.target.value)}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Bulk Purchases (Batch)</label>
-                            <input
-                                type='number'
-                                min='1'
-                                max='10'
-                                value={bulkCount}
-                                onChange={e => setBulkCount(e.target.value)}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Max Runs Before Check</label>
-                            <input
-                                type='number'
-                                min='1'
-                                max='50'
-                                value={maxRunsBeforeCheck}
-                                onChange={e => setMaxRunsBeforeCheck(Math.max(1, parseInt(e.target.value, 10) || 7))}
-                            />
-                        </div>
-                        <div className='ph-input-group'>
-                            <label>Auto-Recovery (Hedging)</label>
-                            <select
-                                value={autoRecoveryMode ? 'true' : 'false'}
-                                onChange={e => setAutoRecoveryMode(e.target.value === 'true')}
-                            >
-                                <option value='true'>Enabled (Over/Under)</option>
-                                <option value='false'>Disabled (Differs Only)</option>
-                            </select>
-                        </div>
-                        {autoRecoveryMode && (
-                            <div className='ph-input-group'>
-                                <label>Recovery Strategy</label>
-                                <select
-                                    value={recoveryType}
-                                    onChange={e => setRecoveryType(e.target.value as any)}
-                                >
-                                    <option value='OVER_1_UNDER_8'>Over 1 / Under 8 (90% Win Rate)</option>
-                                    <option value='OVER_2_UNDER_7'>Over 2 / Under 7 (80% Win Rate)</option>
-                                    <option value='OVER_3_UNDER_6'>Over 3 / Under 6 (70% Win Rate)</option>
-                                </select>
+                        <div className='ph-progress-container'>
+                            <div className='ph-progress-bar-bg'>
+                                <div
+                                    className={`ph-progress-bar-fill ${isInRecovery ? 'ph-progress-bar-fill--recovery' : ''}`}
+                                    style={{
+                                        width: isInRecovery
+                                            ? '100%'
+                                            : waitingForAppear
+                                              ? '25%'
+                                              : confirmationTicksRemaining === 2
+                                                ? '50%'
+                                                : confirmationTicksRemaining === 1
+                                                  ? '75%'
+                                                  : '100%',
+                                    }}
+                                />
                             </div>
-                        )}
-                    </div>
-
-                    {/* ── Action Buttons & Status Ribbon ── */}
-                    <div className='poverty-hunter__actions-bar'>
-                        <div className='ph-status-indicator'>
-                            <span
-                                className={`pulse-dot pulse-dot--${botState === 'TRADING' ? 'running' : botState === 'PAUSED' ? 'paused' : 'idle'}`}
-                            />
-                            <span className='status-text'>
-                                STATUS:{' '}
-                                {botState === 'TRADING'
-                                    ? isInRecovery
-                                        ? '🚨 RECOVERY TRADING (Over/Under)'
-                                        : '🎯 HUNTING (Differs Automation)'
-                                    : botState === 'PAUSED'
-                                      ? '⏸️ PAUSED'
-                                      : 'IDLE / READY'}
+                            <span className='ph-progress-tip'>
+                                {isInRecovery
+                                    ? '🔥 Placing Over/Under contracts with martingale multiplier until loss is recovered.'
+                                    : waitingForAppear
+                                      ? `Waiting for Least Appearing Digit [${differTargetDigit}] to trigger in live stream...`
+                                      : `Digit [${differTargetDigit}] appeared! Verifying ${confirmationTicksRemaining} clean ticks before purchase...`}
                             </span>
                         </div>
-
-                        <div className='ph-buttons-cluster'>
-                            {botState === 'IDLE' ? (
-                                <button className='ph-btn ph-btn--start' onClick={handleStartBot}>
-                                    ▶ START POVERTY HUNTER
-                                </button>
-                            ) : (
-                                <>
-                                    <button className='ph-btn ph-btn--stop' onClick={handleStopBot}>
-                                        ⏹ STOP HUNTER
-                                    </button>
-                                    <button className='ph-btn ph-btn--pause' onClick={handlePauseBot}>
-                                        {botState === 'PAUSED' ? '▶ RESUME' : '⏸ PAUSE'}
-                                    </button>
-                                </>
-                            )}
-
-                            <button
-                                className='ph-btn ph-btn--bulk'
-                                onClick={() =>
-                                    void executeTradeOrder(
-                                        selectedSymbol,
-                                        'DIGITDIFF',
-                                        differTargetDigit ?? 4,
-                                        currentStake,
-                                        false
-                                    )
-                                }
-                                disabled={botState === 'TRADING'}
-                            >
-                                ⚡ MANUAL BULK ({bulkCount}x)
-                            </button>
-
-                            <button className='ph-btn ph-btn--secondary' onClick={handleClearStats}>
-                                🗑 CLEAR STATS
-                            </button>
-                        </div>
                     </div>
 
-                    {/* ── Real-Time Trade Journal ── */}
-                    <div className='poverty-hunter__logs-card'>
-                        <div className='ph-log-header'>
-                            <h3>REAL-TIME TRADE JOURNAL</h3>
-                            <button className='clear-btn' onClick={() => setTradeLog([])}>
-                                Clear Log
-                            </button>
+                    {/* Parameter Configuration & Strategy Matrix */}
+                    <div className='poverty-hunter__bottom-grid'>
+                        {/* Parameters Panel */}
+                        <div className='poverty-hunter__params-card'>
+                            <h3>⚙️ Trading &amp; Recovery Parameters</h3>
+                            <div className='ph-inputs-grid'>
+                                <div className='ph-input-group'>
+                                    <label>Initial Stake ({currency})</label>
+                                    <input
+                                        type='number'
+                                        step='0.1'
+                                        min='0.35'
+                                        value={initialStake}
+                                        onChange={e => setInitialStake(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+
+                                <div className='ph-input-group'>
+                                    <label>Martingale Multiplier</label>
+                                    <input
+                                        type='number'
+                                        step='0.1'
+                                        value={martingale}
+                                        onChange={e => setMartingale(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+
+                                <div className='ph-input-group'>
+                                    <label>Take Profit ({currency})</label>
+                                    <input
+                                        type='number'
+                                        value={takeProfit}
+                                        onChange={e => setTakeProfit(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+
+                                <div className='ph-input-group'>
+                                    <label>Stop Loss ({currency})</label>
+                                    <input
+                                        type='number'
+                                        value={stopLoss}
+                                        onChange={e => setStopLoss(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+
+                                <div className='ph-input-group'>
+                                    <label>Tick Duration</label>
+                                    <select
+                                        value={tickDuration}
+                                        onChange={e => setTickDuration(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    >
+                                        <option value='1'>1 Tick (Fast)</option>
+                                        <option value='2'>2 Ticks</option>
+                                    </select>
+                                </div>
+
+                                <div className='ph-input-group'>
+                                    <label>Auto-Recovery Mode</label>
+                                    <select
+                                        value={autoRecoveryMode ? 'true' : 'false'}
+                                        onChange={e => setAutoRecoveryMode(e.target.value === 'true')}
+                                        disabled={botState !== 'IDLE'}
+                                    >
+                                        <option value='true'>Enabled (Over/Under Fallback)</option>
+                                        <option value='false'>Disabled (Differs Only)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Action Control Buttons */}
+                            <div className='ph-buttons-row'>
+                                {botState === 'IDLE' ? (
+                                    <button className='ph-btn ph-btn--start' onClick={handleStartBot}>
+                                        ▶ START POVERTY HUNTER
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button className='ph-btn ph-btn--pause' onClick={handlePauseBot}>
+                                            {botState === 'PAUSED' ? '▶ RESUME' : '⏸ PAUSE'}
+                                        </button>
+                                        <button className='ph-btn ph-btn--stop' onClick={handleStopBot}>
+                                            ⏹ STOP BOT
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                        <div className='ph-log-table-wrap'>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Market</th>
-                                        <th>Strategy</th>
-                                        <th>Contract</th>
-                                        <th>Barrier</th>
-                                        <th>Total Stake</th>
-                                        <th>Result</th>
-                                        <th>Profit/Loss</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {tradeLog.length === 0 ? (
-                                        <tr>
-                                            <td
-                                                colSpan={8}
-                                                style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}
-                                            >
-                                                No trade history yet. Click Start Poverty Hunter or Manual Bulk to
-                                                trade.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        tradeLog.map(item => (
-                                            <tr key={item.id}>
-                                                <td>{item.time}</td>
-                                                <td>{item.market}</td>
-                                                <td>{item.strategy}</td>
-                                                <td>{item.contractType}</td>
-                                                <td>{item.prediction}</td>
-                                                <td>
-                                                    {item.stake.toFixed(2)} {currency}
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        className={`status-badge status-badge--${item.result.toLowerCase()}`}
-                                                    >
-                                                        {item.result}
-                                                    </span>
-                                                </td>
-                                                <td
-                                                    style={{
-                                                        color: item.profit >= 0 ? '#10b981' : '#ef4444',
-                                                        fontWeight: 800,
-                                                    }}
-                                                >
-                                                    {item.profit >= 0
-                                                        ? `+${item.profit.toFixed(2)}`
-                                                        : item.profit.toFixed(2)}{' '}
-                                                    {currency}
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+
+                        {/* Execution Logs */}
+                        <div className='poverty-hunter__logs-card'>
+                            <div className='ph-logs-header'>
+                                <h3>📋 Live Engine Trade Journal</h3>
+                                {tradeLog.length > 0 && (
+                                    <button className='ph-clear-btn' onClick={handleClearStats}>
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className='ph-logs-list'>
+                                {tradeLog.length === 0 ? (
+                                    <div className='ph-logs-empty'>
+                                        System idle. Start the bot to begin hunting.
+                                    </div>
+                                ) : (
+                                    tradeLog.map(item => (
+                                        <div key={item.id} className={`ph-log-row ph-log-row--${item.result.toLowerCase()}`}>
+                                            <span className='time'>{item.time}</span>
+                                            <span className='market'>{item.market}</span>
+                                            <span className='strategy'>{item.strategy}</span>
+                                            <span className='contract'>{item.contractType} {item.prediction !== undefined ? `[${item.prediction}]` : ''}</span>
+                                            <span className='stake'>${item.stake.toFixed(2)}</span>
+                                            <span className={`profit ${item.profit >= 0 ? 'profit--pos' : 'profit--neg'}`}>
+                                                {item.profit >= 0 ? `+$${item.profit.toFixed(2)}` : `-$${Math.abs(item.profit).toFixed(2)}`}
+                                            </span>
+                                            <span className='result'>{item.result}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+
             <TradingMilestoneModal
                 isOpen={milestone.isOpen}
                 type={milestone.type}
                 amount={sessionProfit}
-                targetAmount={milestone.type === 'tp' ? parseFloat(takeProfit) || 10 : parseFloat(stopLoss) || 25}
                 currency={currency}
-                botName='Poverty Hunter Bot'
-                winsCount={winsCount}
-                lossesCount={lossesCount}
+                botName='Poverty Hunter'
                 onClose={() => setMilestone({ isOpen: false, type: null })}
-                onRestart={() => {
-                    setMilestone({ isOpen: false, type: null });
-                    handleStartBot();
-                }}
             />
         </div>
     );

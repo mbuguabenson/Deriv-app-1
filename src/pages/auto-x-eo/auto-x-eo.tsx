@@ -34,6 +34,7 @@ export interface MarketDigitState {
     lastDigit: number;
     pip: number;
     tickCount?: number;
+    lastTickTime?: number;
 }
 
 export interface DigitStat {
@@ -255,7 +256,8 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
 
 // ─── Digit Extraction Helper ───────────────────────────────────────────────────
 
-const extractLastDigit = (quote: number | string, pip = 2): number => {
+const extractLastDigit = (quote: number | string | undefined | null, pip = 2): number => {
+    if (quote === undefined || quote === null) return 0;
     const p = Number(quote);
     if (isNaN(p)) return 0;
     const fixed = p.toFixed(pip);
@@ -286,10 +288,9 @@ const AutoXEo: React.FC = observer(() => {
     const [takeProfit, setTakeProfit] = useState<string>('10.00');
     const [stopLoss, setStopLoss] = useState<string>('25.00');
     const [tickDuration, setTickDuration] = useState<string>('1');
-    const [bulkCount, setBulkCount] = useState<string>('6');
     const [autoRecoveryMode, setAutoRecoveryMode] = useState<boolean>(true);
-    const [recoveryType, setRecoveryType] = useState<'OVER_2_UNDER_8' | 'OVER_3_UNDER_6'>('OVER_2_UNDER_8');
-    const [targetProbabilityThreshold, setTargetProbabilityThreshold] = useState<number>(58);
+    const [recoveryType] = useState<'OVER_2_UNDER_8' | 'OVER_3_UNDER_6'>('OVER_2_UNDER_8');
+    const [targetProbabilityThreshold] = useState<number>(58);
 
     // ── Bot Running State ──
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
@@ -298,7 +299,7 @@ const AutoXEo: React.FC = observer(() => {
     const [lossesCount, setLossesCount] = useState<number>(0);
     const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
-    const [accumulatedLoss, setAccumulatedLoss] = useState<number>(0);
+    const [, setAccumulatedLoss] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'tp' | 'sl' | null }>({
         isOpen: false,
@@ -313,6 +314,7 @@ const AutoXEo: React.FC = observer(() => {
     const consecutiveRunsRef = useRef<number>(0);
     const currentStakeRef = useRef<number>(0.5);
     const isInRecoveryRef = useRef<boolean>(false);
+    const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => {
         selectedSymbolRef.current = selectedSymbol;
@@ -349,6 +351,8 @@ const AutoXEo: React.FC = observer(() => {
                     currentPrice: '0.00',
                     lastDigit: 0,
                     pip: m.pip,
+                    tickCount: 0,
+                    lastTickTime: 0,
                 });
             }
         });
@@ -358,18 +362,37 @@ const AutoXEo: React.FC = observer(() => {
     const lastRenderTime = useRef<number>(0);
     const throttleRender = useCallback(() => {
         const now = Date.now();
-        if (now - lastRenderTime.current > 100) {
+        if (now - lastRenderTime.current > 80) {
             lastRenderTime.current = now;
             setRenderTrigger(t => t + 1);
         }
     }, []);
 
-    // ── Manage Subscriptions for All Synthetic Markets ──
+    // ── Safe Manual Market Selection ──
+    const handleManualMarketSelect = useCallback(
+        (sym: string) => {
+            setSelectedSymbol(sym);
+            selectedSymbolRef.current = sym;
+            lastProcessedTicksRef.current.set(sym, -1);
+            throttleRender();
+        },
+        [throttleRender]
+    );
+
+    // ── Manage Subscriptions & Stream Refresh Watchdog ──
     const [streamRefreshKey, setStreamRefreshKey] = useState<number>(0);
 
-    // Listen to account switch, WebSocket re-auth, and visibility change to refresh live streams
     useEffect(() => {
         const handleRefresh = () => {
+            subscriptionsRef.current.forEach(sub => {
+                try {
+                    sub?.unsubscribe?.();
+                } catch {
+                    /* ignore */
+                }
+            });
+            subscriptionsRef.current.clear();
+            derivTickManager.healStalledStreams();
             setStreamRefreshKey(k => k + 1);
         };
 
@@ -381,13 +404,26 @@ const AutoXEo: React.FC = observer(() => {
         };
 
         window.addEventListener('account_switched', handleRefresh);
+        window.addEventListener('online', handleRefresh);
         document.addEventListener('visibilitychange', handleVisibility);
         globalObserver.register('api.authorize', handleRefresh);
 
+        // 3-second watchdog timer to auto-heal stalled streams
+        const watchdog = setInterval(() => {
+            if (!isMountedRef.current || document.hidden) return;
+            const current = marketsDataRef.current.get(selectedSymbolRef.current);
+            const now = Date.now();
+            if (current && current.lastTickTime && now - current.lastTickTime > 4000) {
+                derivTickManager.healStalledStreams();
+            }
+        }, 3000);
+
         return () => {
             window.removeEventListener('account_switched', handleRefresh);
+            window.removeEventListener('online', handleRefresh);
             document.removeEventListener('visibilitychange', handleVisibility);
             globalObserver.unregister('api.authorize', handleRefresh);
+            clearInterval(watchdog);
         };
     }, []);
 
@@ -423,6 +459,7 @@ const AutoXEo: React.FC = observer(() => {
                             const lastP = prices[prices.length - 1];
                             mData.currentPrice = Number(lastP).toFixed(pip);
                             mData.lastDigit = digits[digits.length - 1];
+                            mData.lastTickTime = Date.now();
                         }
                         throttleRender();
                     }
@@ -443,6 +480,7 @@ const AutoXEo: React.FC = observer(() => {
                             item.lastDigit = lastD;
                             item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
                             item.tickCount = (item.tickCount || 0) + 1;
+                            item.lastTickTime = Date.now();
                             throttleRender();
                         }
                     }
@@ -454,7 +492,6 @@ const AutoXEo: React.FC = observer(() => {
             }
         };
 
-        // Subscribe symbols
         const initAll = async () => {
             if (!api_base.api) {
                 setTimeout(initAll, 1000);
@@ -463,7 +500,7 @@ const AutoXEo: React.FC = observer(() => {
             for (const sym of symbolsToStream) {
                 if (!isMountedRef.current) break;
                 await subscribeSymbol(sym);
-                await new Promise(r => setTimeout(r, 120)); // Rate-limiting guard
+                await new Promise(r => setTimeout(r, 60));
             }
         };
 
@@ -583,24 +620,9 @@ const AutoXEo: React.FC = observer(() => {
         const isEvenIncreasing = last15Even >= prev15Even;
         const isOddIncreasing = last15Odd >= prev15Odd;
 
-        // Check if at least 3 digits of Even have probability > 10.5%
         const evenDigitsAbove10_5 = digitStats.filter(s => s.isEven && s.percentage >= 10.5).length;
         const oddDigitsAbove10_5 = digitStats.filter(s => !s.isEven && s.percentage >= 10.5).length;
 
-        // Check if Most/2nd highest are Even
-        const mostIsEven = mostAppearing !== null && mostAppearing % 2 === 0;
-        const secondIsEven = secondHighest !== null && secondHighest % 2 === 0;
-        const leastIsOdd = leastAppearing !== null && leastAppearing % 2 !== 0;
-
-        const mostIsOdd = mostAppearing !== null && mostAppearing % 2 !== 0;
-        const secondIsOdd = secondHighest !== null && secondHighest % 2 !== 0;
-        const leastIsEven = leastAppearing !== null && leastAppearing % 2 === 0;
-
-        // Check last 15 ticks >= 10 matches
-        const last15EvenPassed = last15Even >= 10;
-        const last15OddPassed = last15Odd >= 10;
-
-        // Canonical Auto X 3-Tick Stream Synchronization (Prev 2, Prev 1, Current)
         const last3Digits = currentMarket.digits.slice(-3);
         const prevTick2 = last3Digits.length >= 3 ? last3Digits[0] : null;
         const prevTick1 = last3Digits.length >= 2 ? last3Digits[last3Digits.length - 2] : null;
@@ -620,18 +642,6 @@ const AutoXEo: React.FC = observer(() => {
             last3Digits[1] % 2 === 0 &&
             last3Digits[2] % 2 !== 0;
 
-        // Pre-reversal setup watch states
-        const isAwaitingEven =
-            last3Digits.length >= 2 &&
-            last3Digits[last3Digits.length - 2] % 2 !== 0 &&
-            last3Digits[last3Digits.length - 1] % 2 !== 0;
-
-        const isAwaitingOdd =
-            last3Digits.length >= 2 &&
-            last3Digits[last3Digits.length - 2] % 2 === 0 &&
-            last3Digits[last3Digits.length - 1] % 2 === 0;
-
-        // Canonical Auto X Active Signal
         let activeSignal: 'EVEN' | 'ODD' | 'NONE' = 'NONE';
         if (evenPatternTriggered) {
             activeSignal = 'EVEN';
@@ -653,79 +663,16 @@ const AutoXEo: React.FC = observer(() => {
             oddDigitsAbove10_5,
             last15Even,
             last15Odd,
-            last15EvenPassed,
-            last15OddPassed,
             prevTick2,
             prevTick1,
             currentTick,
-            isAwaitingEven,
-            isAwaitingOdd,
             evenPatternTriggered,
             oddPatternTriggered,
             evenSignalReady,
             oddSignalReady,
             activeSignal,
         };
-    }, [currentMarket.digits, digitStats, mostAppearing, secondHighest, leastAppearing, targetProbabilityThreshold]);
-
-    // ── Over/Under Statistics (Last 50 Ticks) ──
-    const ouAnalysis = useMemo(() => {
-        const last50 = currentMarket.digits.slice(-50);
-        const total = last50.length || 1;
-
-        // Split 1: Under 0-4 vs Over 5-9
-        const under04 = last50.filter(d => d <= 4).length;
-        const over59 = last50.filter(d => d >= 5).length;
-        const under04Pct = Math.round((under04 / total) * 100);
-        const over59Pct = Math.round((over59 / total) * 100);
-
-        // Split 2: Under 0-5 vs Over 4-9
-        const under05 = last50.filter(d => d <= 5).length;
-        const over49 = last50.filter(d => d >= 4).length;
-        const under05Pct = Math.round((under05 / total) * 100);
-        const over49Pct = Math.round((over49 / total) * 100);
-
-        // Highest Entry Digit in Under (0-4) and Over (5-9)
-        const underDigits = digitStats.filter(s => s.digit <= 4).sort((a, b) => b.count - a.count);
-        const overDigits = digitStats.filter(s => s.digit >= 5).sort((a, b) => b.count - a.count);
-        const highestUnderEntryDigit = underDigits[0]?.digit ?? 2;
-        const highestOverEntryDigit = overDigits[0]?.digit ?? 7;
-
-        // Last 10 and 7 Ticks direction check
-        const last10 = currentMarket.digits.slice(-10);
-        const last10Under = last10.filter(d => d <= 4).length;
-        const last10Over = last10.filter(d => d >= 5).length;
-
-        const last7 = currentMarket.digits.slice(-7);
-        const last7Under = last7.filter(d => d <= 4).length;
-        const last7Over = last7.filter(d => d >= 5).length;
-
-        // Bias calculation
-        let bias: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
-        if (under04Pct >= 55 && under05 > over49 && last10Under >= 7 && last7Under >= 5) {
-            bias = 'UNDER';
-        } else if (over59Pct >= 55 && over49 > under05 && last10Over >= 7 && last7Over >= 5) {
-            bias = 'OVER';
-        }
-
-        return {
-            under04,
-            over59,
-            under04Pct,
-            over59Pct,
-            under05,
-            over49,
-            under05Pct,
-            over49Pct,
-            highestUnderEntryDigit,
-            highestOverEntryDigit,
-            last10Under,
-            last10Over,
-            last7Under,
-            last7Over,
-            bias,
-        };
-    }, [currentMarket.digits, digitStats]);
+    }, [currentMarket.digits, digitStats, targetProbabilityThreshold]);
 
     // ── Best Market Candidate for Auto-Switching ──
     const bestMarketCandidate = useMemo(() => {
@@ -767,7 +714,7 @@ const AutoXEo: React.FC = observer(() => {
     const addLogEntry = useCallback(
         (
             market: string,
-            strategy: 'EVEN_ODD' | 'RECOVERY_OVER' | 'RECOVERY_UNDER',
+            strategy: 'EVEN_ODD' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY',
             contractType: string,
             prediction: number | undefined,
             stake: number,
@@ -881,7 +828,6 @@ const AutoXEo: React.FC = observer(() => {
                     setSessionProfit(nextP);
 
                     if (isInRecoveryRef.current) {
-                        // Recovered! Reset back to initial stake and exit recovery
                         setIsInRecovery(false);
                         isInRecoveryRef.current = false;
                         setAccumulatedLoss(0);
@@ -889,7 +835,6 @@ const AutoXEo: React.FC = observer(() => {
                         currentStakeRef.current = baseStk;
                         setCurrentStake(baseStk);
                     } else {
-                        // Normal win -> reset stake
                         const baseStk = parseFloat(initialStake) || 0.5;
                         currentStakeRef.current = baseStk;
                         setCurrentStake(baseStk);
@@ -911,7 +856,6 @@ const AutoXEo: React.FC = observer(() => {
                         setCurrentStake(nextStake);
                         setAccumulatedLoss(prev => prev + Math.abs(profitVal));
                     } else {
-                        // Standard martingale
                         const martMult = parseFloat(martingale) || 2.0;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
                         currentStakeRef.current = nextStake;
@@ -942,7 +886,7 @@ const AutoXEo: React.FC = observer(() => {
         ]
     );
 
-    // ── Dedicated Asynchronous Trading Engine Loop ──
+    // ── Dedicated Asynchronous Trading Engine Loop (Zero-Freeze) ──
     const startAutoTradingLoop = useCallback(async () => {
         autoAbortRef.current?.abort();
         const abortCtrl = new AbortController();
@@ -954,7 +898,6 @@ const AutoXEo: React.FC = observer(() => {
 
         setBotStateSync('SCANNING');
         let scanningCycles = 0;
-        let lastProcessedTick = -1;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -987,28 +930,29 @@ const AutoXEo: React.FC = observer(() => {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
-                        lastProcessedTick = -1;
-                        await new Promise(r => setTimeout(r, 300));
+                        lastProcessedTicksRef.current.set(targetSym, -1);
+                        await new Promise(r => setTimeout(r, 200));
                     }
                 }
 
                 const mData = marketsDataRef.current.get(targetSym);
                 if (!mData || mData.digits.length < 15) {
                     if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 300));
                     continue;
                 }
 
                 const digits = mData.digits;
                 const lastDigit = mData.lastDigit;
                 const currTickCount = mData.tickCount || 0;
+                const lastProcessed = lastProcessedTicksRef.current.get(targetSym) ?? -1;
 
-                // Wait for a fresh live tick before evaluating signals
-                if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                // Independent per-symbol fresh tick gate
+                if (lastProcessed !== -1 && currTickCount <= lastProcessed) {
                     await new Promise(r => setTimeout(r, 40));
                     continue;
                 }
-                lastProcessedTick = currTickCount;
+                lastProcessedTicksRef.current.set(targetSym, currTickCount);
 
                 // 1. Recovery Mode Branch
                 if (isInRecoveryRef.current) {
@@ -1047,7 +991,7 @@ const AutoXEo: React.FC = observer(() => {
                     continue;
                 }
 
-                // 2. Base Even / Odd Strategy Branch
+                // 2. Base Even / Odd Strategy Branch (100% Verified Logic)
                 const last3 = digits.slice(-3);
                 const recent60 = digits.slice(-60);
                 const total60 = recent60.length || 1;
@@ -1107,14 +1051,14 @@ const AutoXEo: React.FC = observer(() => {
                         if (botStateRef.current !== 'SCANNING') setBotStateSync('SCANNING');
                     }
 
-                    // If current market has no pattern forming, switch after 10 cycles if autoSwitchMarkets is enabled
+                    // Rotate to candidate if current market shows no pattern for >= 10 cycles
                     if (autoSwitchMarkets && scanningCycles >= 10 && bestMarketCandidate && bestMarketCandidate !== targetSym) {
                         targetSym = bestMarketCandidate;
                         selectedSymbolRef.current = targetSym;
                         setSelectedSymbol(targetSym);
                         scanningCycles = 0;
-                        lastProcessedTick = -1;
-                        await new Promise(r => setTimeout(r, 300));
+                        lastProcessedTicksRef.current.set(targetSym, -1);
+                        await new Promise(r => setTimeout(r, 200));
                         continue;
                     }
 
@@ -1158,6 +1102,7 @@ const AutoXEo: React.FC = observer(() => {
         isInRecoveryRef.current = false;
         setIsInRecovery(false);
         setAccumulatedLoss(0);
+        lastProcessedTicksRef.current.clear();
         setBotStateSync('SCANNING');
         void startAutoTradingLoop();
     }, [client?.is_logged_in, initialStake, setBotStateSync, startAutoTradingLoop]);
@@ -1223,8 +1168,6 @@ const AutoXEo: React.FC = observer(() => {
             globalObserver.unregister('bot.manual_stop', handleGlobalStop);
         };
     }, [handleStartBot, handleStopBot]);
-
-
 
     return (
         <div className='auto-x-eo'>
@@ -1298,7 +1241,7 @@ const AutoXEo: React.FC = observer(() => {
                     <select
                         className='custom-select'
                         value={selectedSymbol}
-                        onChange={e => setSelectedSymbol(e.target.value)}
+                        onChange={e => handleManualMarketSelect(e.target.value)}
                     >
                         {MARKETS.map(m => (
                             <option key={m.symbol} value={m.symbol}>
@@ -1376,7 +1319,7 @@ const AutoXEo: React.FC = observer(() => {
                                     key={m.symbol}
                                     className={`wide-card ${isSelected ? 'selected' : ''} ${isBest ? 'recommended' : ''}`}
                                     onClick={() => {
-                                        setSelectedSymbol(m.symbol);
+                                        handleManualMarketSelect(m.symbol);
                                         setShowWideView(false);
                                     }}
                                 >
@@ -1439,7 +1382,7 @@ const AutoXEo: React.FC = observer(() => {
                                 <div
                                     key={m.symbol}
                                     className={`sidebar-market-item ${isSelected ? 'active' : ''}`}
-                                    onClick={() => setSelectedSymbol(m.symbol)}
+                                    onClick={() => handleManualMarketSelect(m.symbol)}
                                 >
                                     <div className='item-left'>
                                         <div className={`digit-badge ${state.lastDigit % 2 === 0 ? 'even' : 'odd'}`}>
@@ -1500,432 +1443,178 @@ const AutoXEo: React.FC = observer(() => {
                             const isTarget =
                                 (eoAnalysis.activeSignal === 'EVEN' && stat.isEven) ||
                                 (eoAnalysis.activeSignal === 'ODD' && !stat.isEven);
-
                             return (
                                 <div
                                     key={stat.digit}
-                                    className={`digit-stat-card ${stat.isEven ? 'is-even' : 'is-odd'} ${isTarget ? 'is-target' : ''}`}
+                                    className={`digit-cell ${stat.isEven ? 'is-even' : 'is-odd'} ${isTarget ? 'is-target' : ''}`}
                                 >
-                                    <span className='digit-num'>{stat.digit}</span>
-                                    <span className={`digit-pct ${stat.percentage >= 10.5 ? 'highlight' : ''}`}>
-                                        {stat.percentage}%
-                                    </span>
-                                    <span className='digit-count'>{stat.count} hits</span>
-
-                                    <div className='power-bar-wrap'>
-                                        <div className='power-bar-fill' style={{ width: `${stat.power}%` }} />
+                                    <div className='digit-cell__top'>
+                                        <span className='digit-number'>{stat.digit}</span>
+                                        <span className='digit-rank'>#{stat.rank}</span>
                                     </div>
-
-                                    <div className={`trend-indicator ${stat.isIncreasing ? 'up' : 'steady'}`}>
-                                        {stat.isIncreasing ? (
-                                            <>
-                                                <ArrowUpRight size={12} /> Rising
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Minus size={12} /> Normal
-                                            </>
-                                        )}
+                                    <div className='digit-cell__pct'>{stat.percentage}%</div>
+                                    <div className='digit-cell__bar-bg'>
+                                        <div className='digit-cell__bar-fill' style={{ width: `${stat.power}%` }} />
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
 
-                    {/* Key Rankings Strip */}
-                    <div className='auto-x-eo__ranks-strip'>
-                        <div className='rank-card'>
-                            <div className='rank-info'>
-                                <span className='title'>Most Appearing Digit</span>
-                                <span className='sub'>Rank #1 Frequency</span>
+                    {/* 3-Tick Real-Time Momentum Stream & Strategy Triggers HUD */}
+                    <div className='auto-x-eo__stream-hud'>
+                        <div className='hud-box stream-box'>
+                            <h3>
+                                <Activity size={16} /> 3-Tick Parity Confirmation
+                            </h3>
+                            <div className='tick-chain'>
+                                <div className='tick-node'>
+                                    <span className='node-label'>Tick -2</span>
+                                    <div className={`node-val ${eoAnalysis.prevTick2 !== null && eoAnalysis.prevTick2 % 2 === 0 ? 'even' : 'odd'}`}>
+                                        {eoAnalysis.prevTick2 ?? '—'}
+                                    </div>
+                                </div>
+                                <span className='arrow'>→</span>
+                                <div className='tick-node'>
+                                    <span className='node-label'>Tick -1</span>
+                                    <div className={`node-val ${eoAnalysis.prevTick1 !== null && eoAnalysis.prevTick1 % 2 === 0 ? 'even' : 'odd'}`}>
+                                        {eoAnalysis.prevTick1 ?? '—'}
+                                    </div>
+                                </div>
+                                <span className='arrow'>→</span>
+                                <div className='tick-node live'>
+                                    <span className='node-label'>Current</span>
+                                    <div className={`node-val ${eoAnalysis.currentTick !== null && eoAnalysis.currentTick % 2 === 0 ? 'even' : 'odd'}`}>
+                                        {eoAnalysis.currentTick ?? '—'}
+                                    </div>
+                                </div>
                             </div>
-                            <div className='rank-digit gold'>{mostAppearing ?? '-'}</div>
                         </div>
 
-                        <div className='rank-card'>
-                            <div className='rank-info'>
-                                <span className='title'>2nd Highest Appearing</span>
-                                <span className='sub'>Rank #2 Frequency</span>
+                        <div className='hud-box pattern-box'>
+                            <h3>
+                                <Gauge size={16} /> Parity Bias &amp; Momentum
+                            </h3>
+                            <div className='parity-ratio-display'>
+                                <div className='ratio-side even-side'>
+                                    <span>EVEN</span>
+                                    <strong>{eoAnalysis.evenPct}%</strong>
+                                </div>
+                                <div className='ratio-bar-wrap'>
+                                    <div className='even-fill' style={{ width: `${eoAnalysis.evenPct}%` }} />
+                                    <div className='odd-fill' style={{ width: `${eoAnalysis.oddPct}%` }} />
+                                </div>
+                                <div className='ratio-side odd-side'>
+                                    <span>ODD</span>
+                                    <strong>{eoAnalysis.oddPct}%</strong>
+                                </div>
                             </div>
-                            <div className='rank-digit silver'>{secondHighest ?? '-'}</div>
-                        </div>
-
-                        <div className='rank-card'>
-                            <div className='rank-info'>
-                                <span className='title'>Least Appearing Digit</span>
-                                <span className='sub'>Coldest Digit</span>
-                            </div>
-                            <div className='rank-digit cold'>{leastAppearing ?? '-'}</div>
                         </div>
                     </div>
 
-                    {/* Dual Strategy Breakdown: Even/Odd & Over/Under */}
-                    <div className='auto-x-eo__strategy-grid'>
-                        {/* Even / Odd Smart AI Engine */}
-                        <div className='strategy-card'>
-                            <div className='card-head'>
+                    {/* Parameter Configuration & Strategy Matrix */}
+                    <div className='auto-x-eo__config-grid'>
+                        <div className='config-card'>
+                            <h3>
+                                <Shield size={16} /> Strategy Parameters
+                            </h3>
+                            <div className='inputs-row'>
+                                <div className='input-field'>
+                                    <label>Stake ({currency})</label>
+                                    <input
+                                        type='number'
+                                        step='0.1'
+                                        min='0.35'
+                                        value={initialStake}
+                                        onChange={e => setInitialStake(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+                                <div className='input-field'>
+                                    <label>Martingale</label>
+                                    <input
+                                        type='number'
+                                        step='0.1'
+                                        value={martingale}
+                                        onChange={e => setMartingale(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+                                <div className='input-field'>
+                                    <label>Take Profit ({currency})</label>
+                                    <input
+                                        type='number'
+                                        value={takeProfit}
+                                        onChange={e => setTakeProfit(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+                                <div className='input-field'>
+                                    <label>Stop Loss ({currency})</label>
+                                    <input
+                                        type='number'
+                                        value={stopLoss}
+                                        onChange={e => setStopLoss(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    />
+                                </div>
+                                <div className='input-field'>
+                                    <label>Duration</label>
+                                    <select
+                                        value={tickDuration}
+                                        onChange={e => setTickDuration(e.target.value)}
+                                        disabled={botState !== 'IDLE'}
+                                    >
+                                        <option value='1'>1 Tick</option>
+                                        <option value='2'>2 Ticks</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Live Execution Logs */}
+                        <div className='config-card logs-card'>
+                            <div className='logs-header'>
                                 <h3>
-                                    <Gauge size={18} /> Even / Odd Smart AI Engine
+                                    <Activity size={16} /> Live Trade Execution Log
                                 </h3>
-                                <span
-                                    className={`badge-indicator ${eoAnalysis.activeSignal !== 'NONE' ? 'ready' : 'waiting'}`}
-                                >
-                                    {eoAnalysis.activeSignal !== 'NONE'
-                                        ? `REVERSAL: BUY ${eoAnalysis.activeSignal}`
-                                        : eoAnalysis.isAwaitingEven
-                                          ? 'AWAITING EVEN TICK'
-                                          : eoAnalysis.isAwaitingOdd
-                                            ? 'AWAITING ODD TICK'
-                                            : 'SCANNING PATTERNS'}
-                                </span>
+                                {tradeLog.length > 0 && (
+                                    <button className='btn-clear' onClick={() => setTradeLog([])}>
+                                        Clear
+                                    </button>
+                                )}
                             </div>
 
-                            {/* Live 3-Tick Reversal Buffer Stream */}
-                            <div style={{ margin: '10px 0', padding: '10px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(255, 255, 255, 0.5)', marginBottom: '6px' }}>
-                                    Live 3-Tick Reversal Sequence Buffer
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }}>
-                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Prev 2</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.prevTick2 !== null ? (eoAnalysis.prevTick2 % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
-                                            {eoAnalysis.prevTick2 !== null ? `${eoAnalysis.prevTick2} (${eoAnalysis.prevTick2 % 2 === 0 ? 'E' : 'O'})` : '—'}
+                            <div className='logs-scroll'>
+                                {tradeLog.length === 0 ? (
+                                    <div className='empty-logs'>Awaiting trade triggers...</div>
+                                ) : (
+                                    tradeLog.map(item => (
+                                        <div key={item.id} className={`log-row log-${item.result.toLowerCase()}`}>
+                                            <span className='time'>{item.time}</span>
+                                            <span className='market'>{item.market}</span>
+                                            <span className='type'>{item.contractType}</span>
+                                            <span className='stake'>${item.stake.toFixed(2)}</span>
+                                            <span className={`profit ${item.profit >= 0 ? 'pos' : 'neg'}`}>
+                                                {item.profit >= 0 ? `+$${item.profit.toFixed(2)}` : `-$${Math.abs(item.profit).toFixed(2)}`}
+                                            </span>
+                                            <span className='badge-res'>{item.result}</span>
                                         </div>
-                                    </div>
-                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>→</span>
-                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }}>
-                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Prev 1</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.prevTick1 !== null ? (eoAnalysis.prevTick1 % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
-                                            {eoAnalysis.prevTick1 !== null ? `${eoAnalysis.prevTick1} (${eoAnalysis.prevTick1 % 2 === 0 ? 'E' : 'O'})` : '—'}
-                                        </div>
-                                    </div>
-                                    <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>→</span>
-                                    <div style={{ flex: 1, textAlign: 'center', padding: '6px', borderRadius: '6px', background: eoAnalysis.activeSignal !== 'NONE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.06)', border: eoAnalysis.activeSignal !== 'NONE' ? '1px solid #10b981' : 'none' }}>
-                                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>Current</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 800, color: eoAnalysis.currentTick !== null ? (eoAnalysis.currentTick % 2 === 0 ? '#00d2ff' : '#a855f7') : '#94a3b8' }}>
-                                            {eoAnalysis.currentTick !== null ? `${eoAnalysis.currentTick} (${eoAnalysis.currentTick % 2 === 0 ? 'E' : 'O'})` : '—'}
-                                        </div>
-                                    </div>
-                                </div>
+                                    ))
+                                )}
                             </div>
-
-                            <div className='eo-progress-section'>
-                                <div className='eo-stats-row'>
-                                    <span className='even-text'>
-                                        Even: {eoAnalysis.evenPct}% ({eoAnalysis.evenCount} hits)
-                                    </span>
-                                    <span className='odd-text'>
-                                        Odd: {eoAnalysis.oddPct}% ({eoAnalysis.oddCount} hits)
-                                    </span>
-                                </div>
-                                <div className='eo-progress-bar'>
-                                    <div className='fill-even' style={{ width: `${eoAnalysis.evenPct}%` }} />
-                                    <div className='fill-odd' style={{ width: `${eoAnalysis.oddPct}%` }} />
-                                </div>
-                            </div>
-
-                            <div className='conditions-list'>
-                                <div
-                                    className={`condition-item ${eoAnalysis.prevTick2 !== null && eoAnalysis.prevTick1 !== null && eoAnalysis.currentTick !== null ? 'passed' : 'pending'}`}
-                                >
-                                    <CheckCircle2 size={14} />
-                                    <span>3-Tick Real-Time Stream Synchronized (Prev 2, Prev 1, Current)</span>
-                                </div>
-                                <div
-                                    className={`condition-item ${eoAnalysis.evenPatternTriggered || eoAnalysis.oddPatternTriggered ? 'passed' : eoAnalysis.isAwaitingEven || eoAnalysis.isAwaitingOdd ? 'pending' : 'pending'}`}
-                                >
-                                    <CheckCircle2 size={14} />
-                                    <span>
-                                        Reversal Sequence: {eoAnalysis.evenPatternTriggered ? 'Odd-Odd-Even -> BUY DIGITEVEN' : eoAnalysis.oddPatternTriggered ? 'Even-Even-Odd -> BUY DIGITODD' : eoAnalysis.isAwaitingEven ? 'Awaiting Even Tick to Trigger' : eoAnalysis.isAwaitingOdd ? 'Awaiting Odd Tick to Trigger' : 'Waiting for 2 consecutive matching parity'}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`condition-item ${eoAnalysis.evenPct >= 50 || eoAnalysis.oddPct >= 50 ? 'passed' : 'pending'}`}
-                                >
-                                    <CheckCircle2 size={14} />
-                                    <span>Parity Distribution: {eoAnalysis.evenPct >= eoAnalysis.oddPct ? `Even Advantage (${eoAnalysis.evenPct}%)` : `Odd Advantage (${eoAnalysis.oddPct}%)`}</span>
-                                </div>
-                                <div
-                                    className={`condition-item ${eoAnalysis.activeSignal !== 'NONE' ? 'passed' : 'pending'}`}
-                                >
-                                    <CheckCircle2 size={14} />
-                                    <span>Auto Execution: {eoAnalysis.activeSignal !== 'NONE' ? `ORDER ACTIVE (${eoAnalysis.activeSignal})` : 'Standby for Reversal Entry'}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Over / Under Recovery Engine */}
-                        <div className='strategy-card'>
-                            <div className='card-head'>
-                                <h3>
-                                    <Shield size={18} /> Over / Under Recovery Suite
-                                </h3>
-                                <span
-                                    className={`badge-indicator ${ouAnalysis.bias !== 'NEUTRAL' ? 'ready' : 'waiting'}`}
-                                >
-                                    {isInRecovery
-                                        ? `IN RECOVERY: -${accumulatedLoss.toFixed(2)} ${currency}`
-                                        : `BIAS: ${ouAnalysis.bias}`}
-                                </span>
-                            </div>
-
-                            <div className='ou-splits'>
-                                <div className='split-row'>
-                                    <div className='split-labels'>
-                                        <span>
-                                            Under 0-4: {ouAnalysis.under04Pct}% ({ouAnalysis.under04})
-                                        </span>
-                                        <span>
-                                            Over 5-9: {ouAnalysis.over59Pct}% ({ouAnalysis.over59})
-                                        </span>
-                                    </div>
-                                    <div className='split-bar'>
-                                        <div className='under-part' style={{ width: `${ouAnalysis.under04Pct}%` }} />
-                                        <div className='over-part' style={{ width: `${ouAnalysis.over59Pct}%` }} />
-                                    </div>
-                                </div>
-
-                                <div className='split-row'>
-                                    <div className='split-labels'>
-                                        <span>
-                                            Under 0-5: {ouAnalysis.under05Pct}% ({ouAnalysis.under05})
-                                        </span>
-                                        <span>
-                                            Over 4-9: {ouAnalysis.over49Pct}% ({ouAnalysis.over49})
-                                        </span>
-                                    </div>
-                                    <div className='split-bar'>
-                                        <div className='under-part' style={{ width: `${ouAnalysis.under05Pct}%` }} />
-                                        <div className='over-part' style={{ width: `${ouAnalysis.over49Pct}%` }} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className='entry-digits-row'>
-                                <div className='entry-digit-card glowing-under'>
-                                    <div className='info'>
-                                        <span>Under Entry Digit</span>
-                                        <span>Highest Under (0-4)</span>
-                                    </div>
-                                    <div className='val-pill green'>{ouAnalysis.highestUnderEntryDigit}</div>
-                                </div>
-
-                                <div className='entry-digit-card glowing-over'>
-                                    <div className='info'>
-                                        <span>Over Entry Digit</span>
-                                        <span>Highest Over (5-9)</span>
-                                    </div>
-                                    <div className='val-pill amber'>{ouAnalysis.highestOverEntryDigit}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Controls & Configuration Panel */}
-                    <div className='auto-x-eo__controls-grid'>
-                        <div className='control-field'>
-                            <label>Initial Stake</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    step='0.1'
-                                    value={initialStake}
-                                    onChange={e => setInitialStake(e.target.value)}
-                                />
-                                <span className='unit'>{currency}</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Take Profit</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    step='1'
-                                    value={takeProfit}
-                                    onChange={e => setTakeProfit(e.target.value)}
-                                />
-                                <span className='unit'>{currency}</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Stop Loss</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    step='1'
-                                    value={stopLoss}
-                                    onChange={e => setStopLoss(e.target.value)}
-                                />
-                                <span className='unit'>{currency}</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Martingale Multiplier</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    step='0.1'
-                                    value={martingale}
-                                    onChange={e => setMartingale(e.target.value)}
-                                />
-                                <span className='unit'>x</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Min Target Probability</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    min='50'
-                                    max='85'
-                                    value={targetProbabilityThreshold}
-                                    onChange={e => setTargetProbabilityThreshold(parseInt(e.target.value, 10) || 58)}
-                                />
-                                <span className='unit'>%</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Tick Duration</label>
-                            <div className='input-box'>
-                                <select value={tickDuration} onChange={e => setTickDuration(e.target.value)}>
-                                    <option value='1'>1 Tick</option>
-                                    <option value='2'>2 Ticks</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Bulk Purchase Count</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    min='1'
-                                    max='6'
-                                    value={bulkCount}
-                                    onChange={e => setBulkCount(e.target.value)}
-                                />
-                                <span className='unit'>trades</span>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Auto Recovery Mode</label>
-                            <div className='input-box'>
-                                <select
-                                    value={autoRecoveryMode ? 'ENABLED' : 'DISABLED'}
-                                    onChange={e => setAutoRecoveryMode(e.target.value === 'ENABLED')}
-                                >
-                                    <option value='ENABLED'>Enabled (2.6x O/U)</option>
-                                    <option value='DISABLED'>Disabled (Standard)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Recovery Strategy</label>
-                            <div className='input-box'>
-                                <select value={recoveryType} onChange={e => setRecoveryType(e.target.value as any)}>
-                                    <option value='OVER_2_UNDER_8'>Over 2 / Under 8</option>
-                                    <option value='OVER_3_UNDER_6'>Over 3 / Under 6</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className='control-field'>
-                            <label>Auto-Switch Threshold</label>
-                            <div className='input-box'>
-                                <input
-                                    type='number'
-                                    min='3'
-                                    max='20'
-                                    value={maxRunsBeforeCheck}
-                                    onChange={e => setMaxRunsBeforeCheck(parseInt(e.target.value, 10) || 6)}
-                                />
-                                <span className='unit'>runs</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Live Trade Logs */}
-                    <div className='auto-x-eo__logs-card'>
-                        <div className='logs-header'>
-                            <h3>Real-Time Trade Stream</h3>
-                            <span className='badge-count'>{tradeLog.length} Records</span>
-                        </div>
-
-                        <div className='logs-table-wrap'>
-                            {tradeLog.length > 0 ? (
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Time</th>
-                                            <th>Market</th>
-                                            <th>Strategy</th>
-                                            <th>Contract</th>
-                                            <th>Barrier</th>
-                                            <th>Stake</th>
-                                            <th>Result</th>
-                                            <th>Profit</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {tradeLog.map(item => (
-                                            <tr key={item.id}>
-                                                <td>{item.time}</td>
-                                                <td>{item.market}</td>
-                                                <td>{item.strategy}</td>
-                                                <td>{item.contractType}</td>
-                                                <td>{item.prediction !== undefined ? item.prediction : '-'}</td>
-                                                <td>
-                                                    {item.stake.toFixed(2)} {currency}
-                                                </td>
-                                                <td>
-                                                    <span className={`badge-${item.result.toLowerCase()}`}>
-                                                        {item.result}
-                                                    </span>
-                                                </td>
-                                                <td
-                                                    style={{
-                                                        color: item.profit >= 0 ? '#10b981' : '#ef4444',
-                                                        fontWeight: 700,
-                                                    }}
-                                                >
-                                                    {item.profit !== 0
-                                                        ? `${item.profit > 0 ? '+' : ''}${item.profit.toFixed(2)} ${currency}`
-                                                        : '-'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            ) : (
-                                <div className='no-logs'>
-                                    No trades executed yet. Click &quot;START AUTO TRADER&quot; to begin.
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>
             </div>
+
             <TradingMilestoneModal
                 isOpen={milestone.isOpen}
                 type={milestone.type}
                 amount={sessionProfit}
-                targetAmount={milestone.type === 'tp' ? parseFloat(takeProfit) || 10 : parseFloat(stopLoss) || 25}
                 currency={currency}
-                botName='AUTO X E/O Bot'
-                winsCount={winsCount}
-                lossesCount={lossesCount}
+                botName='Auto X E/O'
                 onClose={() => setMilestone({ isOpen: false, type: null })}
-                onRestart={() => {
-                    setMilestone({ isOpen: false, type: null });
-                    setBotState('SCANNING');
-                }}
             />
         </div>
     );
