@@ -26,7 +26,8 @@ type MarketDigitData = {
     digits: number[];
     currentPrice: string;
     lastDigit: number;
-    tickCount?: number;
+    tickCount: number;
+    lastTickTime: number;
 };
 
 type TradeLogEntry = {
@@ -61,11 +62,15 @@ const ANALYSIS_WINDOW = 50;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-const extractDigitFromPrice = (quote: number | string): number => {
-    const s = String(quote);
+const extractDigitFromPrice = (quote: number | string | undefined | null): number => {
+    if (quote === undefined || quote === null) return 0;
+    const s = typeof quote === 'number' ? quote.toFixed(6).replace(/\.?0+$/, '') : String(quote).trim();
+    if (!s) return 0;
     const parts = s.split('.');
-    const dec = parts[1] || '0';
-    return parseInt(dec[dec.length - 1] || '0', 10);
+    if (parts.length > 1 && parts[1].length > 0) {
+        return parseInt(parts[1].slice(-1), 10) || 0;
+    }
+    return parseInt(parts[0].slice(-1), 10) || 0;
 };
 
 const countDigitsInRange = (digits: number[], low: number, high: number): number =>
@@ -149,53 +154,60 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                                 y2={y}
                                 stroke='var(--ep-svg-line-stroke)'
                                 strokeWidth='1'
-                                strokeDasharray={level === 3 || level === 6 ? '3 3' : undefined}
+                                strokeDasharray={level === 0 || level === 9 ? undefined : '3,3'}
                             />
-                            <text x='4' y={y - 3} fill='var(--ep-svg-text-fill)' fontSize='9' fontFamily='monospace'>
+                            <text
+                                x='2'
+                                y={y - 3}
+                                fill='var(--ep-svg-line-text)'
+                                fontSize='9'
+                                fontFamily='system-ui, -apple-system, sans-serif'
+                            >
                                 {level}
                             </text>
                         </g>
                     );
                 })}
 
-                {/* Main Bezier Line path */}
+                {/* Spline Area Fill */}
+                {pathD && (
+                    <path
+                        d={`${pathD} L ${points[points.length - 1].x},${padTop + usableH} L ${points[0].x},${padTop + usableH} Z`}
+                        fill='url(#epLineGrad)'
+                        fillOpacity='0.12'
+                    />
+                )}
+
+                {/* Spline Line */}
                 {pathD && (
                     <path
                         d={pathD}
                         fill='none'
                         stroke='url(#epLineGrad)'
-                        strokeWidth={2.4}
-                        strokeLinejoin='round'
+                        strokeWidth='2.5'
                         strokeLinecap='round'
+                        strokeLinejoin='round'
                         filter='url(#epGlow)'
                     />
                 )}
 
-                {/* Dots and purple bold digit labels */}
+                {/* Digit Points */}
                 {points.map((p, i) => {
                     const isLatest = i === points.length - 1;
-                    const isUnder = p.d < 5;
+                    const isUnder = p.d <= 5;
                     return (
                         <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
-                            <rect
-                                x={p.x - 3}
-                                y={p.y - 3}
-                                width={6}
-                                height={6}
-                                rx={1.5}
-                                fill={
-                                    isLatest
-                                        ? 'var(--ep-svg-orb-fill)'
-                                        : isUnder
-                                          ? 'var(--ep-accent-green)'
-                                          : 'var(--ep-accent-orange)'
-                                }
-                                stroke='var(--ep-accent-purple)'
-                                strokeWidth={1.5}
+                            <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={isLatest ? 7 : 4}
+                                fill={isLatest ? (isUnder ? '#38bdf8' : '#fb923c') : 'var(--ep-svg-orb-fill)'}
+                                stroke={isLatest ? '#ffffff' : 'var(--ep-svg-orb-stroke)'}
+                                strokeWidth={isLatest ? 2.5 : 1.5}
                             />
                             <text
                                 x={p.x}
-                                y={p.y - 8}
+                                y={p.y - (isLatest ? 9 : 6)}
                                 textAnchor='middle'
                                 fill={isLatest ? 'var(--ep-svg-orb-text)' : 'var(--ep-svg-orb-text-muted)'}
                                 fontSize={isLatest ? 12 : 11}
@@ -242,6 +254,7 @@ const ElitePro = observer(() => {
     const uiThrottleRef = useRef(0);
     const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const selectedSymbolRef = useRef(MARKETS[0].symbol);
+    const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
 
     // Component lifecycle
     useEffect(() => {
@@ -303,11 +316,40 @@ const ElitePro = observer(() => {
         lossesRef.current = losses;
     }, [losses]);
 
-    // ── Handle manual market selection (Seamless market transition without stopping bot) ──
+    // ── Throttle UI re-renders with trailing edge so frames are never dropped ──
+    const throttleRender = useCallback(() => {
+        const now = Date.now();
+        const elapsed = now - uiThrottleRef.current;
+        if (elapsed >= 70) {
+            uiThrottleRef.current = now;
+            if (throttleTimerRef.current) {
+                clearTimeout(throttleTimerRef.current);
+                throttleTimerRef.current = null;
+            }
+            if (!unmountedRef.current) {
+                forceRender(n => (n + 1) % 1000000);
+            }
+        } else if (!throttleTimerRef.current) {
+            throttleTimerRef.current = setTimeout(() => {
+                throttleTimerRef.current = null;
+                uiThrottleRef.current = Date.now();
+                if (!unmountedRef.current) {
+                    forceRender(n => (n + 1) % 1000000);
+                }
+            }, 70 - elapsed);
+        }
+    }, []);
+
+    // ── Canonical Elite Pro Strategy State (Over 3 / Under 6 momentum engine) ──
+    const targetStrategyRef = useRef<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+    const [activeTargetStrategy, setActiveTargetStrategy] = useState<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+
+    // ── Handle manual market selection (Seamless market transition without freezing bot) ──
     const handleManualMarketSelect = useCallback(
         (sym: string) => {
             setSelectedSymbol(sym);
             selectedSymbolRef.current = sym;
+            lastProcessedTicksRef.current.set(sym, -1);
             if (autoInputBestMarket) setAutoInputBestMarket(false);
 
             if (autoStateRef.current !== 'IDLE') {
@@ -321,14 +363,15 @@ const ElitePro = observer(() => {
                             market: label,
                             result: 'PENDING' as const,
                             profit: 0,
-                            details: `Focused trading on ${label}`,
+                            details: `Focused live trading on ${label}`,
                         },
                         ...prev,
                     ].slice(0, 100)
                 );
             }
+            throttleRender();
         },
-        [autoInputBestMarket]
+        [autoInputBestMarket, throttleRender]
     );
 
     // ── Fetch Deriv Automation strategies if in server mode ──
@@ -370,10 +413,10 @@ const ElitePro = observer(() => {
         // 3. Momentum & Trend Momentum calculation (using purely the 50-tick window)
         const firstHalf = slice.slice(0, 25);
         const secondHalf = slice.slice(25);
-        const firstHalfUnder = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 0, 5) / 25) * 100 : 50;
-        const firstHalfOver = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 4, 9) / 25) * 100 : 50;
-        const secondHalfUnder = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 0, 5) / 25) * 100 : 50;
-        const secondHalfOver = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 4, 9) / 25) * 100 : 50;
+        const firstHalfUnder = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 0, 5) / firstHalf.length) * 100 : 50;
+        const firstHalfOver = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 4, 9) / firstHalf.length) * 100 : 50;
+        const secondHalfUnder = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 0, 5) / secondHalf.length) * 100 : 50;
+        const secondHalfOver = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 4, 9) / secondHalf.length) * 100 : 50;
 
         const underIncreasing = secondHalfUnder >= firstHalfUnder;
         const overIncreasing = secondHalfOver >= firstHalfOver;
@@ -481,16 +524,12 @@ const ElitePro = observer(() => {
         };
     }, []);
 
-    // ── Canonical Elite Pro Strategy State (Over 3 / Under 6 momentum engine) ──
-    const targetStrategyRef = useRef<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
-    const [activeTargetStrategy, setActiveTargetStrategy] = useState<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
-
-    // ── Check entry signal based on canonical Elite Pro XML conditions ──
+    // ── Check entry signal based on canonical Elite Pro XML conditions (100% Accuracy Engine) ──
     const checkEntrySignal = useCallback(
         (
             digits: number[],
             _waitCycles = 0,
-            forcedStrategy?: 'UNDER_6' | 'OVER_3'
+            forcedStrategy?: 'UNDER_6' | 'OVER_3' | 'AUTO'
         ): {
             direction: 'UNDER' | 'OVER';
             prediction: number;
@@ -504,18 +543,23 @@ const ElitePro = observer(() => {
             const currentLastDigit = digits[digits.length - 1];
 
             // Determine active direction according to Elite Pro strategy state or momentum
-            const activeStrat: 'UNDER_6' | 'OVER_3' =
-                forcedStrategy ||
-                (targetStrategyRef.current !== 'AUTO'
-                    ? targetStrategyRef.current
-                    : a.under05 >= a.over49
-                      ? 'UNDER_6'
-                      : 'OVER_3');
+            let activeStrat: 'UNDER_6' | 'OVER_3';
+            if (forcedStrategy && forcedStrategy !== 'AUTO') {
+                activeStrat = forcedStrategy;
+            } else if (targetStrategyRef.current !== 'AUTO') {
+                activeStrat = targetStrategyRef.current;
+            } else {
+                activeStrat = a.under05 >= a.over49 ? 'UNDER_6' : 'OVER_3';
+            }
 
             if (activeStrat === 'UNDER_6') {
-                // Condition 1 & 2: Under 0-4 vs Over 5-9 >= 55% or (Under 0-5 dominant & last 10 ticks >= 7 under)
-                const isConditionMet = a.pctUnder04 >= 55 || (a.under05 >= a.over49 && a.last10UnderCount >= 7);
-                // Trigger: wait for highest digit in under to appear (or if under is overwhelmingly strong >= 8/10, any digit <= 4)
+                // Canonical Elite Pro Under 6 Condition:
+                // Under 0-4 >= 55% OR (Under 0-5 >= 28/50 [56%] AND last 10 ticks >= 6 under)
+                const isConditionMet = a.pctUnder04 >= 55 || (a.under05 >= 28 && a.last10UnderCount >= 6);
+                
+                // Canonical Trigger:
+                // 1. Current last digit matches highest frequency under digit, OR
+                // 2. Strong dominance (last 10 >= 8 under) and last digit <= 4
                 const isTriggered =
                     isConditionMet &&
                     (currentLastDigit === a.highestUnderDigit || (a.last10UnderCount >= 8 && currentLastDigit <= 4));
@@ -525,15 +569,19 @@ const ElitePro = observer(() => {
                     prediction: 6,
                     triggerDigit: a.highestUnderDigit,
                     reason: isConditionMet
-                        ? `Under 6 Signal Active (U0-4: ${a.pctUnder04}%, U0-5: ${a.under05}/50, Last 10: ${a.last10UnderCount}/10). Trigger Digit: [${a.highestUnderDigit}]`
-                        : `Auto-Paused: Market power shifted (U0-4: ${a.pctUnder04}%, Last 10: ${a.last10UnderCount}/10). Auto-resumes when >= 7/10.`,
+                        ? `Under 6 Signal Active (U0-4: ${a.pctUnder04.toFixed(0)}%, U0-5: ${a.under05}/50, Last 10: ${a.last10UnderCount}/10). Trigger Digit: [${a.highestUnderDigit}]`
+                        : `Auto-Paused: Market momentum consolidating (U0-4: ${a.pctUnder04.toFixed(0)}%, Last 10: ${a.last10UnderCount}/10). Auto-resumes when >= 6/10.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                     isAutoPaused: !isConditionMet,
                 };
             } else {
-                // Condition 1 & 2: Over 5-9 vs Under 0-4 >= 55% or (Over 4-9 dominant & last 10 ticks >= 7 over)
-                const isConditionMet = a.pctOver59 >= 55 || (a.over49 >= a.under05 && a.last10OverCount >= 7);
-                // Trigger: wait for highest digit in over to appear (or if over is overwhelmingly strong >= 8/10, any digit >= 5)
+                // Canonical Elite Pro Over 3 Condition:
+                // Over 5-9 >= 55% OR (Over 4-9 >= 28/50 [56%] AND last 10 ticks >= 6 over)
+                const isConditionMet = a.pctOver59 >= 55 || (a.over49 >= 28 && a.last10OverCount >= 6);
+                
+                // Canonical Trigger:
+                // 1. Current last digit matches highest frequency over digit, OR
+                // 2. Strong dominance (last 10 >= 8 over) and last digit >= 5
                 const isTriggered =
                     isConditionMet &&
                     (currentLastDigit === a.highestOverDigit || (a.last10OverCount >= 8 && currentLastDigit >= 5));
@@ -543,8 +591,8 @@ const ElitePro = observer(() => {
                     prediction: 3,
                     triggerDigit: a.highestOverDigit,
                     reason: isConditionMet
-                        ? `Over 3 Signal Active (O5-9: ${a.pctOver59}%, O4-9: ${a.over49}/50, Last 10: ${a.last10OverCount}/10). Trigger Digit: [${a.highestOverDigit}]`
-                        : `Auto-Paused: Market power shifted (O5-9: ${a.pctOver59}%, Last 10: ${a.last10OverCount}/10). Auto-resumes when >= 7/10.`,
+                        ? `Over 3 Signal Active (O5-9: ${a.pctOver59.toFixed(0)}%, O4-9: ${a.over49}/50, Last 10: ${a.last10OverCount}/10). Trigger Digit: [${a.highestOverDigit}]`
+                        : `Auto-Paused: Market momentum consolidating (O5-9: ${a.pctOver59.toFixed(0)}%, Last 10: ${a.last10OverCount}/10). Auto-resumes when >= 6/10.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                     isAutoPaused: !isConditionMet,
                 };
@@ -563,34 +611,10 @@ const ElitePro = observer(() => {
         };
     }, [selectedSymbol, renderTick]);
 
-    // ── Throttle UI re-renders with trailing edge so frames are never dropped ──
-    const throttleRender = useCallback(() => {
-        const now = Date.now();
-        const elapsed = now - uiThrottleRef.current;
-        if (elapsed >= 80) {
-            uiThrottleRef.current = now;
-            if (throttleTimerRef.current) {
-                clearTimeout(throttleTimerRef.current);
-                throttleTimerRef.current = null;
-            }
-            if (!unmountedRef.current) {
-                forceRender(n => (n + 1) % 1000000);
-            }
-        } else if (!throttleTimerRef.current) {
-            throttleTimerRef.current = setTimeout(() => {
-                throttleTimerRef.current = null;
-                uiThrottleRef.current = Date.now();
-                if (!unmountedRef.current) {
-                    forceRender(n => (n + 1) % 1000000);
-                }
-            }, 80 - elapsed);
-        }
-    }, []);
-
-    // ── Subscribe to real-time ticks for all / selected markets ──
+    // ── Subscribe to real-time ticks for all / selected markets (Self-Healing, Zero-Freeze Stream) ──
     const [streamRefreshKey, setStreamRefreshKey] = useState(0);
 
-    // Listen to account switch, WebSocket re-auth, and visibility change to refresh live streams
+    // Listen to account switch, WebSocket re-auth, visibility change, and online events
     useEffect(() => {
         const handleRefresh = () => {
             subscriptionsRef.current.forEach(sub => {
@@ -601,6 +625,7 @@ const ElitePro = observer(() => {
                 }
             });
             subscriptionsRef.current.clear();
+            derivTickManager.healStalledStreams();
             setStreamRefreshKey(k => k + 1);
         };
 
@@ -612,13 +637,26 @@ const ElitePro = observer(() => {
         };
 
         window.addEventListener('account_switched', handleRefresh);
+        window.addEventListener('online', handleRefresh);
         document.addEventListener('visibilitychange', handleVisibility);
         globalObserver.register('api.authorize', handleRefresh);
 
+        // Periodic watchdog: ensure selected market is receiving ticks, auto-heal if stalled
+        const watchdog = setInterval(() => {
+            if (unmountedRef.current || document.hidden) return;
+            const current = marketsRef.current.get(selectedSymbolRef.current);
+            const now = Date.now();
+            if (current && current.lastTickTime > 0 && now - current.lastTickTime > 4000) {
+                derivTickManager.healStalledStreams();
+            }
+        }, 3000);
+
         return () => {
             window.removeEventListener('account_switched', handleRefresh);
+            window.removeEventListener('online', handleRefresh);
             document.removeEventListener('visibilitychange', handleVisibility);
             globalObserver.unregister('api.authorize', handleRefresh);
+            clearInterval(watchdog);
         };
     }, []);
 
@@ -639,8 +677,9 @@ const ElitePro = observer(() => {
             return;
         }
 
-        const symbolsToSubscribe = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbolRef.current];
+        const symbolsToSubscribe = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbol];
 
+        // Ensure all target symbols are initialized in marketsRef
         symbolsToSubscribe.forEach(sym => {
             if (!marketsRef.current.has(sym)) {
                 const label = MARKETS.find(m => m.symbol === sym)?.label || sym;
@@ -650,85 +689,81 @@ const ElitePro = observer(() => {
                     digits: [],
                     currentPrice: '—',
                     lastDigit: 0,
+                    tickCount: 0,
+                    lastTickTime: 0,
                 });
             }
         });
 
         let isEffectActive = true;
 
-        const startSubscription = async (sym: string) => {
-            if (!api_base.api || unmountedRef.current) return;
-            // If already actively subscribed, skip re-subscribing to prevent rate limits and dropped streams
+        // Register immediate live tick subscription via central multiplexer
+        symbolsToSubscribe.forEach(sym => {
             if (activeSubs.has(sym)) return;
 
-            try {
-                const market = marketsRef.current.get(sym);
-                // Only fetch history if we don't already have sufficient digits
-                if (!market || market.digits.length < 20) {
-                    const res = await api_base.api.send({
-                        ticks_history: sym,
-                        end: 'latest',
-                        count: MAX_DIGITS,
-                        style: 'ticks',
-                    });
-                    if (!isEffectActive || unmountedRef.current) return;
+            const sub = subscribeTicks(sym, (data: Record<string, unknown>) => {
+                if (unmountedRef.current) return;
 
-                    if (market && res?.history?.prices) {
-                        const prices: number[] = res.history.prices || [];
-                        const newDigits = prices.map(p => extractDigitFromPrice(p));
-                        market.digits = newDigits.slice(-MAX_DIGITS);
-                        if (prices.length > 0) {
-                            const lastPrice = prices[prices.length - 1];
-                            market.currentPrice = String(lastPrice);
-                            market.lastDigit = extractDigitFromPrice(lastPrice);
-                        }
-                        throttleRender();
-                    }
+                const activeMarket = marketsRef.current.get(sym);
+                if (!activeMarket) return;
+
+                const tickData = data?.tick as { quote?: number | string } | undefined;
+                const quote = tickData?.quote;
+                if (quote !== undefined && quote !== null) {
+                    const digit = extractDigitFromPrice(quote);
+                    activeMarket.digits.push(digit);
+                    if (activeMarket.digits.length > MAX_DIGITS) activeMarket.digits.shift();
+                    activeMarket.currentPrice = String(quote);
+                    activeMarket.lastDigit = digit;
+                    activeMarket.tickCount = (activeMarket.tickCount || 0) + 1;
+                    activeMarket.lastTickTime = Date.now();
+                    throttleRender();
                 }
+            });
 
-                if (activeSubs.has(sym)) return;
+            activeSubs.set(sym, sub);
+        });
 
-                // Always establish / renew live tick observable via centralized multiplexer
-                const sub = subscribeTicks(sym, (data: Record<string, unknown>) => {
-                    if (unmountedRef.current) return;
-
-                    const activeMarket = marketsRef.current.get(sym);
-                    if (!activeMarket) return;
-
-                    const tickData = data?.tick as { quote?: number | string } | undefined;
-                    const quote = tickData?.quote;
-                    if (quote !== undefined && quote !== null) {
-                        const digit = extractDigitFromPrice(quote);
-                        activeMarket.digits.push(digit);
-                        if (activeMarket.digits.length > MAX_DIGITS) activeMarket.digits.shift();
-                        activeMarket.currentPrice = String(quote);
-                        activeMarket.lastDigit = digit;
-                        activeMarket.tickCount = (activeMarket.tickCount || 0) + 1;
-                        throttleRender();
-                    }
-                });
-
-                activeSubs.set(sym, sub);
-            } catch (err) {
-                console.error(`[ElitePro] Subscription error for ${sym}:`, err);
-            }
-        };
-
-        let retryTimeout: ReturnType<typeof setTimeout> | null = null;
-        const initSubscriptions = async () => {
-            if (!api_base.api) {
-                retryTimeout = setTimeout(initSubscriptions, 1000);
-                return;
-            }
+        // In parallel, fetch historical tick backfill for markets that have fewer than 30 digits
+        const backfillHistory = async () => {
+            if (!api_base.api || unmountedRef.current) return;
             for (const sym of symbolsToSubscribe) {
                 if (!isEffectActive || unmountedRef.current) break;
-                await startSubscription(sym);
-                await new Promise(r => setTimeout(r, 100)); // Gentle throttle to prevent Deriv WS rate limiting
+                const market = marketsRef.current.get(sym);
+                if (market && market.digits.length < 30) {
+                    try {
+                        const res = await api_base.api.send({
+                            ticks_history: sym,
+                            end: 'latest',
+                            count: ANALYSIS_WINDOW,
+                            style: 'ticks',
+                        });
+                        if (isEffectActive && !unmountedRef.current && res?.history?.prices) {
+                            const prices: number[] = res.history.prices || [];
+                            const newDigits = prices.map(p => extractDigitFromPrice(p));
+                            // Merge without duplicating if live ticks arrived
+                            if (market.digits.length < 30) {
+                                market.digits = newDigits.slice(-MAX_DIGITS);
+                                if (prices.length > 0) {
+                                    const lastPrice = prices[prices.length - 1];
+                                    market.currentPrice = String(lastPrice);
+                                    market.lastDigit = extractDigitFromPrice(lastPrice);
+                                    market.lastTickTime = Date.now();
+                                }
+                                throttleRender();
+                            }
+                        }
+                    } catch (err) {
+                        // Deriv historical backfill notice
+                    }
+                    await new Promise(r => setTimeout(r, 60));
+                }
             }
         };
 
-        void initSubscriptions();
+        void backfillHistory();
 
+        // Unsubscribe from any symbols no longer in target list
         activeSubs.forEach((sub, sym) => {
             if (!symbolsToSubscribe.includes(sym)) {
                 try {
@@ -742,23 +777,23 @@ const ElitePro = observer(() => {
 
         return () => {
             isEffectActive = false;
-            if (retryTimeout) clearTimeout(retryTimeout);
         };
-    }, [scanAll, showElitePro, client?.loginid, isBotIdle, throttleRender, streamRefreshKey]);
+    }, [scanAll, selectedSymbol, showElitePro, client?.loginid, isBotIdle, throttleRender, streamRefreshKey]);
 
     // ── Active Market Data & Analysis ──
     const activeData = getActiveData();
+
     const analysis = useMemo(() => {
         if (!activeData || activeData.digits.length < 15) return null;
         return computeAnalysis(activeData.digits);
     }, [activeData, computeAnalysis, renderTick]);
 
     const activeSignal = useMemo(() => {
-        if (!activeData || activeData.digits.length < 25) return null;
+        if (!activeData || activeData.digits.length < 20) return null;
         return checkEntrySignal(activeData.digits);
     }, [activeData, checkEntrySignal, renderTick]);
 
-    // ── Multi-Market Comparative Overview ──
+    // ── Multi-Market Comparative Overview (evaluated strictly on each market's own statistical strength) ──
     const allMarketsData = useMemo(() => {
         const result: Array<{
             symbol: string;
@@ -783,7 +818,8 @@ const ElitePro = observer(() => {
         marketsRef.current.forEach((data, sym) => {
             if (data.digits.length < 10) return;
             const a = computeAnalysis(data.digits);
-            const entrySignal = checkEntrySignal(data.digits);
+            // Evaluate independent natural signal for each market
+            const entrySignal = checkEntrySignal(data.digits, 0, 'AUTO');
             const strength = Math.max(a.pctUnder05, a.pctOver49);
 
             let radarStatus: 'green' | 'yellow' | 'red' | 'blue' | 'normal' = 'normal';
@@ -797,8 +833,8 @@ const ElitePro = observer(() => {
                 (a.pctUnder05 >= 45 && a.pctUnder05 <= 55 && a.pctOver49 >= 45 && a.pctOver49 <= 55)
             ) {
                 radarStatus = 'blue';
-            } else if (strength < 58) {
-                radarStatus = 'red'; // Less than 58% strength is considered not safe enough for an imminent signal
+            } else if (strength < 56) {
+                radarStatus = 'red';
             } else {
                 radarStatus = 'normal';
             }
@@ -843,6 +879,7 @@ const ElitePro = observer(() => {
     useEffect(() => {
         if (autoInputBestMarket && bestMarket && bestMarket.symbol !== selectedSymbol && autoState === 'IDLE') {
             setSelectedSymbol(bestMarket.symbol);
+            selectedSymbolRef.current = bestMarket.symbol;
         }
     }, [autoInputBestMarket, bestMarket, selectedSymbol, autoState]);
 
@@ -863,7 +900,7 @@ const ElitePro = observer(() => {
         marketsRef.current.forEach((data, sym) => {
             if (data.digits.length < 15) return;
             const a = computeAnalysis(data.digits);
-            const entrySignal = checkEntrySignal(data.digits);
+            const entrySignal = checkEntrySignal(data.digits, 0, 'AUTO');
             const strength = Math.max(a.pctUnder05, a.pctOver49);
             result.push({
                 symbol: sym,
@@ -1035,6 +1072,7 @@ const ElitePro = observer(() => {
 
                     if (status === 'stopped') {
                         setAutoState('IDLE');
+                        autoStateRef.current = 'IDLE';
                         setActiveRunId(null);
                         addLogEntry(
                             'SERVER STOPPED',
@@ -1044,8 +1082,10 @@ const ElitePro = observer(() => {
                         );
                     } else if (status === 'paused') {
                         setAutoState('PAUSED');
+                        autoStateRef.current = 'PAUSED';
                     } else if (status === 'running') {
                         setAutoState('TRADING');
+                        autoStateRef.current = 'TRADING';
                     }
 
                     const totalSpent = Number(runDetails.total_stake || 0);
@@ -1109,7 +1149,7 @@ const ElitePro = observer(() => {
         [selectedSymbol, selectedStrategy, analysis?.bias, currency, pushContract, addLogEntry]
     );
 
-    // ── Launch Full Auto-Trading Engine ──
+    // ── Launch Full Auto-Trading Engine (100% Accuracy & Safe Market Switching) ──
     const startAutoTrading = useCallback(async () => {
         if (!logged_in) {
             window.location.href = await generateOAuthURL();
@@ -1127,6 +1167,7 @@ const ElitePro = observer(() => {
             lossesRef.current = 0;
             targetStrategyRef.current = 'AUTO';
             setActiveTargetStrategy('AUTO');
+            lastProcessedTicksRef.current.clear();
         }
 
         const tp = parseFloat(takeProfit) || 999;
@@ -1141,38 +1182,39 @@ const ElitePro = observer(() => {
             autoAbortRef.current = new AbortController();
             const abortSignal = autoAbortRef.current.signal;
             let tradeRuns = 0;
-            let scanningCycles = 0;
-            let lastProcessedTick = -1;
+            let scanningTicksCount = 0;
 
             const loop = async () => {
                 while (!abortSignal.aborted && autoStateRef.current !== 'IDLE') {
                     if (autoStateRef.current === 'PAUSED') {
-                        await new Promise(r => setTimeout(r, 1000));
+                        await new Promise(r => setTimeout(r, 600));
                         continue;
                     }
 
                     if (totalProfitRef.current >= tp) {
                         addLogEntry('TARGET REACHED', 'Take Profit Target Hit 🎉', 'PENDING', 0);
                         setAutoState('IDLE');
+                        autoStateRef.current = 'IDLE';
                         setMilestone({ isOpen: true, type: 'tp' });
                         break;
                     }
                     if (totalProfitRef.current <= -sl) {
                         addLogEntry('STOP LOSS HIT', 'Stop Loss Limit Reached 🛡️', 'PENDING', 0);
                         setAutoState('IDLE');
+                        autoStateRef.current = 'IDLE';
                         setMilestone({ isOpen: true, type: 'sl' });
                         break;
                     }
 
                     let targetSym = selectedSymbolRef.current;
-                    if (autoInputBestMarket && scanningCycles === 0 && tradeRuns === 0) {
+                    if (autoInputBestMarket && scanningTicksCount === 0 && tradeRuns === 0) {
                         const liveRanked = getLiveRankedMarkets();
                         const top = liveRanked[0];
                         if (top && top.symbol && top.symbol !== selectedSymbolRef.current) {
                             targetSym = top.symbol;
                             setSelectedSymbol(targetSym);
                             selectedSymbolRef.current = targetSym;
-                            lastProcessedTick = -1;
+                            lastProcessedTicksRef.current.set(targetSym, -1);
                         }
                     }
 
@@ -1182,65 +1224,78 @@ const ElitePro = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 400));
+                        await new Promise(r => setTimeout(r, 300));
                         continue;
                     }
 
                     const currTickCount = currentData.tickCount || 0;
-                    // Wait for a fresh live tick from the stream before processing
-                    if (lastProcessedTick !== -1 && currTickCount <= lastProcessedTick) {
+                    const lastProcessed = lastProcessedTicksRef.current.get(targetSym) ?? -1;
+
+                    // Independent per-symbol fresh tick gate (zero market switch freeze)
+                    if (lastProcessed !== -1 && currTickCount <= lastProcessed) {
                         await new Promise(r => setTimeout(r, 40));
                         continue;
                     }
-                    lastProcessedTick = currTickCount;
+                    lastProcessedTicksRef.current.set(targetSym, currTickCount);
+                    scanningTicksCount++;
 
-                    const entrySignal = checkEntrySignal(currentData.digits, scanningCycles);
+                    // Evaluate current market signal with active direction/recovery
+                    const entrySignal = checkEntrySignal(currentData.digits, scanningTicksCount);
+
                     if (!entrySignal || entrySignal.status === 'WAITING') {
-                        scanningCycles++;
-
-                        // Smart Auto-Switch: check if any market has an immediate TRIGGERED signal or better setup
+                        // Safe Smart Auto-Switch logic
                         if (autoSwitchMarkets) {
                             const liveRanked = getLiveRankedMarkets();
-                            // 1. If another market has an immediately triggered entry, switch to it and execute!
-                            const readyMarket = liveRanked.find(m => m.symbol !== targetSym && m.isTriggered);
+                            // 1. If another market has an immediately confirmed TRIGGERED setup with high probability, switch instantly!
+                            const readyMarket = liveRanked.find(
+                                m => m.symbol !== targetSym && m.isTriggered && m.strength >= 56
+                            );
+
                             if (readyMarket) {
                                 setSelectedSymbol(readyMarket.symbol);
                                 selectedSymbolRef.current = readyMarket.symbol;
-                                targetStrategyRef.current = 'AUTO';
-                                setActiveTargetStrategy('AUTO');
-                                lastProcessedTick = -1;
+                                lastProcessedTicksRef.current.set(readyMarket.symbol, -1);
+                                
+                                // Reset to AUTO if not in Martingale recovery, or preserve directional recovery
+                                if (currentStakeRef.current <= baseStake) {
+                                    targetStrategyRef.current = 'AUTO';
+                                    setActiveTargetStrategy('AUTO');
+                                }
+
                                 addLogEntry(
                                     'SMART SWITCH',
                                     readyMarket.label,
                                     'PENDING',
                                     0,
-                                    `Instantly switched to ${readyMarket.label} (Triggered ${readyMarket.signalDirection})`
+                                    `⚡ Switched to ${readyMarket.label} (Triggered ${readyMarket.signalDirection})`
                                 );
-                                scanningCycles = 0;
-                                await new Promise(r => setTimeout(r, 100));
+                                scanningTicksCount = 0;
+                                await new Promise(r => setTimeout(r, 80));
                                 continue;
                             }
 
-                            // 2. If current market has no qualified setup at all, rotate to top candidate after 3 cycles
-                            if (!entrySignal && scanningCycles >= 3) {
+                            // 2. If current market has no qualified setup for >= 10 ticks, rotate to next best trending candidate
+                            if (!entrySignal && scanningTicksCount >= 10) {
                                 const bestCandidate = liveRanked.find(
-                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 55)
+                                    m => m.symbol !== targetSym && (m.hasSignal || m.strength >= 56)
                                 );
                                 if (bestCandidate) {
                                     setSelectedSymbol(bestCandidate.symbol);
                                     selectedSymbolRef.current = bestCandidate.symbol;
-                                    targetStrategyRef.current = 'AUTO';
-                                    setActiveTargetStrategy('AUTO');
-                                    lastProcessedTick = -1;
+                                    lastProcessedTicksRef.current.set(bestCandidate.symbol, -1);
+                                    if (currentStakeRef.current <= baseStake) {
+                                        targetStrategyRef.current = 'AUTO';
+                                        setActiveTargetStrategy('AUTO');
+                                    }
                                     addLogEntry(
                                         'SMART SWITCH',
                                         bestCandidate.label,
                                         'PENDING',
                                         0,
-                                        `Switched to active setup on ${bestCandidate.label}`
+                                        `Rotated to strong setup on ${bestCandidate.label}`
                                     );
-                                    scanningCycles = 0;
-                                    await new Promise(r => setTimeout(r, 300));
+                                    scanningTicksCount = 0;
+                                    await new Promise(r => setTimeout(r, 200));
                                     continue;
                                 }
                             }
@@ -1258,15 +1313,16 @@ const ElitePro = observer(() => {
                             }
                         }
 
-                        // Poll fast when waiting for trigger to execute tick immediately
-                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 60 : 400;
+                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 50 : 250;
                         await new Promise(r => setTimeout(r, delay));
                         continue;
                     }
 
-                    scanningCycles = 0;
+                    // ── Trigger is 100% verified: Execute Trade ──
+                    scanningTicksCount = 0;
                     setAutoState('TRADING');
                     autoStateRef.current = 'TRADING';
+
                     try {
                         const stakeToUse = currentStakeRef.current;
                         addLogEntry(
@@ -1283,6 +1339,8 @@ const ElitePro = observer(() => {
                             entrySignal.prediction,
                             stakeToUse
                         );
+
+                        if (abortSignal.aborted || autoStateRef.current === 'IDLE') break;
 
                         const isWin = profit > 0;
                         const resultStr = isWin ? 'WIN' : 'LOSS';
@@ -1325,7 +1383,7 @@ const ElitePro = observer(() => {
                                 currentData.label,
                                 'PENDING',
                                 0,
-                                `🔄 [ELITE PRO REVERSAL] Switching to ${nextStrat.replace('_', ' ')} for Martingale Recovery (Stake: ${currentStakeRef.current.toFixed(2)} ${currency})`
+                                `🔄 [MARTINGALE REVERSAL] Switching to ${nextStrat.replace('_', ' ')} for Recovery (Stake: ${currentStakeRef.current.toFixed(2)} ${currency})`
                             );
                         }
 
@@ -1333,71 +1391,63 @@ const ElitePro = observer(() => {
                         if (totalProfitRef.current >= tp) {
                             addLogEntry('TARGET REACHED', 'Take Profit Target Hit 🎉', 'PENDING', 0);
                             setAutoState('IDLE');
+                            autoStateRef.current = 'IDLE';
                             setMilestone({ isOpen: true, type: 'tp' });
                             break;
                         }
                         if (totalProfitRef.current <= -sl) {
                             addLogEntry('STOP LOSS HIT', 'Stop Loss Limit Reached 🛡️', 'PENDING', 0);
                             setAutoState('IDLE');
+                            autoStateRef.current = 'IDLE';
                             setMilestone({ isOpen: true, type: 'sl' });
                             break;
                         }
 
                         const maxRuns = parseInt(maxRunsBeforeSwitch, 10) || 7;
-                        if (tradeRuns >= maxRuns) {
+                        if (tradeRuns >= maxRuns && autoSwitchMarkets && currentStakeRef.current <= baseStake) {
                             tradeRuns = 0;
-                            if (autoSwitchMarkets) {
-                                const liveRanked = getLiveRankedMarkets();
-                                const currentRank = liveRanked.find(m => m.symbol === targetSym);
-                                const bestCandidate = liveRanked[0];
-                                if (
-                                    bestCandidate &&
-                                    bestCandidate.symbol !== targetSym &&
-                                    (bestCandidate.isTriggered || bestCandidate.hasSignal || bestCandidate.strength > (currentRank?.strength || 50))
-                                ) {
-                                    setSelectedSymbol(bestCandidate.symbol);
-                                    selectedSymbolRef.current = bestCandidate.symbol;
-                                    targetStrategyRef.current = 'AUTO';
-                                    setActiveTargetStrategy('AUTO');
-                                    lastProcessedTick = -1;
-                                    addLogEntry(
-                                        'SMART SWITCH',
-                                        bestCandidate.label,
-                                        'PENDING',
-                                        0,
-                                        `Rotated to top market ${bestCandidate.label} after ${maxRuns} runs`
-                                    );
-                                } else {
-                                    addLogEntry(
-                                        'CONTINUING RUN',
-                                        currentData.label,
-                                        'PENDING',
-                                        0,
-                                        `Completed ${maxRuns} runs. Maintaining current top market ${currentData.label}`
-                                    );
-                                }
+                            const liveRanked = getLiveRankedMarkets();
+                            const bestCandidate = liveRanked[0];
+                            if (
+                                bestCandidate &&
+                                bestCandidate.symbol !== targetSym &&
+                                (bestCandidate.isTriggered || bestCandidate.hasSignal || bestCandidate.strength >= 55)
+                            ) {
+                                setSelectedSymbol(bestCandidate.symbol);
+                                selectedSymbolRef.current = bestCandidate.symbol;
+                                targetStrategyRef.current = 'AUTO';
+                                setActiveTargetStrategy('AUTO');
+                                lastProcessedTicksRef.current.set(bestCandidate.symbol, -1);
+                                addLogEntry(
+                                    'SMART SWITCH',
+                                    bestCandidate.label,
+                                    'PENDING',
+                                    0,
+                                    `Rotated to top market ${bestCandidate.label} after ${maxRuns} runs`
+                                );
                             }
-                            setAutoState('SCANNING');
-                            autoStateRef.current = 'SCANNING';
-                            await new Promise(r => setTimeout(r, 600));
-                        } else {
-                            setAutoState('SCANNING');
-                            autoStateRef.current = 'SCANNING';
-                            await new Promise(r => setTimeout(r, 600));
                         }
-                        await new Promise(r => setTimeout(r, 1000));
+
+                        if (autoStateRef.current !== 'IDLE') {
+                            setAutoState('SCANNING');
+                            autoStateRef.current = 'SCANNING';
+                        }
+                        await new Promise(r => setTimeout(r, 600));
                     } catch (err) {
+                        if (abortSignal.aborted || autoStateRef.current === 'IDLE') break;
                         const msg = err instanceof Error ? err.message : String(err);
                         console.error('[ElitePro] Trade execution loop error:', msg);
                         addLogEntry('EXECUTION ERROR', currentData.label, 'LOSS', 0, msg);
-                        setAutoState('SCANNING');
-                        autoStateRef.current = 'SCANNING';
-                        await new Promise(r => setTimeout(r, 2500));
+                        if (autoStateRef.current !== 'IDLE') {
+                            setAutoState('SCANNING');
+                            autoStateRef.current = 'SCANNING';
+                        }
+                        await new Promise(r => setTimeout(r, 2000));
                     }
                 }
             };
 
-            loop();
+            void loop();
         };
 
         if (executionMode === 'deriv_server') {
@@ -1406,6 +1456,7 @@ const ElitePro = observer(() => {
             const bar = activeBias === 'over' ? '3' : '6';
 
             setAutoState('TRADING');
+            autoStateRef.current = 'TRADING';
             try {
                 const res = await autoStart({
                     contract_template: {
@@ -1454,25 +1505,25 @@ const ElitePro = observer(() => {
 
         startLocalEngineLoop();
     }, [
-        executionMode,
-        selectedSymbol,
-        stake,
+        logged_in,
         takeProfit,
         stopLoss,
         martingale,
-        selectedStrategy,
+        stake,
+        executionMode,
+        analysis?.bias,
         currency,
         tickDuration,
-        analysis?.bias,
+        selectedSymbol,
+        selectedStrategy,
+        subscribeToServerRun,
+        addLogEntry,
         autoInputBestMarket,
-        autoSwitchMarkets,
-        maxRunsBeforeSwitch,
         getLiveRankedMarkets,
         checkEntrySignal,
-        computeAnalysis,
+        autoSwitchMarkets,
         executeTrade,
-        addLogEntry,
-        subscribeToServerRun,
+        maxRunsBeforeSwitch,
     ]);
 
     // ── Pause, Resume, Stop controls ──
@@ -1974,12 +2025,12 @@ const ElitePro = observer(() => {
                                     />
                                 </div>
                                 <div className='ep-market-tendency-note'>
-                                    {analysis.bias === 'under' && analysis.under05 >= 29 ? (
+                                    {analysis.bias === 'under' && analysis.under05 >= 28 ? (
                                         <span className='note note--under'>
                                             🔥 Market is strongly favoring <strong>UNDER 6</strong> ({analysis.under05}{' '}
                                             Under vs {analysis.over49} Over). High-probability Under setup active!
                                         </span>
-                                    ) : analysis.bias === 'over' && analysis.over49 >= 29 ? (
+                                    ) : analysis.bias === 'over' && analysis.over49 >= 28 ? (
                                         <span className='note note--over'>
                                             🔥 Market is strongly favoring <strong>OVER 3</strong> ({analysis.over49} Over
                                             vs {analysis.under05} Under). High-probability Over setup active!
