@@ -54,3 +54,13 @@
 - Font Stack: `Inter` across all 5 typography scale classes (`type-1` to `type-5`).
 - Spacing: 10 scale steps (`space-1` to `space-10`).
 - Shapes: 3 radius standards (`radius-1`: 8px, `radius-2`: 12px, `radius-3`: 999px).
+
+### 5. Real-Time Balance Synchronization
+- `api_base.ts`: Preserves `balance` and `transaction` subscriptions across bot lifecycle resets (removed destructive `unsubscribeAllSubscriptions`).
+- Auto-reconnection: Subscribes to `streamsToSubscribe` (`balance`, `proposal_open_contract`, `website_status`) on socket open.
+- Optimistic & Periodic Updates: Instant balance deduction on `buy`, instant balance increment on contract settlement in `trade-purchase.ts`, combined with a 10s background reconciliation heartbeat in `CoreStoreProvider.tsx`.
+
+### 6. Cleaned Navigation Matrix (20 Core Tabs)
+- DTrader iframe page, navigation tab, dashboard cards, and unused components removed.
+- Direct **Manual Trading** module (`DBOT_TABS.MANUAL_TRADING`) mapped cleanly across `src/pages/main/main.tsx`, `tab-icons.tsx`, `cards.tsx`, and `topbar-trade-controller.tsx`.
+- 1-to-1 sync maintained between `hash` array (0–19), `DBOT_TABS`, `TAB_IDS`, and `siteConfig`.
