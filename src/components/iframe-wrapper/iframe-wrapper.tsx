@@ -4,7 +4,6 @@ import './iframe-wrapper.scss';
 import { useStore } from '@/hooks/useStore';
 import { contract_stages } from '@/constants/contract-stage';
 import { ParentBridgeClient } from '../iframe-bridge';
-import { STORAGE_KEYS, getLegacyDTraderToken } from '@/utils/token-bridge';
 import { DERIV_CONFIG } from '@/components/shared/utils/config/config';
 
 interface IframeWrapperProps {
@@ -15,11 +14,7 @@ interface IframeWrapperProps {
 
 /**
  * IframeWrapper — generic iframe container for embedded tools.
- *
- * For DTrader Terminal: Attaches ParentBridgeClient to manage postMessage bridge
- * handshakes, passing accountType: "ZOOM", loginId, currency, appId, symbol, etc.
- *
- * For third-party bots: Listens for TRADE_PLACED / CONTRACT_EVENT / CONTRACT_UPDATE
+ * For third-party bots and tools: Listens for TRADE_PLACED / CONTRACT_EVENT / CONTRACT_UPDATE
  * and forwards them to the MobX run-panel / transactions store.
  */
 const IframeWrapper: React.FC<IframeWrapperProps> = observer(({ src, title, className = '' }) => {
@@ -283,169 +278,5 @@ const IframeWrapper: React.FC<IframeWrapperProps> = observer(({ src, title, clas
         </div>
     );
 });
-
-export const DTraderIframe: React.FC = () => {
-    const iframeRef = useRef<HTMLIFrameElement>(null);
-    const intervalRef = useRef<any>(null);
-
-    const startAuthBridgeHandshake = () => {
-        const iframeWindow = iframeRef.current?.contentWindow;
-        if (!iframeWindow) return;
-
-        // Both apps read the same credentials:
-        const clientAccounts = localStorage.getItem('client.accounts');
-        const activeLoginId = localStorage.getItem('active_loginid');
-
-        let accountsObj: Record<string, any> = {};
-        try {
-            if (clientAccounts) {
-                accountsObj = JSON.parse(clientAccounts);
-            }
-        } catch {}
-
-        const activeAccount = (activeLoginId && accountsObj[activeLoginId]) ? accountsObj[activeLoginId] : {};
-        const legacyToken = activeAccount.token || getLegacyDTraderToken() || localStorage.getItem('token1') || '';
-        const legacyAccount = activeLoginId || activeAccount.loginid || localStorage.getItem('legacy_acct1') || localStorage.getItem('acct1') || '';
-        const currency = activeAccount.currency || 'USD';
-        const effectiveToken = legacyToken && !legacyToken.startsWith('ey') ? legacyToken : (activeAccount.token || '');
-
-        const payload = {
-            type: 'NEWDTRADER_BRIDGE_AUTH',
-            msg_type: 'authorization',
-            token: effectiveToken,
-            accountName: legacyAccount,
-            appId: '121856',
-            currency,
-            'client.accounts': clientAccounts,
-            active_loginid: activeLoginId,
-            accounts: accountsObj,
-        };
-
-        const fallbackPayload = {
-            action: 'authorize',
-            token: effectiveToken,
-            loginid: legacyAccount,
-            'client.accounts': clientAccounts,
-            active_loginid: activeLoginId,
-        };
-
-        const syncPayload = {
-            type: 'SYNC_CREDENTIALS',
-            action: 'SYNC_CREDENTIALS',
-            'client.accounts': clientAccounts,
-            active_loginid: activeLoginId,
-            clientAccounts,
-            activeLoginId,
-            accounts: accountsObj,
-        };
-
-        // Clear any existing handshake loop
-        if (intervalRef.current) clearInterval(intervalRef.current);
-
-        const postToIframe = () => {
-            try {
-                iframeWindow.postMessage(payload, 'https://deriv-dtrader.vercel.app');
-                iframeWindow.postMessage(fallbackPayload, 'https://deriv-dtrader.vercel.app');
-                iframeWindow.postMessage(syncPayload, 'https://deriv-dtrader.vercel.app');
-                iframeWindow.postMessage(JSON.stringify(syncPayload), 'https://deriv-dtrader.vercel.app');
-            } catch (e) {
-                // ignore
-            }
-        };
-
-        // 1. Send immediate message
-        postToIframe();
-
-        // 2. Poll every 300ms until DTrader's bridge-client acknowledges receiving it
-        intervalRef.current = setInterval(() => {
-            postToIframe();
-        }, 300);
-
-        // Safety fallback: stop polling after 6 seconds
-        setTimeout(() => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-        }, 6000);
-    };
-
-    useEffect(() => {
-        const handleBridgeAck = (event: MessageEvent) => {
-            if (event.origin !== 'https://deriv-dtrader.vercel.app') return;
-
-            // Handle credential requests from DTrader iframe
-            if (
-                event.data?.type === 'GET_CREDENTIALS' ||
-                event.data?.type === 'REQUEST_CREDENTIALS' ||
-                event.data?.type === 'IFRAME_READY' ||
-                event.data?.action === 'REQUEST_CREDENTIALS'
-            ) {
-                startAuthBridgeHandshake();
-                return;
-            }
-
-            // Stop handshake interval upon successful handshake or failure response
-            if (
-                event.data?.type === 'NEWDTRADER_BRIDGE_AUTH_SUCCESS' ||
-                event.data?.type === 'NEWDTRADER_BRIDGE_AUTH_FAILED' ||
-                event.data?.msg_type === 'authorize'
-            ) {
-                console.log('[ParentBridge] Handshake acknowledged by DTrader V2RootGate.');
-                if (intervalRef.current) {
-                    clearInterval(intervalRef.current);
-                    intervalRef.current = null;
-                }
-            }
-
-            if (event.data?.error?.code === 'InvalidToken') {
-                window.dispatchEvent(new CustomEvent('dtrader_session_expired'));
-            }
-        };
-
-        window.addEventListener('message', handleBridgeAck);
-        return () => {
-            window.removeEventListener('message', handleBridgeAck);
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-                intervalRef.current = null;
-            }
-        };
-    }, []);
-
-    const iframeSrc = React.useMemo(() => {
-        const clientAccounts = localStorage.getItem('client.accounts');
-        const activeLoginId = localStorage.getItem('active_loginid');
-        let token = '';
-        let cur = 'USD';
-        if (clientAccounts && activeLoginId) {
-            try {
-                const parsed = JSON.parse(clientAccounts);
-                if (parsed[activeLoginId]) {
-                    token = parsed[activeLoginId].token || '';
-                    cur = parsed[activeLoginId].currency || 'USD';
-                }
-            } catch {}
-        }
-        if (!token) {
-            token = getLegacyDTraderToken() || localStorage.getItem('token1') || '';
-        }
-        const baseUrl = 'https://deriv-dtrader.vercel.app/?app_id=121856';
-        if (activeLoginId && token && !token.startsWith('ey')) {
-            return `${baseUrl}&acct1=${encodeURIComponent(activeLoginId)}&token1=${encodeURIComponent(token)}&cur1=${encodeURIComponent(cur)}`;
-        }
-        return baseUrl;
-    }, []);
-
-    return (
-        <iframe
-            ref={iframeRef}
-            src={iframeSrc}
-            onLoad={startAuthBridgeHandshake}
-            className="w-full h-full border-none"
-            allow="clipboard-write"
-        />
-    );
-};
 
 export default IframeWrapper;

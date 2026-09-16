@@ -11,7 +11,7 @@
 - Visual algorithmic bot building (**Google Blockly** engine)
 - High-frequency manual and automated trading terminals
 - Multi-indicator digit analysis, statistical circles, and strategy scanners
-- Cross-origin iframe terminals (**DTrader**, **Deriv Circles**, **Analysis Tool**)
+- Cross-origin iframe tools (**Deriv Circles**, **Analysis Tool**, **DigitFlow**)
 - Copy-trading and multi-account state synchronization across Real and Demo accounts
 
 ---
@@ -20,13 +20,13 @@
 
 | Layer | Framework / Library | Primary Purpose |
 | :--- | :--- | :--- |
-| **UI Framework** | React 18+, TypeScript 5+, Vite / Rsbuild | Fast SPA rendering & modern ES module bundling |
+| **UI Framework** | React 18+, TypeScript 5+, RSBuild | Fast SPA rendering & modern ES module bundling |
 | **State Engine** | MobX 6+, MobX React Lite | Reactive observer-based state management |
 | **Styling** | Vanilla SCSS, BEM methodology, Glassmorphism | Responsive layout, dark/light themes, high FPS animations |
 | **Bot Engine** | Google Blockly | Visual drag-and-drop trading bot skeleton |
 | **Charts** | `@deriv-com/smartcharts-champion`, TradingView | Real-time tick charts, digit statistics, dynamic container resizing |
 | **Auth Protocol** | Legacy Deriv WS API tokens (`a1-xxx`) + Ory Hydra PKCE OAuth2 (`ory_at_xxx`) | Multi-account token bridge with automatic OTP session token resolution |
-| **Inter-Iframe Bridge** | Custom `ParentBridgeClient` & `SessionManager` | Cross-origin `postMessage` synchronization (`https://deriv-dtrader.vercel.app/dtrader`) |
+| **Inter-Iframe Bridge** | Custom `ParentBridgeClient` & `SessionManager` | Cross-origin `postMessage` synchronization for analysis tools |
 
 ---
 
@@ -61,9 +61,9 @@ Profithubexpertnew-main/
 │   ├── external/
 │   │   └── bot-skeleton/              # Blockly engine, tradeEngine, active-symbols, chart-api
 │   ├── hooks/                         # React hooks (`useStore`, `useDevice`, `useSmartChartAdaptor`)
-│   ├── pages/                         # 34 Functional Modules (Tabs)
+│   ├── pages/                         # 20 Functional Modules (Tabs)
 │   ├── services/                      # OAuth, DerivWS Accounts, Symbol Processors, Network Interceptors
-│   ├── stores/                        # 37 MobX State Management Stores
+│   ├── stores/                        # MobX State Management Stores
 │   ├── types/                         # TypeScript interfaces & API payload schemas
 │   └── utils/                         # Token bridge (`token-bridge.ts`), market data, trade purchase
 ```
@@ -80,17 +80,9 @@ Profithubexpertnew-main/
 
 ### 5.2 Embedded Iframe Bridge Architecture
 - **Files**: `src/components/iframe-wrapper/iframe-wrapper.tsx` & `src/components/iframe-bridge/`
-- **Embedded Target**: `https://deriv-dtrader.vercel.app/dtrader`
-- **Required Query Parameters**:
-  - `acct1`: Active login ID (e.g. `CR123456`)
-  - `token1`: Valid Deriv WS token (`a1-xxxx...`)
-  - `cur1`: `USD`
-  - `app_id`: `134205`
-  - `theme`: `dark`
-  - `bt_secret`: `binarytool` *(Mandatory for Vercel hosted DTrader authorization)*
 - **Handshake Protocol**:
-  - `ParentBridgeClient` sanitizes origins using `new URL(url).origin` to prevent dropping `postMessage` events from `https://deriv-dtrader.vercel.app`.
-  - Broadcasts `AUTH_TOKEN`, `DERIV_AUTH`, `SESSION_DATA`, `setToken`, `BRIDGE_READY`, and `AUTH_SUCCESS` postMessages at tight intervals (`[100, 300, 500, 1000, 2000, 3000, 5000, 8000, 10000]`ms).
+  - `ParentBridgeClient` sanitizes origins using `new URL(url).origin` to prevent dropping `postMessage` events from whitelisted analysis domains.
+  - Broadcasts `AUTH_TOKEN`, `DERIV_AUTH`, `SESSION_DATA`, `setToken`, `BRIDGE_READY`, and `AUTH_SUCCESS` postMessages at scheduled intervals (`[100, 300, 500, 1000, 2000, 3000, 5000, 8000, 10000]`ms).
 
 ### 5.3 SmartCharts Champion & Responsiveness
 - **Location**: `src/pages/chart/chart.tsx` & `src/adapters/smartcharts-champion/transport.ts`
@@ -118,10 +110,9 @@ Profithubexpertnew-main/
 
 When modifying this repository:
 1. **Never pass `ory_at_...` to WebSocket `authorize` calls**. Always use `resolveValidDerivWSToken()`.
-2. **Never change `bt_secret=binarytool` or `/dtrader` path in DTrader URLs**.
-3. **Preserve `app_id` consistency**: Ensure `114292` or `134205` is correctly passed depending on the target system.
-4. **CSS Scoping**: Top-level CSS classes like `.dashboard__chart-wrapper--expanded` must remain unscoped from nested `.bot { ... }` blocks in `chart.scss`.
-5. **Always run TypeScript validation**: `npx tsc --noEmit` before committing code.
+2. **Preserve `app_id` consistency**: Ensure `114292` or `121856` is correctly passed depending on the target system.
+3. **CSS Scoping**: Top-level CSS classes like `.dashboard__chart-wrapper--expanded` must remain unscoped from nested `.bot { ... }` blocks in `chart.scss`.
+4. **Always run TypeScript validation**: `npm run build` or `npx tsc --noEmit` before committing code.
 
 ---
 

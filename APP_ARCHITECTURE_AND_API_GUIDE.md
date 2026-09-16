@@ -29,7 +29,7 @@ graph TD
     subgraph Core Applications
         MainLayout --> BotBuilder[Bot Builder & Blockly Workspace]
         MainLayout --> EntryScanner[Entry Scanner & Radar Engine]
-        MainLayout --> DTraderTab[DTrader Embedded Terminal]
+        MainLayout --> ManualTradingTab[Manual Trading Terminal]
         MainLayout --> FreeBots[Free Bots & Strategy Dashboard]
         MainLayout --> AnalysisTools[Live Analysis Tools & Iframes]
     end
@@ -45,7 +45,7 @@ graph TD
         ClientStore <--> WS[Deriv WebSocket: wss://ws.derivws.com/websockets/v3]
         EntryScannerStore <--> DerivAutoAPI[Deriv Automation API]
         EntryScannerStore <--> DirectAPI[Deriv Proposal & Buy API]
-        DTraderTab <--> TokenBridge[Token Bridge & postMessage Handshake]
+        ManualTradingTab <--> ApiBase[Deriv API Base & Fast-Execution Layer]
         AnalysisTools <--> IframeBridge[Parent-Child Event Bridge]
     end
 ```
@@ -162,11 +162,11 @@ Located at `src/utils/token-bridge.ts`, this engine enables multi-account switch
 'client.loginid'; // Active client login ID
 ```
 
-### 4.2 Cross-Iframe Token Injection (DTrader & Tools)
+### 4.2 Cross-Iframe Token Injection & Embedded Tools Bridge
 
 1. **URL Query String Synchronization**:
     ```
-    https://deriv-dtrader.vercel.app/?app_id=121856&symbol=1HZ100V&theme=dark&hide_header_login=true&is_mobile_app=true&acct1=CR123456&token1=a1-xxx&cur1=USD&acct2=VRTC9876&token2=a1-yyy
+    https://analysisprofithub.vercel.app/?app_id=121856&theme=dark&hide_header_login=true&acct1=CR123456&token1=a1-xxx&cur1=USD
     ```
 2. **Window `postMessage` Broadcast**:
     ```ts
@@ -283,7 +283,6 @@ Located at `src/components/iframe-wrapper/iframe-wrapper.tsx` and `src/component
 
 ### 7.1 Supported Third-Party Analysis & Bot Iframes
 
-- `DTrader Terminal`: `https://deriv-dtrader.vercel.app/`
 - `Analysis Tool`: `https://analysisprofithub.vercel.app/`
 - `Smart Analysis`: `https://www.smartanalysistool.com/`
 - `Deriv Circles`: `https://dcircles-six.vercel.app/`
@@ -349,7 +348,7 @@ export const TRADE_TYPE_CATEGORIES = {
 
 ### 9.2 Modifying External URLs
 
-- Update `.env` (e.g. `DTRADER_URL=https://deriv-dtrader.vercel.app`).
+- Update `.env` or brand configuration.
 - When referencing embedded tools, ensure the base URL does not double-append paths if the app is hosted at root `/`.
 
 ### 9.3 Verification & Build Commands
