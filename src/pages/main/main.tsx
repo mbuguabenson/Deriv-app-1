@@ -36,7 +36,6 @@ import RunPanel from '../../components/run-panel';
 import ChartModal from '../chart/chart-modal';
 import Dashboard from '../dashboard';
 import TopBarTradeController from '@/components/topbar-trade-controller';
-import { GlobalAiHud } from '@/components/global-ai-hud';
 import Scanner from '../bot-builder/scanner/scanner';
 import { TabIcon } from './tab-icons';
 import './main.scss';
@@ -790,20 +789,6 @@ const AppWrapper = observer(() => {
             ) : (
                 !is_open && !shouldHideRunPanelAndDrawer && <RunPanel />
             )}
-
-            {/* Site-Wide Autonomous AI HUD Bar */}
-            <div
-                className='global-ai-hud-floating-container'
-                style={{
-                    position: 'fixed',
-                    bottom: isDesktop ? '1.4rem' : '4.8rem',
-                    left: isDesktop ? '1.4rem' : '0.8rem',
-                    zIndex: 1050,
-                    pointerEvents: 'auto',
-                }}
-            >
-                <GlobalAiHud />
-            </div>
 
             <ChartModal />
             <TradingViewModal />
