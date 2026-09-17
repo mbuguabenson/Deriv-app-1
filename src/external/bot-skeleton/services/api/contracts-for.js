@@ -214,43 +214,7 @@ export default class ContractsFor {
                     }
                 }
 
-                // If api_base send didn't yield contracts, fetch immediately from public WebSocket
-                if (
-                    !response ||
-                    !response.contracts_for ||
-                    !Array.isArray(response.contracts_for.available) ||
-                    response.error
-                ) {
-                    try {
-                        response = await new Promise(resolve => {
-                            const wsUrl = 'wss://api.derivws.com/trading/v1/options/ws/public';
-                            const ws = new WebSocket(wsUrl);
-                            ws.onopen = () => {
-                                ws.send(JSON.stringify({ contracts_for: symbol }));
-                            };
-                            ws.onmessage = event => {
-                                try {
-                                    const data = JSON.parse(event.data);
-                                    ws.close();
-                                    resolve(data);
-                                } catch {
-                                    ws.close();
-                                    resolve(null);
-                                }
-                            };
-                            ws.onerror = () => {
-                                ws.close();
-                                resolve(null);
-                            };
-                            setTimeout(() => {
-                                if (ws.readyState <= 1) ws.close();
-                                resolve(null);
-                            }, 5000);
-                        });
-                    } catch (fallbackErr) {
-                        console.warn('[ContractsFor] Public WS fallback notice:', fallbackErr);
-                    }
-                }
+
 
                 if (
                     !response ||

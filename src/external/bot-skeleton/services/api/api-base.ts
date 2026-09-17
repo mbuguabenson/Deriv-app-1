@@ -940,36 +940,6 @@ class APIBase {
                 console.warn('[APIBase] getActiveSymbols network attempt failed, using fallback:', err);
             }
 
-            // If primary connection did not return symbols, fetch directly from the options public WebSocket
-            if (!active_symbols || active_symbols.length === 0) {
-                try {
-                    active_symbols = await new Promise((resolve) => {
-                        const ws = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
-                        const timer = setTimeout(() => {
-                            try { ws.close(); } catch {}
-                            resolve([]);
-                        }, 5000);
-                        ws.onopen = () => {
-                            ws.send(JSON.stringify({ active_symbols: 'brief' }));
-                        };
-                        ws.onmessage = (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                if (data?.active_symbols && Array.isArray(data.active_symbols) && data.active_symbols.length > 0) {
-                                    clearTimeout(timer);
-                                    try { ws.close(); } catch {}
-                                    resolve(data.active_symbols);
-                                }
-                            } catch {}
-                        };
-                        ws.onerror = () => {
-                            clearTimeout(timer);
-                            resolve([]);
-                        };
-                    });
-                } catch {}
-            }
-
             // If network did not return symbols, use the comprehensive fallback list
             if (!active_symbols || active_symbols.length === 0) {
                 active_symbols = buildFallbackActiveSymbols();

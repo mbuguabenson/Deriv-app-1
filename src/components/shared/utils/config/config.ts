@@ -941,7 +941,7 @@ const PUBLIC_APP_ID = '1089';
  */
 export const getLegacyServerURL = () => {
     const appId = getAppId() || PUBLIC_APP_ID;
-    return `${DERIV_PUBLIC_WS_BASE}?app_id=${encodeURIComponent(appId)}`;
+    return `${DERIV_WS_BASE}?app_id=${encodeURIComponent(appId)}&l=en&brand=deriv`;
 };
 
 export const getDefaultServerURL = () => getLegacyServerURL();
