@@ -4,7 +4,7 @@ import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
@@ -415,7 +415,6 @@ const OverlordAi: React.FC = observer(() => {
             setAutoPickBestMarket(false);
 
             if (botStateRef.current !== 'IDLE') {
-                const label = DERIVED_SYNTHETIC_MARKETS.find(m => m.symbol === sym)?.label || sym;
                 setTradeLog(prev => [
                     {
                         id: `log_switch_${Date.now()}`,
@@ -661,7 +660,6 @@ const OverlordAi: React.FC = observer(() => {
         const u6_50 = sample50.filter(d => d <= 5).length;
         const o3_50 = sample50.filter(d => d >= 4).length;
         const low_50 = sample50.filter(d => d <= 4).length;
-        const high_50 = count50 - low_50;
 
         const under8Pct = Math.round((u8_50 / count50) * 100);
         const over1Pct = Math.round((o1_50 / count50) * 100);
@@ -1181,13 +1179,13 @@ const OverlordAi: React.FC = observer(() => {
                 // Record cross-bot learning outcome
                 aiContinuousLearningService.recordBotTrade({
                     botName: 'OVERLORD_AI',
-                    strategy: activeStrategy,
-                    market: selectedMarket,
-                    contractType: activeStrategy,
-                    prediction: currentPrediction,
+                    strategy: contractType,
+                    market: symbolToTrade,
+                    contractType,
+                    prediction: barrierValue,
                     isWin: isWon,
                     profit: profitVal,
-                    stake: currentStake,
+                    stake: stakeAmount,
                 });
 
                 // Update Session Log

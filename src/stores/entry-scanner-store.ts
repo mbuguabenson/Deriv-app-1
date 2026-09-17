@@ -1,7 +1,7 @@
 import { action, makeObservable, observable, runInAction, computed, reaction } from 'mobx';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe, subscribeTicks } from '@/utils/websocket-handler';
+import { subscribeTicks } from '@/utils/websocket-handler';
 import { generateBotXML } from '@/utils/bot-xml-generator';
 import { DBOT_TABS } from '@/constants/bot-contents';
 
