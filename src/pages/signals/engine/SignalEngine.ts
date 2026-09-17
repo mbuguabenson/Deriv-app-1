@@ -400,7 +400,7 @@ export class SignalEngine {
         return signals;
     }
 
-    public generateSuperSignals(analysis: AnalysisResult, std: Signal[], pro: Signal[]): Signal[] {
+    public generateSuperSignals(_analysis: AnalysisResult, std: Signal[], pro: Signal[]): Signal[] {
         const all = [...std, ...pro];
         const superS = all.filter(s => s.probability >= 65);
 
