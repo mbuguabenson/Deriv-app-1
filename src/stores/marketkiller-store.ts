@@ -115,9 +115,9 @@ export default class MarketkillerStore {
 
     @observable accessor is_executing = false;
 
-    private main_tick_unsub: (() => void) | null = null;
+    private main_tick_unsub: { unsubscribe: () => void } | null = null;
     private recent_powers: number[][] = [];
-    private ribbon_unsubs: Map<string, () => void> = new Map();
+    private ribbon_unsubs: Map<string, { unsubscribe: () => void }> = new Map();
 
     // ── Rate-Limit Guard ──────────────────────────────────────────────────────
     // directBuy fires all trades in parallel (no proposal subscription limit).
@@ -338,7 +338,7 @@ export default class MarketkillerStore {
         try {
             if (this.main_tick_unsub) {
                 try {
-                    this.main_tick_unsub();
+                    this.main_tick_unsub.unsubscribe();
                 } catch (_) {}
                 this.main_tick_unsub = null;
             }
@@ -412,7 +412,7 @@ export default class MarketkillerStore {
         // Clean up previous ribbon subscriptions
         this.ribbon_unsubs.forEach(unsub => {
             try {
-                unsub();
+                unsub.unsubscribe();
             } catch (_) {}
         });
         this.ribbon_unsubs.clear();
@@ -442,13 +442,13 @@ export default class MarketkillerStore {
     public cleanupSubscriptions = () => {
         if (this.main_tick_unsub) {
             try {
-                this.main_tick_unsub();
+                this.main_tick_unsub.unsubscribe();
             } catch (_) {}
             this.main_tick_unsub = null;
         }
         this.ribbon_unsubs.forEach(unsub => {
             try {
-                unsub();
+                unsub.unsubscribe();
             } catch (_) {}
         });
         this.ribbon_unsubs.clear();
