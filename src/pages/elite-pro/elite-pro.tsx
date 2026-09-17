@@ -271,7 +271,7 @@ const ElitePro: React.FC = observer(() => {
     const store = useStore();
     const { run_panel, summary_card, transactions, client } = store;
     const currency = client?.currency || 'USD';
-    const logged_in = isLoggedIn();
+    const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
     // ── UI States ──
     const [selectedSymbol, setSelectedSymbol] = useState('R_100');
@@ -1280,22 +1280,6 @@ const ElitePro: React.FC = observer(() => {
                 <div className='blob blob-2' />
                 <div className='blob blob-3' />
             </div>
-
-            {!logged_in && (
-                <div className='ep-login-overlay'>
-                    <div className='ep-login-overlay__panel'>
-                        <span className='ep-login-overlay__icon'>👑</span>
-                        <h3>ProfitHub Elite Pro</h3>
-                        <p>
-                            Authenticate with your Deriv account to unlock advanced scanners, real-time digit
-                            statistics, and the automated neural trading engine.
-                        </p>
-                        <button className='ep-login-overlay__btn' onClick={handleLogin}>
-                            Connect Deriv Account
-                        </button>
-                    </div>
-                </div>
-            )}
 
             <div className='ep-layout'>
                 {/* ══════════════════════════════════════════════════════════════════

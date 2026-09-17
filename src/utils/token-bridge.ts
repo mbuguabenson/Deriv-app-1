@@ -292,8 +292,21 @@ export const resolveValidDerivWSToken = async (loginid?: string): Promise<string
     return '';
 };
 
-/** Returns true if the user is logged in (has any accounts) */
-export const isLoggedIn = (): boolean => Object.keys(getAccountsList()).length > 0;
+/** Returns true if the user is logged in (has any accounts or active tokens) */
+export const isLoggedIn = (): boolean => {
+    try {
+        if (Object.keys(getAccountsList()).length > 0) return true;
+        const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+        if (authInfo?.access_token && !isInvalidBearerToken(authInfo.access_token)) return true;
+        const botToken = localStorage.getItem('bot_new_api_token') || sessionStorage.getItem('bot_new_api_token');
+        if (botToken && !isInvalidBearerToken(botToken)) return true;
+        const directToken = localStorage.getItem('token') || localStorage.getItem('active_token') || localStorage.getItem('authToken');
+        if (directToken && !isInvalidBearerToken(directToken)) return true;
+        const activeLoginId = localStorage.getItem('active_loginid') || localStorage.getItem('client.loginid');
+        if (activeLoginId && (localStorage.getItem('client.accounts') || localStorage.getItem('clientAccounts'))) return true;
+    } catch {}
+    return false;
+};
 
 /** Returns all tokens from the logged-in session */
 export const getAllSessionTokens = (): string[] => Object.values(getAccountsList()).filter(Boolean);
