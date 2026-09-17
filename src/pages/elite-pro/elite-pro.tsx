@@ -113,6 +113,22 @@ const getBezierPath = (points: { x: number; y: number }[]) => {
     return d;
 };
 
+const createInitialMarketsMap = (): Map<string, MarketDigitData> => {
+    const map = new Map<string, MarketDigitData>();
+    MARKETS.forEach(m => {
+        map.set(m.symbol, {
+            symbol: m.symbol,
+            label: m.label,
+            digits: [],
+            currentPrice: '—',
+            lastDigit: 0,
+            tickCount: 0,
+            lastTickTime: 0,
+        });
+    });
+    return map;
+};
+
 // ─── SVG Spline Line Chart (50 Last Digits) ────────────────────────────────────
 
 const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
@@ -308,7 +324,7 @@ const ElitePro: React.FC = observer(() => {
     const lossesRef = useRef(0);
     const consecutiveLossesRef = useRef(0);
 
-    const marketsRef = useRef<Map<string, MarketDigitData>>(new Map());
+    const marketsRef = useRef<Map<string, MarketDigitData>>(createInitialMarketsMap());
     const subscriptionsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
     const unmountedRef = useRef(false);
     const uiThrottleRef = useRef<number>(0);
@@ -764,20 +780,22 @@ const ElitePro: React.FC = observer(() => {
             profit: number,
             details?: string
         ) => {
-            setTradeLog(prev =>
-                [
-                    {
-                        id: `EP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                        time: new Date().toLocaleTimeString(),
-                        type,
-                        market,
-                        result,
-                        profit,
-                        details,
-                    },
-                    ...prev,
-                ].slice(0, 100)
-            );
+            const entry: TradeLogEntry = {
+                id: `EP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                time: new Date().toLocaleTimeString(),
+                type,
+                market,
+                result,
+                profit,
+                details,
+            };
+            setTradeLog(prev => [entry, ...prev].slice(0, 100));
+
+            try {
+                const message = details ? `[${market}] ${type}: ${details}` : `[${market}] ${type}`;
+                const className = result === 'WIN' ? 'greentext' : result === 'LOSS' ? 'redtext' : 'journal-notify';
+                globalObserver.emit('bot.notify', { message, className });
+            } catch {}
         },
         []
     );
@@ -969,6 +987,7 @@ const ElitePro: React.FC = observer(() => {
                                     0,
                                     `⚡ Rotated to triggered setup on ${readyMarket.label} (${readyMarket.signalDirection} ${readyMarket.signalDirection === 'UNDER' ? '6' : '3'})`
                                 );
+                                throttleRender();
                                 await new Promise(r => setTimeout(r, 60));
                                 continue;
                             }
@@ -1095,6 +1114,9 @@ const ElitePro: React.FC = observer(() => {
                                 0,
                                 `🔄 [RECOVERY] Next Stake: $${currentStakeRef.current.toFixed(2)} ${currency} (Direction: ${targetStrategyRef.current.replace('_', ' ')})`
                             );
+
+                            // Post-loss cooldown: Allow market confirmation ticks to settle before next trigger
+                            await new Promise(r => setTimeout(r, 1500));
                         }
 
                         // Check Take Profit or Stop Loss after trade settlement
@@ -1222,15 +1244,9 @@ const ElitePro: React.FC = observer(() => {
 
     // Derived active analysis data
     const activeData = getActiveData();
-    const analysis = useMemo(
-        () => (activeData?.digits ? computeAnalysis(activeData.digits) : null),
-        [activeData?.digits, computeAnalysis]
-    );
-    const activeSignal = useMemo(
-        () => (activeData?.digits ? checkEntrySignal(activeData.digits, activeTargetStrategy) : null),
-        [activeData?.digits, checkEntrySignal, activeTargetStrategy]
-    );
-    const allMarketsData = useMemo(() => getLiveRankedMarkets(), [getLiveRankedMarkets]);
+    const analysis = activeData?.digits ? computeAnalysis(activeData.digits) : null;
+    const activeSignal = activeData?.digits ? checkEntrySignal(activeData.digits, activeTargetStrategy) : null;
+    const allMarketsData = getLiveRankedMarkets();
     const bestMarket = allMarketsData[0];
 
     const currentTradeType = useMemo(() => {
