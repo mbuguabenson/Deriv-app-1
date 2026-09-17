@@ -17,6 +17,27 @@ import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purc
 import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
+import {
+    Activity,
+    ArrowUpRight,
+    CheckCircle2,
+    Flame,
+    Gauge,
+    Grid,
+    LayoutGrid,
+    Minus,
+    Pause,
+    Play,
+    Radio,
+    RotateCcw,
+    Shield,
+    Sparkles,
+    Square,
+    Target,
+    TrendingDown,
+    TrendingUp,
+    Zap,
+} from 'lucide-react';
 import './elite-pro.scss';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -74,9 +95,6 @@ const extractDigitFromPrice = (quote: number | string | undefined | null): numbe
     return parseInt(parts[0].slice(-1), 10) || 0;
 };
 
-const countDigitsInRange = (digits: number[], low: number, high: number): number =>
-    digits.filter(d => d >= low && d <= high).length;
-
 const cleanMoneyInput = (v: string) => v.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
 
 // Generates smooth bezier curves for SVG line chart
@@ -95,7 +113,7 @@ const getBezierPath = (points: { x: number; y: number }[]) => {
     return d;
 };
 
-// ─── SVG Spline Line Chart ─────────────────────────────────────────────────────
+// ─── SVG Spline Line Chart (50 Last Digits) ────────────────────────────────────
 
 const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
     const slice = digits.slice(-CHART_DIGITS);
@@ -149,71 +167,77 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                     return (
                         <g key={level} className='ep-chart-grid-line'>
                             <line
-                                x1='0'
+                                x1={0}
                                 y1={y}
                                 x2={W}
                                 y2={y}
-                                stroke='var(--ep-svg-line-stroke)'
-                                strokeWidth='1'
-                                strokeDasharray={level === 0 || level === 9 ? undefined : '3,3'}
+                                stroke={level === 3 || level === 6 ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)'}
+                                strokeDasharray={level === 3 || level === 6 ? '4,4' : '2,2'}
                             />
                             <text
-                                x='2'
+                                x={8}
                                 y={y - 3}
-                                fill='var(--ep-svg-line-text)'
+                                fill={level === 3 || level === 6 ? '#c084fc' : '#64748b'}
                                 fontSize='9'
-                                fontFamily='system-ui, -apple-system, sans-serif'
+                                fontWeight='700'
                             >
-                                {level}
+                                {level === 6 ? 'Under 6 Barrier (6)' : level === 3 ? 'Over 3 Barrier (3)' : `Level ${level}`}
                             </text>
                         </g>
                     );
                 })}
 
                 {/* Spline Area Fill */}
-                {pathD && (
-                    <path
-                        d={`${pathD} L ${points[points.length - 1].x},${padTop + usableH} L ${points[0].x},${padTop + usableH} Z`}
-                        fill='url(#epLineGrad)'
-                        fillOpacity='0.12'
-                    />
-                )}
+                <path
+                    d={`${pathD} L ${points[points.length - 1].x},${H} L ${points[0].x},${H} Z`}
+                    fill='url(#epLineGrad)'
+                    opacity={0.12}
+                />
 
-                {/* Spline Line */}
-                {pathD && (
-                    <path
-                        d={pathD}
-                        fill='none'
-                        stroke='url(#epLineGrad)'
-                        strokeWidth='2.5'
-                        strokeLinecap='round'
-                        strokeLinejoin='round'
-                        filter='url(#epGlow)'
-                    />
-                )}
+                {/* Spline Curve Line */}
+                <path
+                    d={pathD}
+                    fill='none'
+                    stroke='url(#epLineGrad)'
+                    strokeWidth='2.8'
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    filter='url(#epGlow)'
+                />
 
-                {/* Digit Points */}
-                {points.map((p, i) => {
-                    const isLatest = i === points.length - 1;
+                {/* Digit Markers & Labels */}
+                {points.map((p, idx) => {
+                    const isLast = idx === points.length - 1;
                     const isUnder = p.d <= 5;
                     return (
-                        <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
+                        <g key={idx}>
                             <circle
                                 cx={p.x}
                                 cy={p.y}
-                                r={isLatest ? 7 : 4}
-                                fill={isLatest ? (isUnder ? '#38bdf8' : '#fb923c') : 'var(--ep-svg-orb-fill)'}
-                                stroke={isLatest ? '#ffffff' : 'var(--ep-svg-orb-stroke)'}
-                                strokeWidth={isLatest ? 2.5 : 1.5}
+                                r={isLast ? 6.5 : 3.5}
+                                fill={isLast ? (isUnder ? '#38bdf8' : '#f97316') : isUnder ? '#818cf8' : '#fb923c'}
+                                stroke='#0f172a'
+                                strokeWidth='1.5'
                             />
+                            {isLast && (
+                                <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={10}
+                                    fill='none'
+                                    stroke={isUnder ? '#38bdf8' : '#f97316'}
+                                    strokeWidth='1.5'
+                                    opacity='0.7'
+                                    className='ep-pulsing-circle'
+                                />
+                            )}
                             <text
                                 x={p.x}
-                                y={p.y - (isLatest ? 9 : 6)}
+                                y={p.y - (isLast ? 9 : 7)}
                                 textAnchor='middle'
-                                fill={isLatest ? 'var(--ep-svg-orb-text)' : 'var(--ep-svg-orb-text-muted)'}
-                                fontSize={isLatest ? 12 : 11}
-                                fontWeight={800}
-                                fontFamily='system-ui, -apple-system, sans-serif'
+                                fill={isLast ? '#ffffff' : isUnder ? '#93c5fd' : '#fdba74'}
+                                fontSize={isLast ? '11' : '8.5'}
+                                fontWeight={isLast ? '800' : '600'}
                             >
                                 {p.d}
                             </text>
@@ -225,63 +249,39 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
     );
 };
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── Main Elite Pro Component ──────────────────────────────────────────────────
 
-const ElitePro = observer(() => {
+const ElitePro: React.FC = observer(() => {
     const store = useStore();
-    const { client, run_panel, summary_card, transactions } = store;
-    const showElitePro = true;
+    const { run_panel, summary_card, transactions, client } = store;
     const currency = client?.currency || 'USD';
-    const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
+    const logged_in = isLoggedIn();
 
-    // ── Mode Toggle state ──
-    const [executionMode, setExecutionMode] = useState<ExecutionMode>('local');
-    const [strategies, setStrategies] = useState<StrategyOption[]>([]);
-    const [selectedStrategy, setSelectedStrategy] = useState('martingale');
-    const [activeRunId, setActiveRunId] = useState<string | null>(null);
-    const [serverRunStatus, setServerRunStatus] = useState<string>('idle');
-
-    // ── Market state ──
-    const [selectedSymbol, setSelectedSymbol] = useState(MARKETS[0].symbol);
+    // ── UI States ──
+    const [selectedSymbol, setSelectedSymbol] = useState('R_100');
     const [scanAll, setScanAll] = useState(true);
-    const [autoInputBestMarket, setAutoInputBestMarket] = useState(false);
+    const [showWideView, setShowWideView] = useState(false);
+    const [autoInputBestMarket, setAutoInputBestMarket] = useState(true);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState(true);
     const [maxRunsBeforeSwitch, setMaxRunsBeforeSwitch] = useState('7');
     const [marketsSideExpanded, setMarketsSideExpanded] = useState(true);
-    const marketsRef = useRef<Map<string, MarketDigitData>>(new Map());
-    const [renderTick, forceRender] = useState(0);
-    const subscriptionsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
-    const unmountedRef = useRef(false);
-    const uiThrottleRef = useRef(0);
-    const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const selectedSymbolRef = useRef(MARKETS[0].symbol);
-    const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
+    const [isAiLearningHubOpen, setIsAiLearningHubOpen] = useState(false);
 
-    // Component lifecycle
-    useEffect(() => {
-        unmountedRef.current = false;
-        return () => {
-            unmountedRef.current = true;
-            if (throttleTimerRef.current) {
-                clearTimeout(throttleTimerRef.current);
-                throttleTimerRef.current = null;
-            }
-        };
-    }, []);
+    // ── Strategy Configuration & Inputs ──
+    const [executionMode, setExecutionMode] = useState<ExecutionMode>('local');
+    const [strategies, setStrategies] = useState<StrategyOption[]>([]);
+    const [selectedStrategy, setSelectedStrategy] = useState('');
+    const [activeRunId, setActiveRunId] = useState<string | null>(null);
+    const [serverRunStatus, setServerRunStatus] = useState<string>('idle');
 
-    // Keep selectedSymbolRef in sync
-    useEffect(() => {
-        selectedSymbolRef.current = selectedSymbol;
-    }, [selectedSymbol]);
-
-    // ── Autotrading parameters ──
-    const [autoState, setAutoState] = useState<AutoState>('IDLE');
-    const [isAiLearningHubOpen, setIsAiLearningHubOpen] = useState<boolean>(false);
-    const [stake, setStake] = useState('0.35');
-    const [takeProfit, setTakeProfit] = useState('10');
-    const [stopLoss, setStopLoss] = useState('5');
+    const [stake, setStake] = useState('0.50');
+    const [takeProfit, setTakeProfit] = useState('10.00');
+    const [stopLoss, setStopLoss] = useState('25.00');
     const [martingale, setMartingale] = useState('2.6');
     const [tickDuration, setTickDuration] = useState('1');
+
+    // ── Bot Running State ──
+    const [autoState, setAutoState] = useState<AutoState>('IDLE');
     const [tradeLog, setTradeLog] = useState<TradeLogEntry[]>([]);
     const [totalProfit, setTotalProfit] = useState(0);
     const [wins, setWins] = useState(0);
@@ -291,23 +291,39 @@ const ElitePro = observer(() => {
         type: null,
     });
 
-    const currentStakeRef = useRef(0.35);
+    // ── Strategy Direction Control ──
+    const targetStrategyRef = useRef<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+    const [activeTargetStrategy, setActiveTargetStrategy] = useState<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
+
+    // ── Synchronized References for Stable Asynchronous Loops ──
+    const currentStakeRef = useRef(0.50);
     const autoAbortRef = useRef<AbortController | null>(null);
     const autoStateRef = useRef<AutoState>('IDLE');
     const contractStreamAbortRef = useRef<Set<AbortController>>(new Set());
     const serverSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
+    const selectedSymbolRef = useRef(selectedSymbol);
 
     const totalProfitRef = useRef(0);
     const winsRef = useRef(0);
     const lossesRef = useRef(0);
     const consecutiveLossesRef = useRef(0);
 
-    // Sync refs with state
+    const marketsRef = useRef<Map<string, MarketDigitData>>(new Map());
+    const subscriptionsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    const unmountedRef = useRef(false);
+    const uiThrottleRef = useRef<number>(0);
+    const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [, forceRender] = useState(0);
+
+    // Sync refs
+    useEffect(() => {
+        selectedSymbolRef.current = selectedSymbol;
+    }, [selectedSymbol]);
     useEffect(() => {
         autoStateRef.current = autoState;
     }, [autoState]);
     useEffect(() => {
-        currentStakeRef.current = parseFloat(stake) || 0.35;
+        currentStakeRef.current = parseFloat(stake) || 0.50;
     }, [stake]);
     useEffect(() => {
         totalProfitRef.current = totalProfit;
@@ -319,7 +335,7 @@ const ElitePro = observer(() => {
         lossesRef.current = losses;
     }, [losses]);
 
-    // ── Throttle UI re-renders with trailing edge so frames are never dropped ──
+    // ── Throttle UI re-renders ──
     const throttleRender = useCallback(() => {
         const now = Date.now();
         const elapsed = now - uiThrottleRef.current;
@@ -343,99 +359,41 @@ const ElitePro = observer(() => {
         }
     }, []);
 
-    // ── Strategy Direction Control ──
-    // Default is 'AUTO': dynamically picks the mathematically strongest direction
-    const targetStrategyRef = useRef<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
-    const [activeTargetStrategy, setActiveTargetStrategy] = useState<'UNDER_6' | 'OVER_3' | 'AUTO'>('AUTO');
-
-    // ── Handle manual market selection ──
-    const handleManualMarketSelect = useCallback(
-        (sym: string) => {
-            setSelectedSymbol(sym);
-            selectedSymbolRef.current = sym;
-            lastProcessedTicksRef.current.set(sym, -1);
-            if (autoInputBestMarket) setAutoInputBestMarket(false);
-
-            if (autoStateRef.current !== 'IDLE') {
-                const label = MARKETS.find(m => m.symbol === sym)?.label || sym;
-                setTradeLog(prev =>
-                    [
-                        {
-                            id: `EP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                            time: new Date().toLocaleTimeString(),
-                            type: 'MARKET SWITCHED',
-                            market: label,
-                            result: 'PENDING' as const,
-                            profit: 0,
-                            details: `Focused live trading on ${label}`,
-                        },
-                        ...prev,
-                    ].slice(0, 100)
-                );
-            }
-            throttleRender();
-        },
-        [autoInputBestMarket, throttleRender]
-    );
-
-    // ── Fetch Deriv Automation strategies if in server mode ──
-    useEffect(() => {
-        if (executionMode === 'deriv_server' && logged_in) {
-            const fetchStrats = async () => {
-                try {
-                    const res = await autoListStrategies();
-                    if (res?.auto_list_strategies?.strategies) {
-                        setStrategies(res.auto_list_strategies.strategies);
-                    } else {
-                        setStrategies([{ id: 'martingale', name: 'Martingale Strategy' }]);
-                    }
-                } catch {
-                    setStrategies([{ id: 'martingale', name: 'Martingale Strategy' }]);
-                }
-            };
-            void fetchStrats();
-        }
-    }, [executionMode, logged_in]);
-
-    // ── Deep Statistical Analysis Calculation ──
+    // ── Comprehensive Multi-Horizon Statistical Analyzer ──
     const computeAnalysis = useCallback((digits: number[]) => {
         const slice = digits.slice(-ANALYSIS_WINDOW);
         const total = slice.length || 1;
 
-        // 1. Under (0-4) vs Over (5-9)
-        const under04 = countDigitsInRange(slice, 0, 4);
-        const over59 = countDigitsInRange(slice, 5, 9);
+        // Ratio 1: Under (0-4) vs Over (5-9)
+        const under04 = slice.filter(d => d >= 0 && d <= 4).length;
+        const over59 = slice.filter(d => d >= 5 && d <= 9).length;
         const pctUnder04 = (under04 / total) * 100;
         const pctOver59 = (over59 / total) * 100;
 
-        // 2. Under (0-5) vs Over (4-9) - Canonical Elite Pro Boundaries
-        const under05 = countDigitsInRange(slice, 0, 5);
-        const over49 = countDigitsInRange(slice, 4, 9);
+        // Ratio 2: Under (0-5) vs Over (4-9)
+        const under05 = slice.filter(d => d >= 0 && d <= 5).length;
+        const over49 = slice.filter(d => d >= 4 && d <= 9).length;
         const pctUnder05 = (under05 / total) * 100;
         const pctOver49 = (over49 / total) * 100;
 
-        // 3. Split Momentum (First 25 vs Second 25 ticks)
-        const firstHalf = slice.slice(0, 25);
-        const secondHalf = slice.slice(25);
-        const firstHalfUnder = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 0, 5) / firstHalf.length) * 100 : 50;
-        const firstHalfOver = firstHalf.length > 0 ? (countDigitsInRange(firstHalf, 4, 9) / firstHalf.length) * 100 : 50;
-        const secondHalfUnder = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 0, 5) / secondHalf.length) * 100 : 50;
-        const secondHalfOver = secondHalf.length > 0 ? (countDigitsInRange(secondHalf, 4, 9) / secondHalf.length) * 100 : 50;
+        // Trend momentum: First 25 vs Second 25
+        const firstHalf = slice.slice(0, Math.floor(total / 2));
+        const secondHalf = slice.slice(Math.floor(total / 2));
+        const firstHalfUnder04 = firstHalf.filter(d => d >= 0 && d <= 4).length / (firstHalf.length || 1);
+        const secondHalfUnder04 = secondHalf.filter(d => d >= 0 && d <= 4).length / (secondHalf.length || 1);
+        const underIncreasing = secondHalfUnder04 >= firstHalfUnder04;
+        const overIncreasing = !underIncreasing;
 
-        const underIncreasing = secondHalfUnder >= firstHalfUnder;
-        const overIncreasing = secondHalfOver >= firstHalfOver;
-
-        // 4. Frequency distribution & Highest Digits
+        // Frequency table for all 10 digits (0..9)
         const freq = new Array(10).fill(0);
         slice.forEach(d => {
             if (d >= 0 && d <= 9) freq[d]++;
         });
 
-        // Highest Entry Digit in Under (0-4 preferred, 0-5 full)
-        const underFreq = freq.slice(0, 6);
+        // Highest Entry Digit in Under (0-5)
         let maxUnderCount = -1;
         let highestUnderDigit = 0;
-        underFreq.forEach((c, idx) => {
+        freq.slice(0, 6).forEach((c, idx) => {
             if (c > maxUnderCount) {
                 maxUnderCount = c;
                 highestUnderDigit = idx;
@@ -443,11 +401,10 @@ const ElitePro = observer(() => {
         });
         const highestUnderPct = (maxUnderCount / total) * 100;
 
-        // Highest Entry Digit in Over (5-9 preferred, 4-9 full)
-        const overFreq = freq.slice(4, 10);
+        // Highest Entry Digit in Over (4-9)
         let maxOverCount = -1;
         let highestOverDigit = 4;
-        overFreq.forEach((c, idx) => {
+        freq.slice(4, 10).forEach((c, idx) => {
             if (c > maxOverCount) {
                 maxOverCount = c;
                 highestOverDigit = idx + 4;
@@ -455,19 +412,7 @@ const ElitePro = observer(() => {
         });
         const highestOverPct = (maxOverCount / total) * 100;
 
-        // Overall dominant side & market bias
-        let bias: 'under' | 'over' | 'neutral' = 'neutral';
-        if (pctUnder05 >= 58 && pctUnder05 > pctOver49) {
-            bias = 'under';
-        } else if (pctOver49 >= 58 && pctOver49 > pctUnder05) {
-            bias = 'over';
-        } else if (pctUnder04 >= 54 && pctUnder04 > pctOver59) {
-            bias = 'under';
-        } else if (pctOver59 >= 54 && pctOver59 > pctUnder04) {
-            bias = 'over';
-        }
-
-        // Micro Window: Last 15 and Last 10 ticks
+        // Micro Windows: Last 15, Last 10, and Last 7 ticks
         const last15 = slice.slice(-15);
         const last15UnderCount = last15.filter(d => d <= 5).length;
         const last15OverCount = last15.filter(d => d >= 4).length;
@@ -476,28 +421,27 @@ const ElitePro = observer(() => {
         const last10UnderCount = last10.filter(d => d <= 5).length;
         const last10OverCount = last10.filter(d => d >= 4).length;
 
-        // Trend flip / exhaustion detection
-        const recent3 = slice.slice(-3);
-        const recentTrendFlip =
-            (bias === 'under' && recent3.every(d => d >= 7)) ||
-            (bias === 'over' && recent3.every(d => d <= 2));
+        const last7 = slice.slice(-7);
+        const last7UnderCount = last7.filter(d => d <= 5).length;
+        const last7OverCount = last7.filter(d => d >= 4).length;
 
-        const secondHalfHighDigits = secondHalf.filter(d => d >= 6).length;
-        const secondHalfLowDigits = secondHalf.filter(d => d <= 3).length;
+        // Market Bias
+        let bias: 'under' | 'over' | 'neutral' = 'neutral';
+        if ((pctUnder05 >= 58 || (pctUnder04 >= 55 && underIncreasing)) && under05 > over49) {
+            bias = 'under';
+        } else if ((pctOver49 >= 58 || (pctOver59 >= 55 && overIncreasing)) && over49 > under05) {
+            bias = 'over';
+        }
 
-        // Composite Quality Score (0 to 100)
+        // Composite Quality Score (0 - 100)
         let qualityScore = 0;
         const maxDominance = Math.max(pctUnder05, pctOver49);
-        qualityScore += Math.min(45, (maxDominance / 70) * 45); // Up to 45 pts from macro ratio
-
-        const microCount = bias === 'under' ? last15UnderCount : last15OverCount;
-        qualityScore += (microCount / 15) * 30; // Up to 30 pts from 15-tick micro window
-
+        qualityScore += Math.min(40, (maxDominance / 70) * 40);
+        const microCount = bias === 'under' ? last10UnderCount : last10OverCount;
+        qualityScore += (microCount / 10) * 35; // 35 pts from 10-tick micro dominance
         const maxDigitPct = Math.max(highestUnderPct, highestOverPct);
-        qualityScore += Math.min(15, (maxDigitPct / 25) * 15); // Up to 15 pts from digit concentration
-
-        if (!recentTrendFlip) qualityScore += 10; // 10 pts for no immediate trend reversal
-
+        qualityScore += Math.min(15, (maxDigitPct / 25) * 15);
+        if (bias !== 'neutral') qualityScore += 10;
         qualityScore = Math.min(100, Math.round(qualityScore));
 
         return {
@@ -521,11 +465,10 @@ const ElitePro = observer(() => {
             last15OverCount,
             last10UnderCount,
             last10OverCount,
+            last7UnderCount,
+            last7OverCount,
             underIncreasing,
             overIncreasing,
-            recentTrendFlip,
-            isUnderTrendFlipped: secondHalfHighDigits >= 15,
-            isOverTrendFlipped: secondHalfLowDigits >= 15,
             qualityScore,
             total,
         };
@@ -535,7 +478,6 @@ const ElitePro = observer(() => {
     const checkEntrySignal = useCallback(
         (
             digits: number[],
-            _waitCycles = 0,
             forcedStrategy?: 'UNDER_6' | 'OVER_3' | 'AUTO'
         ): {
             direction: 'UNDER' | 'OVER';
@@ -551,7 +493,7 @@ const ElitePro = observer(() => {
             const currentLastDigit = digits[digits.length - 1];
             const prevDigit = digits.length >= 2 ? digits[digits.length - 2] : null;
 
-            // Determine active direction: evaluate live statistical edge unless explicitly forced
+            // Determine active direction
             let activeStrat: 'UNDER_6' | 'OVER_3';
             if (forcedStrategy && forcedStrategy !== 'AUTO') {
                 activeStrat = forcedStrategy;
@@ -562,26 +504,25 @@ const ElitePro = observer(() => {
             }
 
             if (activeStrat === 'UNDER_6') {
-                // High Quality Under 6 Qualification Criteria:
-                // 1. 50-tick Under 0-5 >= 58% OR Under 0-4 >= 54%
-                // 2. Micro 15-tick Under >= 9/15
-                // 3. Not in structural trend reversal
-                const isConditionMet =
-                    (a.pctUnder05 >= 58 || a.pctUnder04 >= 54) &&
-                    a.last15UnderCount >= 9 &&
-                    !a.isUnderTrendFlipped;
+                // Strict Conditions for Under 6:
+                // 1. Under 0-4 vs Over 5-9 is >= 55% & increasing OR 50-tick Under 0-5 >= 58%
+                // 2. 50-tick Under 0-5 count is dominant over Over 4-9 (e.g. 34 Under vs 25 Over)
+                // 3. Last 10 ticks >= 7 under AND Last 7 ticks >= 5 under
+                const isMacroDominant = (a.pctUnder04 >= 55 && a.underIncreasing) || a.pctUnder05 >= 56;
+                const is50TicksDominant = a.under05 > a.over49 && a.under05 >= 27;
+                const isMicroDominant = a.last10UnderCount >= 7 && a.last7UnderCount >= 4;
 
-                // High-Precision Entry Triggers:
-                // Trigger 1 (Peak Digit Match): Current tick matches highest frequency under digit
-                const isPeakDigitTrigger = currentLastDigit === a.highestUnderDigit;
+                const isConditionMet = isMacroDominant && is50TicksDominant && isMicroDominant;
 
-                // Trigger 2 (Pullback Snapback): Previous tick was a minor pullback (6,7,8) and snapped back to core under (<= 2)
-                const isPullbackSnapback = prevDigit !== null && prevDigit >= 6 && prevDigit <= 8 && currentLastDigit <= 2;
-
-                // Trigger 3 (Core Momentum Entry): Very strong micro dominance (last 10 >= 8) and current tick <= 3
+                // Patient Entry Digit Trigger:
+                // Trigger A: Current digit matches the highest frequency Under entry digit
+                const isPeakDigitMatch = currentLastDigit === a.highestUnderDigit;
+                // Trigger B: Snapback from brief pullback (prev digit >= 6, current digit <= 2)
+                const isSnapback = prevDigit !== null && prevDigit >= 6 && currentLastDigit <= 2;
+                // Trigger C: Extreme momentum (last 10 >= 8 under and current digit <= 3)
                 const isCoreMomentum = a.last10UnderCount >= 8 && currentLastDigit <= 3;
 
-                const isTriggered = isConditionMet && (isPeakDigitTrigger || isPullbackSnapback || isCoreMomentum);
+                const isTriggered = isConditionMet && (isPeakDigitMatch || isSnapback || isCoreMomentum);
 
                 return {
                     direction: 'UNDER',
@@ -589,34 +530,30 @@ const ElitePro = observer(() => {
                     triggerDigit: a.highestUnderDigit,
                     reason: isConditionMet
                         ? isTriggered
-                            ? `🎯 UNDER 6 Trigger Confirmed! (Last Digit: ${currentLastDigit}, Target: ${a.highestUnderDigit}, Edge: ${a.pctUnder05.toFixed(0)}%)`
-                            : `Waiting for Under 6 Entry Digit [${a.highestUnderDigit}] (U0-5: ${a.pctUnder05.toFixed(0)}%, Micro: ${a.last15UnderCount}/15)`
-                        : `Momentum Consolidating (U0-5: ${a.pctUnder05.toFixed(0)}%, Micro: ${a.last15UnderCount}/15). Waiting for >= 58% edge.`,
+                            ? `🎯 UNDER 6 Trigger! Digit [${currentLastDigit}] matched entry digit [${a.highestUnderDigit}] (U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10)`
+                            : `Waiting for Under Entry Digit [${a.highestUnderDigit}] (Current: ${currentLastDigit}, U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10)`
+                        : `Consolidating (U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10). Awaiting >= 55% edge & 7/10 ratio.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                     isAutoPaused: !isConditionMet,
                     qualityScore: a.qualityScore,
                 };
             } else {
-                // High Quality Over 3 Qualification Criteria:
-                // 1. 50-tick Over 4-9 >= 58% OR Over 5-9 >= 54%
-                // 2. Micro 15-tick Over >= 9/15
-                // 3. Not in structural trend reversal
-                const isConditionMet =
-                    (a.pctOver49 >= 58 || a.pctOver59 >= 54) &&
-                    a.last15OverCount >= 9 &&
-                    !a.isOverTrendFlipped;
+                // Strict Conditions for Over 3:
+                // 1. Over 5-9 vs Under 0-4 is >= 55% & increasing OR 50-tick Over 4-9 >= 56%
+                // 2. 50-tick Over 4-9 count is dominant over Under 0-5 (e.g. 34 Over vs 25 Under)
+                // 3. Last 10 ticks >= 7 over AND Last 7 ticks >= 4 over
+                const isMacroDominant = (a.pctOver59 >= 55 && a.overIncreasing) || a.pctOver49 >= 56;
+                const is50TicksDominant = a.over49 > a.under05 && a.over49 >= 27;
+                const isMicroDominant = a.last10OverCount >= 7 && a.last7OverCount >= 4;
 
-                // High-Precision Entry Triggers:
-                // Trigger 1 (Peak Digit Match): Current tick matches highest frequency over digit
-                const isPeakDigitTrigger = currentLastDigit === a.highestOverDigit;
+                const isConditionMet = isMacroDominant && is50TicksDominant && isMicroDominant;
 
-                // Trigger 2 (Pullback Snapback): Previous tick was a minor pullback (1,2,3) and snapped back to core over (>= 7)
-                const isPullbackSnapback = prevDigit !== null && prevDigit >= 1 && prevDigit <= 3 && currentLastDigit >= 7;
-
-                // Trigger 3 (Core Momentum Entry): Very strong micro dominance (last 10 >= 8) and current tick >= 6
+                // Patient Entry Digit Trigger:
+                const isPeakDigitMatch = currentLastDigit === a.highestOverDigit;
+                const isSnapback = prevDigit !== null && prevDigit <= 3 && currentLastDigit >= 7;
                 const isCoreMomentum = a.last10OverCount >= 8 && currentLastDigit >= 6;
 
-                const isTriggered = isConditionMet && (isPeakDigitTrigger || isPullbackSnapback || isCoreMomentum);
+                const isTriggered = isConditionMet && (isPeakDigitMatch || isSnapback || isCoreMomentum);
 
                 return {
                     direction: 'OVER',
@@ -624,9 +561,9 @@ const ElitePro = observer(() => {
                     triggerDigit: a.highestOverDigit,
                     reason: isConditionMet
                         ? isTriggered
-                            ? `🎯 OVER 3 Trigger Confirmed! (Last Digit: ${currentLastDigit}, Target: ${a.highestOverDigit}, Edge: ${a.pctOver49.toFixed(0)}%)`
-                            : `Waiting for Over 3 Entry Digit [${a.highestOverDigit}] (O4-9: ${a.pctOver49.toFixed(0)}%, Micro: ${a.last15OverCount}/15)`
-                        : `Momentum Consolidating (O4-9: ${a.pctOver49.toFixed(0)}%, Micro: ${a.last15OverCount}/15). Waiting for >= 58% edge.`,
+                            ? `🎯 OVER 3 Trigger! Digit [${currentLastDigit}] matched entry digit [${a.highestOverDigit}] (O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10)`
+                            : `Waiting for Over Entry Digit [${a.highestOverDigit}] (Current: ${currentLastDigit}, O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10)`
+                        : `Consolidating (O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10). Awaiting >= 55% edge & 7/10 ratio.`,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
                     isAutoPaused: !isConditionMet,
                     qualityScore: a.qualityScore,
@@ -644,7 +581,7 @@ const ElitePro = observer(() => {
             ...data,
             digits: [...data.digits],
         };
-    }, [selectedSymbol, renderTick]);
+    }, [selectedSymbol]);
 
     // ── Real-Time Tick Subscriptions for Multi-Market Scanner ──
     const [streamRefreshKey, setStreamRefreshKey] = useState(0);
@@ -691,21 +628,8 @@ const ElitePro = observer(() => {
         };
     }, []);
 
-    const isBotIdle = autoState === 'IDLE';
     useEffect(() => {
-        const shouldSubscribe = showElitePro || !isBotIdle;
         const activeSubs = subscriptionsRef.current;
-
-        if (!shouldSubscribe) {
-            activeSubs.forEach(sub => {
-                try {
-                    sub.unsubscribe();
-                } catch {}
-            });
-            activeSubs.clear();
-            return;
-        }
-
         const symbolsToSubscribe = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbol];
 
         symbolsToSubscribe.forEach(sym => {
@@ -722,8 +646,6 @@ const ElitePro = observer(() => {
                 });
             }
         });
-
-        let isEffectActive = true;
 
         symbolsToSubscribe.forEach(sym => {
             if (activeSubs.has(sym)) return;
@@ -751,81 +673,30 @@ const ElitePro = observer(() => {
 
             activeSubs.set(sym, sub);
         });
+    }, [scanAll, selectedSymbol, streamRefreshKey, throttleRender]);
 
-        // Historical tick backfill for instant analysis
-        const backfillHistory = async () => {
-            if (!api_base.api || unmountedRef.current) return;
-            for (const sym of symbolsToSubscribe) {
-                if (!isEffectActive || unmountedRef.current) break;
-                const market = marketsRef.current.get(sym);
-                if (market && market.digits.length < 30) {
-                    try {
-                        const res = await api_base.api.send({
-                            ticks_history: sym,
-                            end: 'latest',
-                            count: ANALYSIS_WINDOW,
-                            style: 'ticks',
-                        });
-                        if (isEffectActive && !unmountedRef.current && res?.history?.prices) {
-                            const prices: number[] = res.history.prices || [];
-                            const newDigits = prices.map(p => extractDigitFromPrice(p));
-                            if (market.digits.length < 30) {
-                                market.digits = newDigits.slice(-MAX_DIGITS);
-                                if (prices.length > 0) {
-                                    const lastPrice = prices[prices.length - 1];
-                                    market.currentPrice = String(lastPrice);
-                                    market.lastDigit = extractDigitFromPrice(lastPrice);
-                                    market.lastTickTime = Date.now();
-                                }
-                                throttleRender();
-                            }
-                        }
-                    } catch {}
-                    await new Promise(r => setTimeout(r, 60));
-                }
-            }
-        };
-
-        void backfillHistory();
-
-        activeSubs.forEach((sub, sym) => {
-            if (!symbolsToSubscribe.includes(sym)) {
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            unmountedRef.current = true;
+            subscriptionsRef.current.forEach(sub => {
                 try {
                     sub.unsubscribe();
                 } catch {}
-                activeSubs.delete(sym);
-            }
-        });
-
-        return () => {
-            isEffectActive = false;
+            });
+            subscriptionsRef.current.clear();
         };
-    }, [scanAll, selectedSymbol, showElitePro, client?.loginid, isBotIdle, throttleRender, streamRefreshKey]);
+    }, []);
 
-    // ── Active Market Data & Analysis ──
-    const activeData = getActiveData();
-
-    const analysis = useMemo(() => {
-        if (!activeData || activeData.digits.length < 15) return null;
-        return computeAnalysis(activeData.digits);
-    }, [activeData, computeAnalysis, renderTick]);
-
-    const activeSignal = useMemo(() => {
-        if (!activeData || activeData.digits.length < 20) return null;
-        return checkEntrySignal(activeData.digits, 0, activeTargetStrategy);
-    }, [activeData, checkEntrySignal, activeTargetStrategy, renderTick]);
-
-    // ── Multi-Market Comparative Overview ──
-    const allMarketsData = useMemo(() => {
+    // ── Live Ranked Markets Scanner Radar ──
+    const getLiveRankedMarkets = useCallback(() => {
         const result: Array<{
             symbol: string;
             label: string;
             currentPrice: string;
             lastDigit: number;
-            bias: string;
-            strength: number;
-            pctUnder04: number;
-            pctOver59: number;
+            qualityScore: number;
+            bias: 'under' | 'over' | 'neutral';
             under05: number;
             over49: number;
             pctUnder05: number;
@@ -833,108 +704,30 @@ const ElitePro = observer(() => {
             highestUnderDigit: number;
             highestOverDigit: number;
             hasSignal: boolean;
-            signalDirection?: 'UNDER' | 'OVER';
-            isTriggered: boolean;
-            qualityScore: number;
-            radarStatus: 'green' | 'yellow' | 'red' | 'blue' | 'normal';
-        }> = [];
-
-        marketsRef.current.forEach((data, sym) => {
-            if (data.digits.length < 10) return;
-            const a = computeAnalysis(data.digits);
-            const entrySignal = checkEntrySignal(data.digits, 0, 'AUTO');
-            const strength = Math.max(a.pctUnder05, a.pctOver49);
-
-            let radarStatus: 'green' | 'yellow' | 'red' | 'blue' | 'normal' = 'normal';
-            if (entrySignal) {
-                if (entrySignal.status === 'TRIGGERED') radarStatus = 'green';
-                else if (!entrySignal.isAutoPaused) radarStatus = 'yellow';
-                else radarStatus = 'blue';
-            } else if (strength < 54) {
-                radarStatus = 'red';
-            } else {
-                radarStatus = 'normal';
-            }
-
-            result.push({
-                symbol: sym,
-                label: data.label,
-                currentPrice: data.currentPrice,
-                lastDigit: data.lastDigit,
-                bias: a.bias,
-                strength,
-                pctUnder04: a.pctUnder04,
-                pctOver59: a.pctOver59,
-                pctUnder05: a.pctUnder05,
-                pctOver49: a.pctOver49,
-                under05: a.under05,
-                over49: a.over49,
-                highestUnderDigit: a.highestUnderDigit,
-                highestOverDigit: a.highestOverDigit,
-                hasSignal: !!entrySignal && !entrySignal.isAutoPaused,
-                signalDirection: entrySignal?.direction,
-                isTriggered: entrySignal?.status === 'TRIGGERED',
-                qualityScore: a.qualityScore,
-                radarStatus,
-            });
-        });
-
-        result.sort((a, b) => {
-            if (a.isTriggered && !b.isTriggered) return -1;
-            if (!a.isTriggered && b.isTriggered) return 1;
-            if (a.hasSignal && !b.hasSignal) return -1;
-            if (!a.hasSignal && b.hasSignal) return 1;
-            return b.qualityScore - a.qualityScore;
-        });
-
-        return result;
-    }, [computeAnalysis, checkEntrySignal, renderTick]);
-
-    // Best Market identification
-    const bestMarket = useMemo(() => {
-        if (allMarketsData.length === 0) return null;
-        return allMarketsData[0];
-    }, [allMarketsData]);
-
-    // Auto-select best market on idle
-    useEffect(() => {
-        if (autoInputBestMarket && bestMarket && bestMarket.symbol !== selectedSymbol && autoState === 'IDLE') {
-            setSelectedSymbol(bestMarket.symbol);
-            selectedSymbolRef.current = bestMarket.symbol;
-        }
-    }, [autoInputBestMarket, bestMarket, selectedSymbol, autoState]);
-
-    // ── Dynamic Ranked Markets Helper for the Continuous Trading Loop ──
-    const getLiveRankedMarkets = useCallback(() => {
-        const result: Array<{
-            symbol: string;
-            label: string;
-            currentPrice: string;
-            lastDigit: number;
-            bias: string;
-            strength: number;
-            hasSignal: boolean;
             isTriggered: boolean;
             signalDirection?: 'UNDER' | 'OVER';
-            qualityScore: number;
         }> = [];
 
-        marketsRef.current.forEach((data, sym) => {
-            if (data.digits.length < 15) return;
-            const a = computeAnalysis(data.digits);
-            const entrySignal = checkEntrySignal(data.digits, 0, 'AUTO');
-            const strength = Math.max(a.pctUnder05, a.pctOver49);
+        marketsRef.current.forEach(m => {
+            const analysis = computeAnalysis(m.digits);
+            const signal = checkEntrySignal(m.digits, 'AUTO');
+
             result.push({
-                symbol: sym,
-                label: data.label,
-                currentPrice: data.currentPrice,
-                lastDigit: data.lastDigit,
-                bias: a.bias,
-                strength,
-                hasSignal: !!entrySignal && !entrySignal.isAutoPaused,
-                isTriggered: entrySignal?.status === 'TRIGGERED',
-                signalDirection: entrySignal?.direction,
-                qualityScore: a.qualityScore,
+                symbol: m.symbol,
+                label: m.label,
+                currentPrice: m.currentPrice,
+                lastDigit: m.lastDigit,
+                qualityScore: analysis.qualityScore,
+                bias: analysis.bias,
+                under05: analysis.under05,
+                over49: analysis.over49,
+                pctUnder05: analysis.pctUnder05,
+                pctOver49: analysis.pctOver49,
+                highestUnderDigit: analysis.highestUnderDigit,
+                highestOverDigit: analysis.highestOverDigit,
+                hasSignal: Boolean(signal && !signal.isAutoPaused),
+                isTriggered: Boolean(signal && signal.status === 'TRIGGERED'),
+                signalDirection: signal?.direction,
             });
         });
 
@@ -956,6 +749,7 @@ const ElitePro = observer(() => {
                 transactions.pushTransaction({ ...data, run_id: run_panel.run_id });
                 run_panel.onBotContractEvent(data);
                 summary_card.onBotContractEvent(data);
+                globalObserver.emit('bot.contract', data);
             } catch {}
         },
         [run_panel, summary_card, transactions]
@@ -1057,146 +851,47 @@ const ElitePro = observer(() => {
         [tickDuration, currency, pushContract]
     );
 
-    // ── Subscribe to Server-Side Deriv Automation ──
-    const subscribeToServerRun = useCallback(
-        (runId: string) => {
-            if (!api_base.api) return;
-            try {
-                const observable = api_base.api.subscribe({ auto_get: 1, run_id: runId });
-                const sub = safeSubscribe(observable, (data: Record<string, unknown>) => {
-                    if (unmountedRef.current) return;
+    // ── Handle manual market selection ──
+    const handleManualMarketSelect = useCallback(
+        (sym: string) => {
+            setSelectedSymbol(sym);
+            selectedSymbolRef.current = sym;
+            if (autoInputBestMarket) setAutoInputBestMarket(false);
 
-                    const runDetails = (data?.auto_get || data?.auto_start) as
-                        | {
-                              status?: string;
-                              stop_reason?: string;
-                              total_stake?: number;
-                              total_payout?: number;
-                              contracts?: Array<{
-                                  contract_id?: number;
-                                  stake?: number;
-                                  buy_price?: number;
-                                  transaction_id?: number;
-                                  start_time?: number;
-                                  contract_type?: string;
-                                  profit?: number;
-                                  barrier?: string;
-                                  status?: string;
-                              }>;
-                          }
-                        | undefined;
-
-                    if (!runDetails) return;
-
-                    const status = runDetails.status || 'idle';
-                    setServerRunStatus(status);
-
-                    if (status === 'stopped') {
-                        setAutoState('IDLE');
-                        autoStateRef.current = 'IDLE';
-                        setActiveRunId(null);
-                        addLogEntry(
-                            'SERVER STOPPED',
-                            `Reason: ${runDetails.stop_reason || 'user_stopped'}`,
-                            'PENDING',
-                            0
-                        );
-                    } else if (status === 'paused') {
-                        setAutoState('PAUSED');
-                        autoStateRef.current = 'PAUSED';
-                    } else if (status === 'running') {
-                        setAutoState('TRADING');
-                        autoStateRef.current = 'TRADING';
-                    }
-
-                    const totalSpent = Number(runDetails.total_stake || 0);
-                    const totalPayout = Number(runDetails.total_payout || 0);
-                    const profit = Number((totalPayout - totalSpent).toFixed(2));
-
-                    setTotalProfit(profit);
-                    totalProfitRef.current = profit;
-
-                    const contracts = runDetails.contracts || [];
-                    let winsCount = 0;
-                    let lossesCount = 0;
-
-                    contracts.forEach(c => {
-                        const p = Number(c.profit || 0);
-                        if (c.status === 'won' || p > 0) winsCount++;
-                        else if (c.status === 'lost' || p < 0) lossesCount++;
-
-                        if (c.contract_id) {
-                            pushContract({
-                                buy_price: c.buy_price || c.stake,
-                                contract_id: c.contract_id,
-                                transaction_ids: { buy: c.transaction_id },
-                                date_start: c.start_time,
-                                display_name: selectedSymbol,
-                                underlying_symbol: selectedSymbol,
-                                shortcode: `AUTO_SERVER_${selectedStrategy.toUpperCase()}_${c.contract_id}`,
-                                contract_type:
-                                    c.contract_type || (analysis?.bias === 'over' ? 'DIGITOVER' : 'DIGITUNDER'),
-                                currency: currency || 'USD',
-                                profit: c.profit,
-                                barrier: c.barrier,
-                                is_completed: c.status === 'won' || c.status === 'lost',
-                            });
-                        }
-                    });
-
-                    setWins(winsCount);
-                    winsRef.current = winsCount;
-                    setLosses(lossesCount);
-                    lossesRef.current = lossesCount;
-
-                    if (contracts.length > 0) {
-                        const latest = contracts[contracts.length - 1];
-                        const latestProfit = Number(latest.profit || 0);
-                        const isWon = latest.status === 'won' || latestProfit > 0;
-                        addLogEntry(
-                            `SERVER ${latest.contract_type || 'TRADE'}`,
-                            selectedSymbol,
-                            isWon ? 'WIN' : 'LOSS',
-                            latestProfit
-                        );
-                    }
-                });
-
-                serverSubscriptionRef.current = sub;
-            } catch (err) {
-                console.error('[ElitePro] Server subscription error:', err);
+            if (autoStateRef.current !== 'IDLE') {
+                const label = MARKETS.find(m => m.symbol === sym)?.label || sym;
+                addLogEntry('MARKET SWITCHED', label, 'PENDING', 0, `Focused live trading on ${label}`);
             }
+            throttleRender();
         },
-        [selectedSymbol, selectedStrategy, analysis?.bias, currency, pushContract, addLogEntry]
+        [autoInputBestMarket, addLogEntry, throttleRender]
     );
 
-    // ── Continuous Non-Stalling Automated Trading Engine ──
+    // ── Automated Trading Execution Loop (Continuous Non-Stalling Loop) ──
     const startAutoTrading = useCallback(async () => {
         if (!logged_in) {
-            window.location.href = await generateOAuthURL();
+            const oauthUrl = await generateOAuthURL();
+            if (oauthUrl) window.location.replace(oauthUrl);
             return;
         }
 
-        if (autoStateRef.current !== 'IDLE' && autoStateRef.current !== 'PAUSED') return;
-
-        if (autoStateRef.current === 'IDLE') {
-            setTotalProfit(0);
-            totalProfitRef.current = 0;
-            setWins(0);
-            winsRef.current = 0;
-            setLosses(0);
-            lossesRef.current = 0;
-            consecutiveLossesRef.current = 0;
-            targetStrategyRef.current = 'AUTO';
-            setActiveTargetStrategy('AUTO');
-            lastProcessedTicksRef.current.clear();
-        }
-
-        const tp = parseFloat(takeProfit) || 999;
-        const sl = parseFloat(stopLoss) || 999;
+        const tp = parseFloat(takeProfit) || 10;
+        const sl = parseFloat(stopLoss) || 25;
+        const baseStake = parseFloat(stake) || 0.50;
         const mgMultiplier = parseFloat(martingale) || 2.6;
-        const baseStake = parseFloat(stake) || 0.35;
+
         currentStakeRef.current = baseStake;
+        consecutiveLossesRef.current = 0;
+        targetStrategyRef.current = 'AUTO';
+        setActiveTargetStrategy('AUTO');
+
+        addLogEntry(
+            'ENGINE STARTED',
+            MARKETS.find(m => m.symbol === selectedSymbol)?.label || selectedSymbol,
+            'PENDING',
+            0,
+            `Stake: $${baseStake.toFixed(2)} | TP: $${tp} | SL: $${sl} | Martingale: ${mgMultiplier}x`
+        );
 
         const startLocalEngineLoop = () => {
             setAutoState('SCANNING');
@@ -1204,7 +899,6 @@ const ElitePro = observer(() => {
             autoAbortRef.current = new AbortController();
             const abortSignal = autoAbortRef.current.signal;
             let tradeRuns = 0;
-            let scanWaitTicks = 0;
 
             const loop = async () => {
                 while (!abortSignal.aborted && autoStateRef.current !== 'IDLE') {
@@ -1229,16 +923,15 @@ const ElitePro = observer(() => {
                         break;
                     }
 
-                    // 2. Market Alternation & Best Market Selection
+                    // 2. Auto-Input Best Market / Selection
                     let targetSym = selectedSymbolRef.current;
-                    if (autoInputBestMarket && scanWaitTicks === 0 && tradeRuns === 0) {
+                    if (autoInputBestMarket && currentStakeRef.current <= baseStake) {
                         const liveRanked = getLiveRankedMarkets();
                         const top = liveRanked[0];
                         if (top && top.symbol && top.symbol !== selectedSymbolRef.current) {
                             targetSym = top.symbol;
                             setSelectedSymbol(targetSym);
                             selectedSymbolRef.current = targetSym;
-                            lastProcessedTicksRef.current.set(targetSym, -1);
                         }
                     }
 
@@ -1252,78 +945,32 @@ const ElitePro = observer(() => {
                         continue;
                     }
 
-                    const currTickCount = currentData.tickCount || 0;
-                    const lastProcessed = lastProcessedTicksRef.current.get(targetSym) ?? -1;
-
-                    // Non-blocking tick cadence
-                    if (lastProcessed !== -1 && currTickCount <= lastProcessed) {
-                        await new Promise(r => setTimeout(r, 50));
-                        continue;
-                    }
-                    lastProcessedTicksRef.current.set(targetSym, currTickCount);
-                    scanWaitTicks++;
-
-                    // 3. Evaluate Signal with Dynamic / Recovery Strategy
+                    // 3. Evaluate Signal with Dynamic or Recovery Direction
                     const activeStrat = targetStrategyRef.current;
-                    const entrySignal = checkEntrySignal(currentData.digits, scanWaitTicks, activeStrat);
+                    const entrySignal = checkEntrySignal(currentData.digits, activeStrat);
 
-                    // 4. Handle Waiting / Market Switching
+                    // 4. Handle Waiting / Multi-Market Radar Switching
                     if (!entrySignal || entrySignal.status === 'WAITING') {
-                        if (autoSwitchMarkets) {
+                        if (autoSwitchMarkets && currentStakeRef.current <= baseStake) {
                             const liveRanked = getLiveRankedMarkets();
-                            // If another market has an immediately triggered setup with Quality Score >= 62, switch instantly!
                             const readyMarket = liveRanked.find(
-                                m => m.symbol !== targetSym && m.isTriggered && m.qualityScore >= 62
+                                m => m.symbol !== targetSym && m.isTriggered && m.qualityScore >= 60
                             );
 
                             if (readyMarket) {
                                 setSelectedSymbol(readyMarket.symbol);
                                 selectedSymbolRef.current = readyMarket.symbol;
-                                lastProcessedTicksRef.current.set(readyMarket.symbol, -1);
-                                scanWaitTicks = 0;
-
-                                if (currentStakeRef.current <= baseStake) {
-                                    targetStrategyRef.current = 'AUTO';
-                                    setActiveTargetStrategy('AUTO');
-                                }
-
+                                targetStrategyRef.current = 'AUTO';
+                                setActiveTargetStrategy('AUTO');
                                 addLogEntry(
-                                    'SMART SWITCH',
+                                    'SMART ROTATION',
                                     readyMarket.label,
                                     'PENDING',
                                     0,
-                                    `⚡ Switched to ${readyMarket.label} (Triggered ${readyMarket.signalDirection} ${readyMarket.signalDirection === 'UNDER' ? '6' : '3'})`
+                                    `⚡ Rotated to triggered setup on ${readyMarket.label} (${readyMarket.signalDirection} ${readyMarket.signalDirection === 'UNDER' ? '6' : '3'})`
                                 );
                                 await new Promise(r => setTimeout(r, 60));
                                 continue;
-                            }
-
-                            // If current market has no qualified setup for >= 10 ticks, rotate to next best trending candidate
-                            if ((!entrySignal || entrySignal.isAutoPaused) && scanWaitTicks >= 10) {
-                                const bestCandidate = liveRanked.find(
-                                    m => m.symbol !== targetSym && (m.hasSignal || m.qualityScore >= 56)
-                                );
-                                if (bestCandidate) {
-                                    setSelectedSymbol(bestCandidate.symbol);
-                                    selectedSymbolRef.current = bestCandidate.symbol;
-                                    lastProcessedTicksRef.current.set(bestCandidate.symbol, -1);
-                                    scanWaitTicks = 0;
-
-                                    if (currentStakeRef.current <= baseStake) {
-                                        targetStrategyRef.current = 'AUTO';
-                                        setActiveTargetStrategy('AUTO');
-                                    }
-
-                                    addLogEntry(
-                                        'SMART SWITCH',
-                                        bestCandidate.label,
-                                        'PENDING',
-                                        0,
-                                        `Rotated to strong setup on ${bestCandidate.label}`
-                                    );
-                                    await new Promise(r => setTimeout(r, 100));
-                                    continue;
-                                }
                             }
                         }
 
@@ -1339,13 +986,11 @@ const ElitePro = observer(() => {
                             }
                         }
 
-                        const delay = autoStateRef.current === 'WAITING_TRIGGER' ? 60 : 200;
-                        await new Promise(r => setTimeout(r, delay));
+                        await new Promise(r => setTimeout(r, 100));
                         continue;
                     }
 
-                    // 5. Trigger Confirmed: Execute Trade
-                    scanWaitTicks = 0;
+                    // 5. Trigger Confirmed: Execute Trade Immediately
                     setAutoState('TRADING');
                     autoStateRef.current = 'TRADING';
 
@@ -1356,7 +1001,7 @@ const ElitePro = observer(() => {
                             currentData.label,
                             'PENDING',
                             0,
-                            `Stake: ${stakeToUse.toFixed(2)} ${currency} | ${entrySignal.reason}`
+                            `Stake: $${stakeToUse.toFixed(2)} ${currency} | ${entrySignal.reason}`
                         );
 
                         const profit = await executeTrade(
@@ -1371,7 +1016,7 @@ const ElitePro = observer(() => {
                         const isWin = profit > 0;
                         const resultStr = isWin ? 'WIN' : 'LOSS';
 
-                        // Record cross-bot learning outcome
+                        // Record trade in continuous learning engine
                         aiContinuousLearningService.recordBotTrade({
                             botName: 'ELITE_PRO',
                             strategy: `DIGIT${entrySignal.direction}_${entrySignal.prediction}`,
@@ -1389,7 +1034,7 @@ const ElitePro = observer(() => {
                             currentData.label,
                             resultStr,
                             profit,
-                            `Return: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} ${currency}`
+                            `Return: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} ${currency}`
                         );
 
                         const nextProfit = Number((totalProfitRef.current + profit).toFixed(2));
@@ -1404,7 +1049,7 @@ const ElitePro = observer(() => {
                             consecutiveLossesRef.current = 0;
                             currentStakeRef.current = baseStake;
 
-                            // Reset to AUTO on win so the bot continuously follows optimal statistical momentum
+                            // Reset to AUTO on win so the bot seamlessly follows optimal statistical momentum
                             targetStrategyRef.current = 'AUTO';
                             setActiveTargetStrategy('AUTO');
                         } else {
@@ -1412,7 +1057,7 @@ const ElitePro = observer(() => {
                             setLosses(lossesRef.current);
                             consecutiveLossesRef.current++;
 
-                            // Martingale Recovery Calculation (capped at 5 steps to protect capital)
+                            // Martingale Recovery Calculation (capped at 5 steps)
                             const maxSteps = 5;
                             if (consecutiveLossesRef.current < maxSteps) {
                                 currentStakeRef.current = Number((currentStakeRef.current * mgMultiplier).toFixed(2));
@@ -1428,20 +1073,17 @@ const ElitePro = observer(() => {
                                 );
                             }
 
-                            // Intelligent Loss Analysis:
-                            // If current market trend is still strong (>= 58%), maintain direction and wait for trigger
-                            // If market structural bias flipped, adapt direction
+                            // Intelligent Loss Adaptation:
                             const updatedDigits = marketsRef.current.get(targetSym)?.digits || [];
                             const freshAnalysis = computeAnalysis(updatedDigits);
 
-                            if (freshAnalysis.pctUnder05 >= 58) {
+                            if (freshAnalysis.pctUnder05 >= 56) {
                                 targetStrategyRef.current = 'UNDER_6';
                                 setActiveTargetStrategy('UNDER_6');
-                            } else if (freshAnalysis.pctOver49 >= 58) {
+                            } else if (freshAnalysis.pctOver49 >= 56) {
                                 targetStrategyRef.current = 'OVER_3';
                                 setActiveTargetStrategy('OVER_3');
                             } else {
-                                // Market entered chop on loss: reset to AUTO to allow scanner to rotate to top market
                                 targetStrategyRef.current = 'AUTO';
                                 setActiveTargetStrategy('AUTO');
                             }
@@ -1451,7 +1093,7 @@ const ElitePro = observer(() => {
                                 currentData.label,
                                 'PENDING',
                                 0,
-                                `🔄 [RECOVERY] Next Stake: ${currentStakeRef.current.toFixed(2)} ${currency} (Direction: ${targetStrategyRef.current.replace('_', ' ')})`
+                                `🔄 [RECOVERY] Next Stake: $${currentStakeRef.current.toFixed(2)} ${currency} (Direction: ${targetStrategyRef.current.replace('_', ' ')})`
                             );
                         }
 
@@ -1471,32 +1113,6 @@ const ElitePro = observer(() => {
                             break;
                         }
 
-                        // Periodic Market Rotation after N successful runs
-                        const maxRuns = parseInt(maxRunsBeforeSwitch, 10) || 7;
-                        if (tradeRuns >= maxRuns && autoSwitchMarkets && currentStakeRef.current <= baseStake) {
-                            tradeRuns = 0;
-                            const liveRanked = getLiveRankedMarkets();
-                            const bestCandidate = liveRanked[0];
-                            if (
-                                bestCandidate &&
-                                bestCandidate.symbol !== targetSym &&
-                                (bestCandidate.isTriggered || bestCandidate.hasSignal || bestCandidate.qualityScore >= 56)
-                            ) {
-                                setSelectedSymbol(bestCandidate.symbol);
-                                selectedSymbolRef.current = bestCandidate.symbol;
-                                targetStrategyRef.current = 'AUTO';
-                                setActiveTargetStrategy('AUTO');
-                                lastProcessedTicksRef.current.set(bestCandidate.symbol, -1);
-                                addLogEntry(
-                                    'SMART SWITCH',
-                                    bestCandidate.label,
-                                    'PENDING',
-                                    0,
-                                    `Rotated to top market ${bestCandidate.label} after ${maxRuns} runs`
-                                );
-                            }
-                        }
-
                         // Always cycle back to SCANNING so the loop continues effortlessly!
                         if (autoStateRef.current !== 'IDLE') {
                             setAutoState('SCANNING');
@@ -1512,66 +1128,13 @@ const ElitePro = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 1500));
+                        await new Promise(r => setTimeout(r, 1200));
                     }
                 }
             };
 
             void loop();
         };
-
-        if (executionMode === 'deriv_server') {
-            const activeBias = analysis?.bias || 'under';
-            const ct = activeBias === 'over' ? 'DIGITOVER' : 'DIGITUNDER';
-            const bar = activeBias === 'over' ? '3' : '6';
-
-            setAutoState('TRADING');
-            autoStateRef.current = 'TRADING';
-            try {
-                const res = await autoStart({
-                    contract_template: {
-                        amount: baseStake,
-                        basis: 'stake',
-                        contract_type: ct,
-                        currency: currency || 'USD',
-                        duration: parseInt(tickDuration) || 1,
-                        duration_unit: 't',
-                        underlying_symbol: selectedSymbol,
-                        barrier: bar,
-                    },
-                    strategy_id: selectedStrategy,
-                    strategy_parameters: {
-                        multiplier: mgMultiplier,
-                        stop_loss: sl,
-                        take_profit: tp,
-                    },
-                    subscribe: 1,
-                    passthrough: undefined,
-                    req_id: undefined,
-                });
-
-                if (res?.error) throw new Error(res.error.message || 'Server start error');
-
-                const runId = res?.auto_start?.run_id;
-                if (runId) {
-                    setActiveRunId(runId);
-                    setServerRunStatus('running');
-                    addLogEntry('RUN LAUNCHED', `Server Automation Run: ${runId}`, 'PENDING', 0);
-                    subscribeToServerRun(runId);
-                } else {
-                    throw new Error('No run ID returned from server');
-                }
-            } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                console.warn('[ElitePro] Server mode rejected, switching to local neural engine:', msg);
-                addLogEntry('SERVER RUN REJECTED', 'Falling back to Local Neural Engine...', 'PENDING', 0, msg);
-                setExecutionMode('local');
-                setTimeout(() => {
-                    startLocalEngineLoop();
-                }, 100);
-            }
-            return;
-        }
 
         startLocalEngineLoop();
     }, [
@@ -1580,101 +1143,41 @@ const ElitePro = observer(() => {
         stopLoss,
         martingale,
         stake,
-        executionMode,
-        analysis?.bias,
         currency,
-        tickDuration,
         selectedSymbol,
-        selectedStrategy,
-        subscribeToServerRun,
         addLogEntry,
         autoInputBestMarket,
         getLiveRankedMarkets,
         checkEntrySignal,
         autoSwitchMarkets,
         executeTrade,
-        maxRunsBeforeSwitch,
         computeAnalysis,
     ]);
 
     // ── Pause, Resume, Stop controls ──
-    const pauseAutoTrading = useCallback(async () => {
-        if (executionMode === 'deriv_server' && activeRunId) {
-            try {
-                await autoPause(activeRunId);
-                setServerRunStatus('paused');
-                setAutoState('PAUSED');
-                autoStateRef.current = 'PAUSED';
-                addLogEntry('SERVER PAUSED', 'Server Run Paused', 'PENDING', 0);
-            } catch (err) {
-                console.error('[ElitePro] Server pause error:', err);
-            }
-        } else {
-            setAutoState('PAUSED');
-            autoStateRef.current = 'PAUSED';
-            addLogEntry('BOT PAUSED', selectedSymbol, 'PENDING', 0, 'Auto-trading paused by user');
-        }
-    }, [executionMode, activeRunId, selectedSymbol, addLogEntry]);
+    const pauseAutoTrading = useCallback(() => {
+        setAutoState('PAUSED');
+        autoStateRef.current = 'PAUSED';
+        addLogEntry('BOT PAUSED', selectedSymbol, 'PENDING', 0, 'Auto-trading paused');
+    }, [selectedSymbol, addLogEntry]);
 
-    const resumeAutoTrading = useCallback(async () => {
-        if (executionMode === 'deriv_server' && activeRunId) {
-            try {
-                await autoResume(activeRunId);
-                setServerRunStatus('running');
-                setAutoState('TRADING');
-                autoStateRef.current = 'TRADING';
-                addLogEntry('SERVER RESUMED', 'Server Run Resumed', 'PENDING', 0);
-            } catch (err) {
-                console.error('[ElitePro] Server resume error:', err);
-            }
-        } else {
-            if (autoStateRef.current === 'PAUSED') {
-                setAutoState('SCANNING');
-                autoStateRef.current = 'SCANNING';
-                addLogEntry('BOT RESUMED', selectedSymbol, 'PENDING', 0, 'Auto-trading resumed');
-            }
+    const resumeAutoTrading = useCallback(() => {
+        if (autoStateRef.current === 'PAUSED') {
+            setAutoState('SCANNING');
+            autoStateRef.current = 'SCANNING';
+            addLogEntry('BOT RESUMED', selectedSymbol, 'PENDING', 0, 'Auto-trading resumed');
         }
-    }, [executionMode, activeRunId, selectedSymbol, addLogEntry]);
+    }, [selectedSymbol, addLogEntry]);
 
-    const stopAutoTrading = useCallback(async () => {
-        if (executionMode === 'deriv_server') {
-            if (activeRunId) {
-                try {
-                    await autoStop(activeRunId);
-                    addLogEntry('SERVER STOPPED', 'Automation Run Stopped', 'PENDING', 0);
-                } catch (err) {
-                    console.error('[ElitePro] Server stop error:', err);
-                }
-            }
-            serverSubscriptionRef.current?.unsubscribe();
-            serverSubscriptionRef.current = null;
-            setActiveRunId(null);
-            setServerRunStatus('stopped');
-            setAutoState('IDLE');
-            autoStateRef.current = 'IDLE';
-        } else {
-            setAutoState('IDLE');
-            autoStateRef.current = 'IDLE';
-            autoAbortRef.current?.abort();
-            autoAbortRef.current = null;
-            contractStreamAbortRef.current.forEach(c => c.abort());
-            contractStreamAbortRef.current.clear();
-            addLogEntry('BOT STOPPED', selectedSymbol, 'PENDING', 0, 'Auto-trading stopped');
-        }
-    }, [executionMode, activeRunId, selectedSymbol, addLogEntry]);
-
-    // Handle global manual stop
-    useEffect(() => {
-        const handleGlobalStop = () => {
-            if (autoStateRef.current !== 'IDLE') {
-                void stopAutoTrading();
-            }
-        };
-        globalObserver.register('bot.manual_stop', handleGlobalStop);
-        return () => {
-            globalObserver.unregister('bot.manual_stop', handleGlobalStop);
-        };
-    }, [stopAutoTrading]);
+    const stopAutoTrading = useCallback(() => {
+        setAutoState('IDLE');
+        autoStateRef.current = 'IDLE';
+        autoAbortRef.current?.abort();
+        autoAbortRef.current = null;
+        contractStreamAbortRef.current.forEach(c => c.abort());
+        contractStreamAbortRef.current.clear();
+        addLogEntry('BOT STOPPED', selectedSymbol, 'PENDING', 0, 'Auto-trading stopped');
+    }, [selectedSymbol, addLogEntry]);
 
     // TopBar controller integration
     useEffect(() => {
@@ -1712,26 +1215,24 @@ const ElitePro = observer(() => {
         };
     }, [startAutoTrading, stopAutoTrading]);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        const abortControllers = contractStreamAbortRef.current;
-        return () => {
-            if (executionMode === 'deriv_server') {
-                void stopAutoTrading();
-            } else {
-                setAutoState('IDLE');
-                autoAbortRef.current?.abort();
-                abortControllers.forEach(c => c.abort());
-            }
-        };
-    }, [executionMode, stopAutoTrading]);
-
     const handleLogin = async () => {
         const oauthUrl = await generateOAuthURL();
         if (oauthUrl) window.location.replace(oauthUrl);
     };
 
-    // Determine current trade type & prediction to display
+    // Derived active analysis data
+    const activeData = getActiveData();
+    const analysis = useMemo(
+        () => (activeData?.digits ? computeAnalysis(activeData.digits) : null),
+        [activeData?.digits, computeAnalysis]
+    );
+    const activeSignal = useMemo(
+        () => (activeData?.digits ? checkEntrySignal(activeData.digits, activeTargetStrategy) : null),
+        [activeData?.digits, checkEntrySignal, activeTargetStrategy]
+    );
+    const allMarketsData = useMemo(() => getLiveRankedMarkets(), [getLiveRankedMarkets]);
+    const bestMarket = allMarketsData[0];
+
     const currentTradeType = useMemo(() => {
         if (activeTargetStrategy === 'UNDER_6') return 'DIGITUNDER';
         if (activeTargetStrategy === 'OVER_3') return 'DIGITOVER';
@@ -1747,6 +1248,14 @@ const ElitePro = observer(() => {
         if (analysis?.bias === 'over') return 3;
         return 6;
     }, [activeTargetStrategy, activeSignal, analysis?.bias]);
+
+    // Check whether current live digit matches the active entry trigger digit
+    const isUnderTriggerGlowing = Boolean(
+        activeData && analysis && activeData.lastDigit === analysis.highestUnderDigit
+    );
+    const isOverTriggerGlowing = Boolean(
+        activeData && analysis && activeData.lastDigit === analysis.highestOverDigit
+    );
 
     return (
         <div className='elite-pro'>
@@ -1774,7 +1283,7 @@ const ElitePro = observer(() => {
 
             <div className='ep-layout'>
                 {/* ══════════════════════════════════════════════════════════════════
-                    LEFT / SIDE PANEL: ALL MARKETS SCANNER
+                    SIDE PANEL: ALL DERIVED SYNTHETIC MARKETS SCANNER
                     ══════════════════════════════════════════════════════════════════ */}
                 <aside className={`ep-sidebar ${marketsSideExpanded ? 'expanded' : 'collapsed'}`}>
                     <div className='ep-sidebar__header'>
@@ -1806,7 +1315,7 @@ const ElitePro = observer(() => {
                                     onChange={e => setAutoInputBestMarket(e.target.checked)}
                                 />
                                 <span className='ep-checkbox-custom' />
-                                <span>Auto-Select Best Market</span>
+                                <span>Auto-Input Best Market</span>
                             </label>
                         </div>
                     )}
@@ -1819,56 +1328,35 @@ const ElitePro = observer(() => {
                                 return (
                                     <div
                                         key={m.symbol}
-                                        className={`ep-side-market-card ${isSelected ? 'active' : ''} ${m.hasSignal ? 'signal-glowing' : ''} radar-${m.radarStatus}`}
-                                        onClick={() => {
-                                            handleManualMarketSelect(m.symbol);
-                                        }}
+                                        className={`ep-side-market-card ${isSelected ? 'active' : ''} ${m.isTriggered ? 'signal-glowing' : ''}`}
+                                        onClick={() => handleManualMarketSelect(m.symbol)}
                                     >
                                         <div className='ep-side-market-card__top'>
-                                            <div
-                                                className='name-box'
-                                                style={{
-                                                    flex: 1,
-                                                    minWidth: 0,
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                }}
-                                            >
-                                                <span className='label' style={{ marginRight: '4px' }}>
-                                                    {m.label}
-                                                </span>
+                                            <div className='name-box'>
+                                                <span className='label'>{m.label}</span>
                                                 {isBest && <span className='best-tag'>TOP</span>}
                                                 {m.hasSignal && (
-                                                    <span
-                                                        className={`signal-tag signal-tag--${m.signalDirection?.toLowerCase()}`}
-                                                    >
+                                                    <span className={`signal-tag signal-tag--${m.signalDirection?.toLowerCase()}`}>
                                                         {m.signalDirection} {m.signalDirection === 'UNDER' ? '6' : '3'}
                                                     </span>
                                                 )}
                                             </div>
                                             <div className='price-box'>{m.currentPrice}</div>
-                                            <div
-                                                className='last-digit-badge'
-                                                style={{ marginLeft: 'auto', flexShrink: 0 }}
-                                            >
-                                                <strong
-                                                    className={m.lastDigit < 5 ? 'digit-under' : 'digit-over'}
-                                                    style={{ fontSize: '12px' }}
-                                                >
+                                            <div className='last-digit-badge'>
+                                                <strong className={m.lastDigit <= 5 ? 'digit-under' : 'digit-over'}>
                                                     {m.lastDigit}
                                                 </strong>
                                             </div>
                                         </div>
 
-                                        <div className='ep-side-market-card__stats' style={{ marginTop: '6px' }}>
+                                        <div className='ep-side-market-card__stats'>
                                             <div className='ratio-mini-bar'>
                                                 <div className='u-part' style={{ width: `${m.pctUnder05}%` }} />
                                                 <div className='o-part' style={{ width: `${m.pctOver49}%` }} />
                                             </div>
                                             <div className='stat-labels'>
-                                                <span className='u-text'>U (0-5): {m.pctUnder05.toFixed(0)}%</span>
-                                                <span className='o-text'>O (4-9): {m.pctOver49.toFixed(0)}%</span>
+                                                <span className='u-text'>U (0-5): {m.under05} ({m.pctUnder05.toFixed(0)}%)</span>
+                                                <span className='o-text'>O (4-9): {m.over49} ({m.pctOver49.toFixed(0)}%)</span>
                                             </div>
                                         </div>
 
@@ -1877,7 +1365,7 @@ const ElitePro = observer(() => {
                                                 {m.bias.toUpperCase()} (Score: {m.qualityScore})
                                             </span>
                                             <span className='best-digits'>
-                                                U*:{m.highestUnderDigit} | O*:{m.highestOverDigit}
+                                                U*:[{m.highestUnderDigit}] | O*:[{m.highestOverDigit}]
                                             </span>
                                         </div>
                                     </div>
@@ -1890,16 +1378,14 @@ const ElitePro = observer(() => {
                 {/* ══════════════════════════════════════════════════════════════════
                     MAIN WORKSPACE CONTENT
                     ══════════════════════════════════════════════════════════════════ */}
-                <main
-                    className={`ep-main-content ${activeData ? `radar-${allMarketsData.find(m => m.symbol === activeData.symbol)?.radarStatus || 'normal'}` : ''}`}
-                >
-                    {/* ── Top Header ── */}
+                <main className='ep-main-content'>
+                    {/* ── Top Header Bar ── */}
                     <div className='ep-glass ep-header'>
                         <div className='ep-header__title'>
                             <span className='ep-crown'>👑</span>
                             <div className='ep-title-meta'>
-                                <span className='ep-title-text'>Elite Pro</span>
-                                <span className='ep-title-sub'>Neural Multi-Market Scanner &amp; Automated Trader</span>
+                                <span className='ep-title-text'>Elite Pro Trading Suite</span>
+                                <span className='ep-title-sub'>High-Precision Digit Scanner, Neural Triggers &amp; Automated Over/Under Engine</span>
                             </div>
                         </div>
 
@@ -1916,40 +1402,34 @@ const ElitePro = observer(() => {
                                 <div
                                     className='ep-best-market-badge'
                                     onClick={() => handleManualMarketSelect(bestMarket.symbol)}
-                                    title='Click to focus best market'
+                                    title='Click to switch to best ranked market'
                                 >
                                     🏆 Best Market: <strong>{bestMarket.label}</strong> ({bestMarket.bias.toUpperCase()} — Score: {bestMarket.qualityScore})
                                 </div>
                             )}
-                            <span
-                                className={`ep-engine-status-badge ep-engine-status-badge--${autoState.toLowerCase()}`}
-                            >
+
+                            <span className={`ep-engine-status-badge ep-engine-status-badge--${autoState.toLowerCase()}`}>
                                 {autoState === 'IDLE' && '● ENGINE IDLE'}
                                 {autoState === 'SCANNING' && '⚡ SCANNING CRITERIA'}
                                 {autoState === 'WAITING_TRIGGER' && '🎯 WAITING TRIGGER DIGIT'}
                                 {autoState === 'TRADING' && '🚀 EXECUTING TRADE'}
                                 {autoState === 'PAUSED' && '⏸ ENGINE PAUSED'}
-                                {executionMode === 'deriv_server' &&
-                                    serverRunStatus !== 'idle' &&
-                                    ` (Server: ${serverRunStatus})`}
                             </span>
                         </div>
                     </div>
 
-                    {/* ── Quick Market Switch Dropdown & Top Controls ── */}
+                    {/* ── Active Market Bar & Quick Dropdown ── */}
                     <div className='ep-glass ep-market-bar'>
                         <div className='select-container'>
                             <span className='label'>Active Market:</span>
                             <select
                                 className='ep-market-select'
                                 value={selectedSymbol}
-                                onChange={e => {
-                                    handleManualMarketSelect(e.target.value);
-                                }}
+                                onChange={e => handleManualMarketSelect(e.target.value)}
                             >
                                 {MARKETS.map(m => (
                                     <option key={m.symbol} value={m.symbol}>
-                                        {m.label}
+                                        {m.label} ({m.symbol})
                                     </option>
                                 ))}
                             </select>
@@ -1957,27 +1437,66 @@ const ElitePro = observer(() => {
 
                         <div className='market-meta-tags'>
                             <span className='meta-tag'>
-                                📈 Input Market:{' '}
-                                <strong>{MARKETS.find(m => m.symbol === selectedSymbol)?.label}</strong>
+                                📈 Active Market: <strong>{MARKETS.find(m => m.symbol === selectedSymbol)?.label}</strong>
                             </span>
                             <span className='meta-tag'>
                                 🎯 Trade Type: <strong>{currentTradeType}</strong>
                             </span>
                             <span className='meta-tag'>
-                                🔮 Prediction Set:{' '}
+                                🔮 Auto Prediction:{' '}
                                 <strong>
-                                    {currentTradeType === 'DIGITOVER'
-                                        ? `Over ${currentPrediction}`
-                                        : `Under ${currentPrediction}`}
+                                    {currentTradeType === 'DIGITOVER' ? `Over ${currentPrediction}` : `Under ${currentPrediction}`}
                                 </strong>
                             </span>
                         </div>
+
+                        <button
+                            className={`ep-toggle-wide-view-btn ${showWideView ? 'active' : ''}`}
+                            onClick={() => setShowWideView(!showWideView)}
+                            title='Toggle Full Market Radar Matrix'
+                        >
+                            <LayoutGrid size={15} />
+                            <span>{showWideView ? 'Collapse Radar' : 'Wide Radar View'}</span>
+                        </button>
                     </div>
 
-                    {/* ── Live Price & Last Digit Orb Cards ── */}
+                    {/* ── Wide View Radar Grid (When Toggled) ── */}
+                    {showWideView && (
+                        <div className='ep-glass ep-wide-view-radar'>
+                            <div className='radar-head'>
+                                <h4>🛰️ Live Synthetic Indices Radar Matrix</h4>
+                                <p>Real-time statistical evaluation across all derived volatility markets</p>
+                            </div>
+                            <div className='radar-grid'>
+                                {allMarketsData.map(m => (
+                                    <div
+                                        key={m.symbol}
+                                        className={`radar-item ${m.symbol === selectedSymbol ? 'radar-item--active' : ''}`}
+                                        onClick={() => handleManualMarketSelect(m.symbol)}
+                                    >
+                                        <div className='item-top'>
+                                            <strong>{m.label}</strong>
+                                            <span className={`digit-chip ${m.lastDigit <= 5 ? 'u' : 'o'}`}>{m.lastDigit}</span>
+                                        </div>
+                                        <div className='item-price'>{m.currentPrice}</div>
+                                        <div className='item-ratios'>
+                                            <span>U: {m.under05} ({m.pctUnder05.toFixed(0)}%)</span>
+                                            <span>O: {m.over49} ({m.pctOver49.toFixed(0)}%)</span>
+                                        </div>
+                                        <div className='item-foot'>
+                                            <span className={`bias-tag ${m.bias}`}>{m.bias.toUpperCase()}</span>
+                                            <span>Score: {m.qualityScore}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── 1. Live Price & Last Digit Cards ── */}
                     <div className='ep-hero-grid'>
                         <div className='ep-glass ep-hero-card ep-price-card'>
-                            <span className='ep-hero-label'>CURRENT LIVE QUOTE</span>
+                            <span className='ep-hero-label'>CURRENT LIVE PRICE</span>
                             <div className='ep-price-value-row'>
                                 <span className='ep-price-value'>{activeData?.currentPrice ?? '—'}</span>
                                 <span className='ep-live-pulse-dot' />
@@ -1989,217 +1508,192 @@ const ElitePro = observer(() => {
 
                         <div className='ep-glass ep-hero-card ep-digit-card'>
                             <span className='ep-hero-label'>LAST TICK DIGIT</span>
-                            <div
-                                className={`ep-digit-orb-wrapper ep-digit-orb-wrapper--${(activeData?.lastDigit ?? 0) <= 5 ? 'under' : 'over'}`}
-                            >
+                            <div className={`ep-digit-orb-wrapper ep-digit-orb-wrapper--${(activeData?.lastDigit ?? 0) <= 5 ? 'under' : 'over'}`}>
                                 <div className='ep-digit-orb'>{activeData?.lastDigit ?? '—'}</div>
                             </div>
                             <span className='ep-digit-sub'>
-                                {(activeData?.lastDigit ?? 0) <= 5 ? 'Under 6 Zone (0-5)' : 'Over 3 Zone (6-9)'}
+                                {(activeData?.lastDigit ?? 0) <= 5 ? 'Under Zone (0 – 5)' : 'Over Zone (6 – 9)'}
                             </span>
                         </div>
                     </div>
 
-                    {/* ── 50-Ticks Spline Line Chart ── */}
+                    {/* ── 2. Live Last Digit Line Chart (50 Last Digits) ── */}
                     <div className='ep-glass ep-chart-card'>
                         <div className='ep-chart-card__header'>
                             <span className='title'>
-                                📊 50-Ticks Digit Trend Line Chart —{' '}
-                                {MARKETS.find(m => m.symbol === selectedSymbol)?.label}
+                                📊 Live Last Digit Spline Line Chart (Last 50 Digits) — {MARKETS.find(m => m.symbol === selectedSymbol)?.label}
                             </span>
-                            <span className='subtitle'>Real-Time Spline with Digit Markers (0–9)</span>
+                            <span className='subtitle'>Smooth Bezier trajectory with level 3 &amp; 6 barrier bounds</span>
                         </div>
                         <div className='ep-chart-wrap'>
                             <DigitLineChart digits={activeData?.digits || []} />
                         </div>
                     </div>
 
-                    {/* ── Deep Statistical Analysis Ratios ── */}
+                    {/* ── 3. Statistical Analysis Cards & Glowing Entry Digit ── */}
                     {analysis && (
-                        <div className='ep-glass ep-stats-card'>
-                            <div className='ep-stats-card__header'>
-                                <div className='title-group'>
-                                    <span className='title'>Statistical Ratio &amp; Probability Analysis</span>
-                                    <span className='sample-count'>(Last 50 Ticks Sample — Score: {analysis.qualityScore}/100)</span>
-                                </div>
-                                <span className={`ep-bias-badge ep-bias-badge--${analysis.bias}`}>
-                                    {analysis.bias === 'under'
-                                        ? '🛡️ UNDER 6 BIAS'
-                                        : analysis.bias === 'over'
-                                          ? '🚀 OVER 3 BIAS'
-                                          : '⚖️ BALANCED'}
-                                </span>
-                            </div>
-
-                            {/* Ratio 1: Under 0-4 vs Over 5-9 */}
-                            <div className='ep-ratio-block'>
-                                <div className='ep-ratio-block__head'>
-                                    <div className='side side--under'>
-                                        <span className='tag'>Under (0-4)</span>
-                                        <strong>
-                                            {analysis.under04} Ticks ({analysis.pctUnder04.toFixed(1)}%)
-                                        </strong>
+                        <div className='ep-stats-stack'>
+                            {/* Card A: Statistical Analysis of Under (0-4) vs Over (5-9) */}
+                            <div className='ep-glass ep-stats-card'>
+                                <div className='ep-stats-card__header'>
+                                    <div className='title-group'>
+                                        <span className='title'>Statistical Analysis 1: Under (0–4) vs Over (5–9)</span>
+                                        <span className='sample-count'>(50 Ticks Window &bull; Trend Acceleration)</span>
                                     </div>
-                                    <span className='vs'>VS</span>
-                                    <div className='side side--over'>
-                                        <span className='tag'>Over (5-9)</span>
-                                        <strong>
-                                            {analysis.over59} Ticks ({analysis.pctOver59.toFixed(1)}%)
-                                        </strong>
-                                    </div>
-                                </div>
-                                <div className='ep-progress-track'>
-                                    <div
-                                        className='ep-progress-bar ep-progress-bar--under'
-                                        style={{ width: `${analysis.pctUnder04}%` }}
-                                    />
-                                    <div
-                                        className='ep-progress-bar ep-progress-bar--over'
-                                        style={{ width: `${analysis.pctOver59}%` }}
-                                    />
-                                </div>
-                                <div className='ep-ratio-momentum'>
-                                    {analysis.underIncreasing && analysis.pctUnder04 > 54 && (
-                                        <span className='tip tip--green'>
-                                            ⚡ Under Momentum is above 54% and INCREASING
-                                        </span>
-                                    )}
-                                    {analysis.overIncreasing && analysis.pctOver59 > 54 && (
-                                        <span className='tip tip--orange'>
-                                            ⚡ Over Momentum is above 54% and INCREASING
-                                        </span>
-                                    )}
-                                    {!analysis.underIncreasing && !analysis.overIncreasing && (
-                                        <span className='tip tip--neutral'>⚖️ Momentum consolidating</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Ratio 2: Under 0-5 vs Over 4-9 */}
-                            <div className='ep-ratio-block'>
-                                <div className='ep-ratio-block__head'>
-                                    <div className='side side--under'>
-                                        <span className='tag'>Under (0-5)</span>
-                                        <strong>
-                                            {analysis.under05} Ticks ({((analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100).toFixed(1)}% share)
-                                        </strong>
-                                    </div>
-                                    <span className='vs'>VS</span>
-                                    <div className='side side--over'>
-                                        <span className='tag'>Over (4-9)</span>
-                                        <strong>
-                                            {analysis.over49} Ticks ({((analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100).toFixed(1)}% share)
-                                        </strong>
-                                    </div>
-                                </div>
-                                <div className='ep-progress-track'>
-                                    <div
-                                        className='ep-progress-bar ep-progress-bar--under'
-                                        style={{ width: `${(analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
-                                    />
-                                    <div
-                                        className='ep-progress-bar ep-progress-bar--over'
-                                        style={{ width: `${(analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
-                                    />
-                                </div>
-                                <div className='ep-market-tendency-note'>
-                                    {analysis.bias === 'under' && analysis.under05 >= 28 ? (
-                                        <span className='note note--under'>
-                                            🔥 Market is strongly favoring <strong>UNDER 6</strong> ({analysis.under05}{' '}
-                                            Under vs {analysis.over49} Over). High-probability Under setup active!
-                                        </span>
-                                    ) : analysis.bias === 'over' && analysis.over49 >= 28 ? (
-                                        <span className='note note--over'>
-                                            🔥 Market is strongly favoring <strong>OVER 3</strong> ({analysis.over49} Over
-                                            vs {analysis.under05} Under). High-probability Over setup active!
-                                        </span>
-                                    ) : (
-                                        <span className='note note--neutral'>
-                                            ℹ️ Market digits are shifting ({analysis.under05} Under 0-5 vs{' '}
-                                            {analysis.over49} Over 4-9). Engine actively hunting best entry trigger...
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Glowing Highest Entry Digit Cards */}
-                            <div className='ep-entry-digits-container'>
-                                <div
-                                    className={`ep-entry-card ep-entry-card--under ${analysis.highestUnderPct >= analysis.highestOverPct ? 'ep-entry-card--dominant' : ''}`}
-                                >
-                                    <div className='ep-entry-card__top'>
-                                        <span className='title'>Under Entry Trigger Digit</span>
-                                        <span className='range'>(Range 0 – 5)</span>
-                                    </div>
-                                    <div className='ep-glowing-digit-badge ep-glowing-digit-badge--under'>
-                                        <span className='digit'>{analysis.highestUnderDigit}</span>
-                                        <span className='pct'>{analysis.highestUnderPct.toFixed(0)}%</span>
-                                    </div>
-                                    <span className='frequency-sub'>
-                                        Appeared <strong>{analysis.highestUnderCount}</strong> times in 50 ticks
+                                    <span className={`ep-bias-badge ep-bias-badge--${analysis.pctUnder04 >= 55 ? 'under' : analysis.pctOver59 >= 55 ? 'over' : 'neutral'}`}>
+                                        {analysis.pctUnder04 >= 55
+                                            ? `UNDER 0-4 DOMINANT (${analysis.pctUnder04.toFixed(1)}%)`
+                                            : analysis.pctOver59 >= 55
+                                              ? `OVER 5-9 DOMINANT (${analysis.pctOver59.toFixed(1)}%)`
+                                              : 'BALANCED'}
                                     </span>
                                 </div>
 
-                                <div
-                                    className={`ep-entry-card ep-entry-card--over ${analysis.highestOverPct >= analysis.highestUnderPct ? 'ep-entry-card--dominant' : ''}`}
-                                >
-                                    <div className='ep-entry-card__top'>
-                                        <span className='title'>Over Entry Trigger Digit</span>
-                                        <span className='range'>(Range 4 – 9)</span>
+                                <div className='ep-ratio-block'>
+                                    <div className='ep-ratio-block__head'>
+                                        <div className='side side--under'>
+                                            <span className='tag'>Under (0–4)</span>
+                                            <strong>{analysis.under04} Ticks ({analysis.pctUnder04.toFixed(1)}%)</strong>
+                                        </div>
+                                        <span className='vs'>VS</span>
+                                        <div className='side side--over'>
+                                            <span className='tag'>Over (5–9)</span>
+                                            <strong>{analysis.over59} Ticks ({analysis.pctOver59.toFixed(1)}%)</strong>
+                                        </div>
                                     </div>
-                                    <div className='ep-glowing-digit-badge ep-glowing-digit-badge--over'>
-                                        <span className='digit'>{analysis.highestOverDigit}</span>
-                                        <span className='pct'>{analysis.highestOverPct.toFixed(0)}%</span>
+                                    <div className='ep-progress-track'>
+                                        <div className='ep-progress-bar ep-progress-bar--under' style={{ width: `${analysis.pctUnder04}%` }} />
+                                        <div className='ep-progress-bar ep-progress-bar--over' style={{ width: `${analysis.pctOver59}%` }} />
                                     </div>
-                                    <span className='frequency-sub'>
-                                        Appeared <strong>{analysis.highestOverCount}</strong> times in 50 ticks
-                                    </span>
+                                    <div className='ep-ratio-momentum'>
+                                        {analysis.pctUnder04 >= 55 && (
+                                            <span className='tip tip--green'>
+                                                ⚡ Under 0-4 threshold is above 55% ({analysis.pctUnder04.toFixed(1)}%) {analysis.underIncreasing ? 'and INCREASING ↗' : 'steady'}
+                                            </span>
+                                        )}
+                                        {analysis.pctOver59 >= 55 && (
+                                            <span className='tip tip--orange'>
+                                                ⚡ Over 5-9 threshold is above 55% ({analysis.pctOver59.toFixed(1)}%) {analysis.overIncreasing ? 'and INCREASING ↗' : 'steady'}
+                                            </span>
+                                        )}
+                                        {analysis.pctUnder04 < 55 && analysis.pctOver59 < 55 && (
+                                            <span className='tip tip--neutral'>⚖️ Ratios consolidating in range (&lt; 55% threshold)</span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Market Dynamics & Execution Checklist */}
-                            <div className='ep-checklist-grid'>
-                                <div className='ep-checklist-col'>
-                                    <span className='col-title'>Under 6 Strategy Execution Matrix</span>
-                                    <div
-                                        className={`check-row ${activeTargetStrategy === 'UNDER_6' || (activeTargetStrategy === 'AUTO' && analysis.under05 >= analysis.over49) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Strategy Direction: UNDER 6 ({analysis.under05} U0-5 vs {analysis.over49} O4-9)
+                            {/* Card B: Statistical Analysis of Under (0-5) vs Over (4-9) */}
+                            <div className='ep-glass ep-stats-card'>
+                                <div className='ep-stats-card__header'>
+                                    <div className='title-group'>
+                                        <span className='title'>Statistical Analysis 2: Under (0–5) vs Over (4–9)</span>
+                                        <span className='sample-count'>(50 Ticks Counts &bull; 10-Tick / 7-Tick Micro Windows)</span>
                                     </div>
-                                    <div
-                                        className={`check-row ${analysis.pctUnder05 >= 58 ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Edge Threshold: {analysis.pctUnder05.toFixed(1)}% Under 0-5 (Required &ge; 58%)
-                                    </div>
-                                    <div
-                                        className={`check-row ${activeData?.lastDigit !== undefined && (activeData.lastDigit === analysis.highestUnderDigit || activeData.lastDigit <= 3) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Target Trigger Digit: [{analysis.highestUnderDigit}] (Current: {activeData?.lastDigit})
-                                    </div>
-                                    <div className='check-row valid'>
-                                        <span className='mark'>✓</span> Re-Entry Recovery: Adaptive Confirmation with Martingale
-                                    </div>
+                                    <span className={`ep-bias-badge ep-bias-badge--${analysis.bias}`}>
+                                        {analysis.under05 >= analysis.over49 ? '🛡️ UNDER 6 FAVOR' : '🚀 OVER 3 FAVOR'}
+                                    </span>
                                 </div>
 
-                                <div className='ep-checklist-col'>
-                                    <span className='col-title'>Over 3 Strategy Execution Matrix</span>
-                                    <div
-                                        className={`check-row ${activeTargetStrategy === 'OVER_3' || (activeTargetStrategy === 'AUTO' && analysis.over49 > analysis.under05) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Strategy Direction: OVER 3 ({analysis.over49} O4-9 vs {analysis.under05} U0-5)
+                                <div className='ep-ratio-block'>
+                                    <div className='ep-ratio-block__head'>
+                                        <div className='side side--under'>
+                                            <span className='tag'>Under (0–5)</span>
+                                            <strong>{analysis.under05} Ticks ({analysis.pctUnder05.toFixed(1)}%)</strong>
+                                        </div>
+                                        <span className='vs'>VS</span>
+                                        <div className='side side--over'>
+                                            <span className='tag'>Over (4–9)</span>
+                                            <strong>{analysis.over49} Ticks ({analysis.pctOver49.toFixed(1)}%)</strong>
+                                        </div>
                                     </div>
-                                    <div
-                                        className={`check-row ${analysis.pctOver49 >= 58 ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Edge Threshold: {analysis.pctOver49.toFixed(1)}% Over 4-9 (Required &ge; 58%)
+                                    <div className='ep-progress-track'>
+                                        <div
+                                            className='ep-progress-bar ep-progress-bar--under'
+                                            style={{ width: `${(analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
+                                        />
+                                        <div
+                                            className='ep-progress-bar ep-progress-bar--over'
+                                            style={{ width: `${(analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
+                                        />
                                     </div>
-                                    <div
-                                        className={`check-row ${activeData?.lastDigit !== undefined && (activeData.lastDigit === analysis.highestOverDigit || activeData.lastDigit >= 6) ? 'valid' : ''}`}
-                                    >
-                                        <span className='mark'>✓</span> Target Trigger Digit: [{analysis.highestOverDigit}] (Current: {activeData?.lastDigit})
+
+                                    <div className='ep-micro-ratios-row'>
+                                        <div className='micro-chip'>
+                                            <label>Last 10 Ticks Micro Ratio:</label>
+                                            <strong>{analysis.last10UnderCount} Under (0-5) vs {analysis.last10OverCount} Over (4-9)</strong>
+                                        </div>
+                                        <div className='micro-chip'>
+                                            <label>Last 7 Ticks Favor:</label>
+                                            <strong>{analysis.last7UnderCount} Under vs {analysis.last7OverCount} Over</strong>
+                                        </div>
                                     </div>
-                                    <div className='check-row valid'>
-                                        <span className='mark'>✓</span> Re-Entry Recovery: Adaptive Confirmation with Martingale
+
+                                    <div className='ep-market-tendency-note'>
+                                        {analysis.under05 > analysis.over49 ? (
+                                            <span className='note note--under'>
+                                                🔥 Market tends to be <strong>POWERFUL IN UNDER</strong> ({analysis.under05} Under 0-5 vs {analysis.over49} Over 4-9).
+                                            </span>
+                                        ) : analysis.over49 > analysis.under05 ? (
+                                            <span className='note note--over'>
+                                                🔥 Market tends to be <strong>POWERFUL IN OVER</strong> ({analysis.over49} Over 4-9 vs {analysis.under05} Under 0-5).
+                                            </span>
+                                        ) : (
+                                            <span className='note note--neutral'>
+                                                ℹ️ Neutral equilibrium ({analysis.under05} Under vs {analysis.over49} Over).
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Card C: Entry Digit Glowing in the Highest */}
+                            <div className='ep-glass ep-entry-digit-glow-card'>
+                                <div className='card-head'>
+                                    <div className='title-wrap'>
+                                        <Target size={18} className='text-purple' />
+                                        <h4>Highest Entry Trigger Digits (Patient Execution Triggers)</h4>
+                                    </div>
+                                    <span className='info-tag'>Auto-Glows When Entry Digit Appears on Live Tick</span>
+                                </div>
+
+                                <div className='ep-entry-digits-grid'>
+                                    {/* Highest Under Digit */}
+                                    <div className={`ep-glowing-entry-box ep-glowing-entry-box--under ${isUnderTriggerGlowing ? 'glowing-live' : ''}`}>
+                                        <div className='box-top'>
+                                            <span className='box-title'>Highest Entry Digit in Under</span>
+                                            <span className='range-badge'>Range 0 – 5</span>
+                                        </div>
+                                        <div className='orb-container'>
+                                            <div className='glowing-orb under'>
+                                                <span className='digit-num'>{analysis.highestUnderDigit}</span>
+                                            </div>
+                                            {isUnderTriggerGlowing && (
+                                                <span className='live-trigger-badge'>⚡ LIVE TICK MATCH (TRIGGER READY)</span>
+                                            )}
+                                        </div>
+                                        <div className='box-meta'>
+                                            <span>Frequency: <strong>{analysis.highestUnderCount} times</strong> ({analysis.highestUnderPct.toFixed(0)}%) in 50 ticks</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Highest Over Digit */}
+                                    <div className={`ep-glowing-entry-box ep-glowing-entry-box--over ${isOverTriggerGlowing ? 'glowing-live' : ''}`}>
+                                        <div className='box-top'>
+                                            <span className='box-title'>Highest Entry Digit in Over</span>
+                                            <span className='range-badge'>Range 4 – 9</span>
+                                        </div>
+                                        <div className='orb-container'>
+                                            <div className='glowing-orb over'>
+                                                <span className='digit-num'>{analysis.highestOverDigit}</span>
+                                            </div>
+                                            {isOverTriggerGlowing && (
+                                                <span className='live-trigger-badge'>⚡ LIVE TICK MATCH (TRIGGER READY)</span>
+                                            )}
+                                        </div>
+                                        <div className='box-meta'>
+                                            <span>Frequency: <strong>{analysis.highestOverCount} times</strong> ({analysis.highestOverPct.toFixed(0)}%) in 50 ticks</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -2214,52 +1708,13 @@ const ElitePro = observer(() => {
                                 <h3>Automated Trading Strategy Engine</h3>
                             </div>
 
-                            {activeSignal && executionMode === 'local' && (
+                            {activeSignal && (
                                 <span className={`ep-signal-active-pill ${activeSignal.status === 'TRIGGERED' ? 'ep-signal-active-pill--triggered' : ''}`}>
-                                    {activeSignal.status === 'TRIGGERED' ? '🎯 TRIGGERED' : '⏳ WAITING'}: {activeSignal.direction} {activeSignal.prediction} (Digit{' '}
-                                    {activeSignal.triggerDigit})
+                                    {activeSignal.status === 'TRIGGERED' ? '🎯 TRIGGERED' : '⏳ WAITING'}: {activeSignal.direction} {activeSignal.prediction} (Digit [
+                                    {activeSignal.triggerDigit}])
                                 </span>
                             )}
                         </div>
-
-                        {/* Mode Selector */}
-                        <div className='ep-mode-selector'>
-                            <button
-                                className={`ep-mode-btn ${executionMode === 'local' ? 'active' : ''}`}
-                                onClick={() => {
-                                    if (autoState === 'IDLE') setExecutionMode('local');
-                                }}
-                                disabled={autoState !== 'IDLE'}
-                            >
-                                🧠 Neural Local Engine (Full Auto Under 6 / Over 3)
-                            </button>
-                            <button
-                                className={`ep-mode-btn ${executionMode === 'deriv_server' ? 'active' : ''}`}
-                                onClick={() => {
-                                    if (autoState === 'IDLE') setExecutionMode('deriv_server');
-                                }}
-                                disabled={autoState !== 'IDLE'}
-                            >
-                                ☁️ Deriv Cloud Server Automation
-                            </button>
-                        </div>
-
-                        {executionMode === 'deriv_server' && (
-                            <div className='ep-server-strat-select'>
-                                <span>Predefined Server Strategy:</span>
-                                <select
-                                    value={selectedStrategy}
-                                    onChange={e => setSelectedStrategy(e.target.value)}
-                                    disabled={autoState !== 'IDLE'}
-                                >
-                                    {strategies.map(s => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.name || s.id}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
 
                         {/* Parameter Inputs Grid */}
                         <div className='ep-inputs-grid'>
@@ -2316,26 +1771,14 @@ const ElitePro = observer(() => {
                             </div>
 
                             <div className='ep-input-card'>
-                                <span className='label'>Auto-Switch Market Runs</span>
-                                <input
-                                    type='number'
-                                    min='1'
-                                    max='50'
-                                    value={maxRunsBeforeSwitch}
-                                    onChange={e => setMaxRunsBeforeSwitch(e.target.value)}
-                                    disabled={autoState !== 'IDLE'}
-                                />
-                            </div>
-
-                            <div className='ep-input-card'>
-                                <span className='label'>Smart Market Switch</span>
+                                <span className='label'>Auto-Switch Markets</span>
                                 <select
                                     value={autoSwitchMarkets ? 'true' : 'false'}
                                     onChange={e => setAutoSwitchMarkets(e.target.value === 'true')}
                                     disabled={autoState !== 'IDLE'}
                                 >
-                                    <option value='true'>Enabled (Auto-Hunt Top Market)</option>
-                                    <option value='false'>Disabled (Single Market)</option>
+                                    <option value='true'>Enabled (Auto-Hunt Best Market)</option>
+                                    <option value='false'>Disabled (Current Market Only)</option>
                                 </select>
                             </div>
                         </div>
@@ -2348,7 +1791,7 @@ const ElitePro = observer(() => {
                                     data-testid='elite_pro_toggle'
                                     onClick={startAutoTrading}
                                 >
-                                    ▶ Start Automated Bot
+                                    <Play size={18} /> START AUTOMATED BOT
                                 </button>
                             )}
 
@@ -2357,14 +1800,14 @@ const ElitePro = observer(() => {
                                 autoState === 'TRADING') && (
                                 <>
                                     <button className='ep-action-btn ep-action-btn--pause' onClick={pauseAutoTrading}>
-                                        ⏸ Auto Pause Engine
+                                        <Pause size={16} /> PAUSE ENGINE
                                     </button>
                                     <button
                                         className='ep-action-btn ep-action-btn--stop'
                                         data-testid='elite_pro_toggle'
                                         onClick={stopAutoTrading}
                                     >
-                                        ⏹ Stop Engine
+                                        <Square size={16} /> STOP ENGINE
                                     </button>
                                 </>
                             )}
@@ -2372,14 +1815,14 @@ const ElitePro = observer(() => {
                             {autoState === 'PAUSED' && (
                                 <>
                                     <button className='ep-action-btn ep-action-btn--start' onClick={resumeAutoTrading}>
-                                        ▶ Auto Resume Engine
+                                        <Play size={16} /> RESUME ENGINE
                                     </button>
                                     <button
                                         className='ep-action-btn ep-action-btn--stop'
                                         data-testid='elite_pro_toggle'
                                         onClick={stopAutoTrading}
                                     >
-                                        ⏹ Stop Engine
+                                        <Square size={16} /> STOP ENGINE
                                     </button>
                                 </>
                             )}
@@ -2406,7 +1849,7 @@ const ElitePro = observer(() => {
                             </div>
 
                             <div className='ep-pnl-card'>
-                                <span className='pnl-label'>NEXT STAKE (MG {martingale})</span>
+                                <span className='pnl-label'>ACTIVE STAKE (MG {martingale}x)</span>
                                 <span className='pnl-val'>
                                     {currentStakeRef.current.toFixed(2)} {currency}
                                 </span>
@@ -2461,11 +1904,12 @@ const ElitePro = observer(() => {
                     </div>
                 </main>
             </div>
+
             <TradingMilestoneModal
                 isOpen={milestone.isOpen}
                 type={milestone.type}
                 amount={totalProfit}
-                targetAmount={milestone.type === 'tp' ? parseFloat(takeProfit) || 10 : parseFloat(stopLoss) || 5}
+                targetAmount={milestone.type === 'tp' ? parseFloat(takeProfit) || 10 : parseFloat(stopLoss) || 25}
                 currency={currency}
                 botName='Elite Pro AI Engine'
                 winsCount={wins}
@@ -2476,6 +1920,7 @@ const ElitePro = observer(() => {
                     void startAutoTrading();
                 }}
             />
+
             <AiLearningHubModal
                 isOpen={isAiLearningHubOpen}
                 onClose={() => setIsAiLearningHubOpen(false)}
