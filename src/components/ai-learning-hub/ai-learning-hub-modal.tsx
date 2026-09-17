@@ -416,23 +416,52 @@ export const AiLearningHubModal: React.FC<AiLearningHubModalProps> = ({ isOpen, 
                                         <Scale size={16} />
                                         <span>AUTO X E/O</span>
                                     </div>
-                                    <span className='q-score-badge'>Q: {botContributions.AUTO_EO.learnedQScore.toFixed(2)}</span>
+                                    <span className='q-score-badge'>Q: {(botContributions?.AUTO_EO?.learnedQScore ?? 0.64).toFixed(2)}</span>
                                 </div>
-                                <h4>{botContributions.AUTO_EO.displayName}</h4>
-                                <span className='domain-tag'>{botContributions.AUTO_EO.primaryLearningDomain}</span>
+                                <h4>{botContributions?.AUTO_EO?.displayName || 'Auto X Even/Odd'}</h4>
+                                <span className='domain-tag'>{botContributions?.AUTO_EO?.primaryLearningDomain || 'Parity Markov Transitions'}</span>
                                 <div className='bot-stats-row'>
                                     <div>
                                         <label>Trades</label>
-                                        <strong>{botContributions.AUTO_EO.totalTrades}</strong>
+                                        <strong>{botContributions?.AUTO_EO?.totalTrades ?? 0}</strong>
                                     </div>
                                     <div>
                                         <label>Win Rate</label>
-                                        <strong className='text-emerald'>{botContributions.AUTO_EO.winRate}%</strong>
+                                        <strong className='text-emerald'>{botContributions?.AUTO_EO?.winRate ?? 0}%</strong>
                                     </div>
                                     <div>
                                         <label>Net P/L</label>
-                                        <strong className={botContributions.AUTO_EO.netProfit >= 0 ? 'text-emerald' : 'text-rose'}>
-                                            {botContributions.AUTO_EO.netProfit >= 0 ? '+' : ''}{botContributions.AUTO_EO.netProfit.toFixed(2)}
+                                        <strong className={(botContributions?.AUTO_EO?.netProfit ?? 0) >= 0 ? 'text-emerald' : 'text-rose'}>
+                                            {(botContributions?.AUTO_EO?.netProfit ?? 0) >= 0 ? '+' : ''}{(botContributions?.AUTO_EO?.netProfit ?? 0).toFixed(2)}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 5. Autoflipper */}
+                            <div className='bot-synergy-card autoflipper'>
+                                <div className='card-head'>
+                                    <div className='bot-badge'>
+                                        <Sparkles size={16} />
+                                        <span>AUTOFLIPPER</span>
+                                    </div>
+                                    <span className='q-score-badge'>Q: {(botContributions?.AUTOFLIPPER?.learnedQScore ?? 0.67).toFixed(2)}</span>
+                                </div>
+                                <h4>{botContributions?.AUTOFLIPPER?.displayName || 'Autoflipper Edge AI'}</h4>
+                                <span className='domain-tag'>{botContributions?.AUTOFLIPPER?.primaryLearningDomain || 'Markov Auto-Switching Edge'}</span>
+                                <div className='bot-stats-row'>
+                                    <div>
+                                        <label>Trades</label>
+                                        <strong>{botContributions?.AUTOFLIPPER?.totalTrades ?? 0}</strong>
+                                    </div>
+                                    <div>
+                                        <label>Win Rate</label>
+                                        <strong className='text-emerald'>{botContributions?.AUTOFLIPPER?.winRate ?? 0}%</strong>
+                                    </div>
+                                    <div>
+                                        <label>Net P/L</label>
+                                        <strong className={(botContributions?.AUTOFLIPPER?.netProfit ?? 0) >= 0 ? 'text-emerald' : 'text-rose'}>
+                                            {(botContributions?.AUTOFLIPPER?.netProfit ?? 0) >= 0 ? '+' : ''}{(botContributions?.AUTOFLIPPER?.netProfit ?? 0).toFixed(2)}
                                         </strong>
                                     </div>
                                 </div>
