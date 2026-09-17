@@ -483,6 +483,25 @@ export const TabIcon: React.FC<TTabIconProps> = ({ iconKey, label }) => {
                         <circle cx='12' cy='12' r='2' fill='#00f5ff' />
                     </svg>
                 );
+            case 'autoflipper':
+                return (
+                    <svg
+                        width='18'
+                        height='18'
+                        viewBox='0 0 24 24'
+                        fill='none'
+                        stroke='currentColor'
+                        strokeWidth='1.8'
+                        strokeLinecap='round'
+                        strokeLinejoin='round'
+                    >
+                        <path d='M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8' />
+                        <path d='M3 3v5h5' />
+                        <path d='M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16' />
+                        <path d='M16 21h5v-5' />
+                        <polygon points='12 8 10 12 14 12 12 16' fill='#00e5ff' stroke='#00e5ff' strokeWidth='1' />
+                    </svg>
+                );
             default:
                 return (
                     <svg
