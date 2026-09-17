@@ -21,7 +21,7 @@ const Marketkiller = observer(() => {
             marketkiller.is_running = false;
             marketkiller.cleanupSubscriptions();
         };
-    }, [symbol]);
+    }, []);
 
     const marketGroups = getGroupedMarkets();
 

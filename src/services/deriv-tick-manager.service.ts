@@ -269,6 +269,25 @@ class DerivTickManager {
         try {
             const res = await api.send({ ticks: symbol, subscribe: 1 });
             if (res) {
+                if (res.error) {
+                    const errCode = res.error.code;
+                    const errMsg = String(res.error.message || '').toLowerCase();
+                    if (errCode === 'AlreadySubscribed' || errMsg.includes('already subscribed')) {
+                        record.isSubscribedInDeriv = true;
+                        return;
+                    }
+                    if (errCode === 'RateLimit' || errMsg.includes('rate limit')) {
+                        this.isRateLimited = true;
+                        if (!this.subscriptionQueue.includes(symbol)) {
+                            this.subscriptionQueue.unshift(symbol);
+                        }
+                        setTimeout(() => {
+                            this.isRateLimited = false;
+                            void this.processSubscriptionQueue();
+                        }, 2500);
+                        return;
+                    }
+                }
                 if (res.subscription?.id) {
                     record.subscriptionId = res.subscription.id;
                     record.isSubscribedInDeriv = true;
@@ -294,6 +313,8 @@ class DerivTickManager {
                     this.isRateLimited = false;
                     void this.processSubscriptionQueue();
                 }, 2500);
+            } else if (code === 'InvalidSymbol' || code === 'InputValidationFailed') {
+                // Expected for certain closed or unsupported markets
             } else {
                 console.info(`[DerivTickManager] Subscription notice for ${symbol}:`, err?.message || err);
             }
