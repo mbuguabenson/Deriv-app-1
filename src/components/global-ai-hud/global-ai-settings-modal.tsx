@@ -229,7 +229,7 @@ export const GlobalAiSettingsModal: React.FC<GlobalAiSettingsModalProps> = ({ is
                                     checked={config.toastAlerts}
                                     onChange={e => setConfig({ ...config, toastAlerts: e.target.checked })}
                                 />
-                                <span>Popup HUD Toast Notifications for Regime Shifts &amp; Trades</span>
+                                <span>Popup HUD Toast Notifications for Executions &amp; Trades</span>
                             </label>
                             <label className='toggle-checkbox'>
                                 <input

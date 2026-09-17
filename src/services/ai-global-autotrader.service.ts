@@ -168,21 +168,12 @@ class AiGlobalAutoTraderEngine {
 
     private listenToPatternEvents(): void {
         aiMarketPatternService.onEvent(event => {
-            if (event.type === 'PATTERN_DETECTED' && this.config.toastAlerts) {
+            if (event.type === 'PATTERN_DETECTED') {
                 const p: RecognizedPattern = event.payload.pattern;
                 const sym = event.payload.symbol;
                 const mLabel = SUPPORTED_VOLATILITY_MARKETS.find(m => m.symbol === sym)?.label || sym;
 
                 this.logThought(`Pattern Detected on ${mLabel}: ${p.description} (${p.confidence}% Conviction).`);
-
-                // Non-intrusive HUD toast for high confidence patterns
-                if (p.confidence >= 85) {
-                    toast.info(`🧠 AI Pattern [${mLabel}]: ${p.description}`, {
-                        toastId: `ai-pat-${sym}`,
-                        autoClose: 4000,
-                        hideProgressBar: true,
-                    });
-                }
             }
         });
     }
