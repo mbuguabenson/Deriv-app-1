@@ -6,7 +6,7 @@ import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import './poverty-hunter.scss';
@@ -226,7 +226,7 @@ const PovertyHunter: React.FC = observer(() => {
     const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(true);
     const [showWideView, setShowWideView] = useState<boolean>(false);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState<boolean>(true);
-    const [maxRunsBeforeCheck, setMaxRunsBeforeCheck] = useState<number>(7);
+    const [maxRunsBeforeCheck] = useState<number>(7);
     const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
     // ── Strategy Configuration & Inputs ──
@@ -915,7 +915,7 @@ const PovertyHunter: React.FC = observer(() => {
                         ticksRemaining = 2;
                         setWaitingForAppear(true);
                         setConfirmationTicksRemaining(2);
-                        if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                        if ((botStateRef.current as AutoRunState) !== 'IDLE' && (botStateRef.current as AutoRunState) !== 'PAUSED') {
                             setBotStateSync('SCANNING');
                         }
                         await new Promise(r => setTimeout(r, 500));
@@ -974,7 +974,7 @@ const PovertyHunter: React.FC = observer(() => {
                             setWaitingForAppear(true);
                             ticksRemaining = 2;
                             setConfirmationTicksRemaining(2);
-                            if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                            if ((botStateRef.current as AutoRunState) !== 'IDLE' && (botStateRef.current as AutoRunState) !== 'PAUSED') {
                                 setBotStateSync('SCANNING');
                             }
                             await new Promise(r => setTimeout(r, 500));
