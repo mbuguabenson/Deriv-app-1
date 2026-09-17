@@ -154,9 +154,9 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
     }
 
     const W = Math.max(780, slice.length * 16);
-    const H = 150;
-    const padTop = 26;
-    const padBot = 20;
+    const H = 110;
+    const padTop = 16;
+    const padBot = 14;
     const usableH = H - padTop - padBot;
     const stepX = (W - 24) / (slice.length - 1);
 
@@ -351,6 +351,7 @@ const Autoflipper: React.FC = observer(() => {
     const [compRiskPercent, setCompRiskPercent] = useState<string>('2.0');
     const [compNumStages, setCompNumStages] = useState<string>('8');
     const [compStages, setCompStages] = useState<CompoundingStage[]>([]);
+    const [showScheduleTable, setShowScheduleTable] = useState<boolean>(false);
 
     // Session Statistics
     const [sessionProfit, setSessionProfit] = useState<number>(0);
@@ -1323,19 +1324,28 @@ const Autoflipper: React.FC = observer(() => {
                         <div className='comp-header'>
                             <div className='title-wrap'>
                                 <h3>
-                                    <Layers size={18} /> Time-Target Compounding Schedule Generator
+                                    <Layers size={16} /> Time-Target Compounding Plan
                                 </h3>
-                                <span>Customizable Duration (Hours / Days), Figure Inputs &amp; Stage Milestone Progress</span>
+                                <span>Custom Duration ({compDurationValue} {compDurationUnit.toLowerCase()}) &bull; {compRiskPercent}% Risk &bull; {compNumStages} Stages</span>
                             </div>
-                            <span className='risk-notice'>
-                                🛡️ Smart {compRiskPercent}% Risk Scaling per Stage
-                            </span>
+                            <div className='comp-header-actions'>
+                                <span className='risk-notice'>
+                                    🛡️ {compRiskPercent}% Risk/Stage
+                                </span>
+                                <button
+                                    className='btn-toggle-schedule'
+                                    onClick={() => setShowScheduleTable(!showScheduleTable)}
+                                    type='button'
+                                >
+                                    {showScheduleTable ? '▲ Hide Milestones' : '▼ View Milestones Table'}
+                                </button>
+                            </div>
                         </div>
 
                         {/* Duration Unit Selector Tabs & Presets */}
                         <div className='comp-duration-selector-row'>
                             <div className='unit-switch-group'>
-                                <span className='label'>Duration Time Unit:</span>
+                                <span className='label'>Unit:</span>
                                 <div className='btn-switch-group'>
                                     <button
                                         className={`btn-unit ${compDurationUnit === 'HOURS' ? 'btn-unit--active' : ''}`}
@@ -1345,7 +1355,7 @@ const Autoflipper: React.FC = observer(() => {
                                         }}
                                         type='button'
                                     >
-                                        <Clock size={14} /> Hours
+                                        <Clock size={12} /> Hours
                                     </button>
                                     <button
                                         className={`btn-unit ${compDurationUnit === 'DAYS' ? 'btn-unit--active' : ''}`}
@@ -1355,7 +1365,7 @@ const Autoflipper: React.FC = observer(() => {
                                         }}
                                         type='button'
                                     >
-                                        <Calendar size={14} /> Days
+                                        <Calendar size={12} /> Days
                                     </button>
                                     <button
                                         className={`btn-unit ${compDurationUnit === 'MINUTES' ? 'btn-unit--active' : ''}`}
@@ -1365,21 +1375,21 @@ const Autoflipper: React.FC = observer(() => {
                                         }}
                                         type='button'
                                     >
-                                        <Zap size={14} /> Minutes
+                                        <Zap size={12} /> Mins
                                     </button>
                                 </div>
                             </div>
 
                             <div className='presets-wrap'>
-                                <span className='presets-label'>Quick Time Presets:</span>
+                                <span className='presets-label'>Quick:</span>
                                 <div className='preset-chips'>
                                     <button type='button' onClick={() => applyDurationPreset('12', 'HOURS')}>12h</button>
-                                    <button type='button' onClick={() => applyDurationPreset('24', 'HOURS')}>24h (1 Day)</button>
-                                    <button type='button' onClick={() => applyDurationPreset('48', 'HOURS')}>48h (2 Days)</button>
-                                    <button type='button' onClick={() => applyDurationPreset('3', 'DAYS')}>3 Days</button>
-                                    <button type='button' onClick={() => applyDurationPreset('7', 'DAYS')}>7 Days (1 Wk)</button>
-                                    <button type='button' onClick={() => applyDurationPreset('14', 'DAYS')}>14 Days</button>
-                                    <button type='button' onClick={() => applyDurationPreset('30', 'DAYS')}>30 Days (1 Mo)</button>
+                                    <button type='button' onClick={() => applyDurationPreset('24', 'HOURS')}>24h</button>
+                                    <button type='button' onClick={() => applyDurationPreset('48', 'HOURS')}>48h</button>
+                                    <button type='button' onClick={() => applyDurationPreset('3', 'DAYS')}>3d</button>
+                                    <button type='button' onClick={() => applyDurationPreset('7', 'DAYS')}>7d</button>
+                                    <button type='button' onClick={() => applyDurationPreset('14', 'DAYS')}>14d</button>
+                                    <button type='button' onClick={() => applyDurationPreset('30', 'DAYS')}>30d</button>
                                 </div>
                             </div>
                         </div>
@@ -1387,21 +1397,19 @@ const Autoflipper: React.FC = observer(() => {
                         {/* Interactive Input Figures Form */}
                         <div className='comp-inputs-row'>
                             <div className='input-group'>
-                                <label>
-                                    Duration ({compDurationUnit})
-                                </label>
+                                <label>Duration ({compDurationUnit})</label>
                                 <input
                                     type='number'
                                     min='1'
                                     step='1'
                                     value={compDurationValue}
                                     onChange={e => setCompDurationValue(e.target.value)}
-                                    placeholder={`e.g. 24 ${compDurationUnit.toLowerCase()}`}
+                                    placeholder='24'
                                 />
                             </div>
 
                             <div className='input-group'>
-                                <label>Starting Capital ({currency})</label>
+                                <label>Start Capital ({currency})</label>
                                 <input
                                     type='number'
                                     min='5'
@@ -1425,7 +1433,7 @@ const Autoflipper: React.FC = observer(() => {
                             </div>
 
                             <div className='input-group'>
-                                <label>Risk % Per Trade</label>
+                                <label>Risk % / Trade</label>
                                 <input
                                     type='number'
                                     min='0.5'
@@ -1445,7 +1453,7 @@ const Autoflipper: React.FC = observer(() => {
                                 >
                                     <option value='4'>4 Stages</option>
                                     <option value='6'>6 Stages</option>
-                                    <option value='8'>8 Stages (Standard)</option>
+                                    <option value='8'>8 Stages (Std)</option>
                                     <option value='10'>10 Stages</option>
                                     <option value='12'>12 Stages</option>
                                     <option value='16'>16 Stages</option>
@@ -1458,70 +1466,72 @@ const Autoflipper: React.FC = observer(() => {
                                 onClick={() => generateCompoundingPlan()}
                                 type='button'
                             >
-                                <RefreshCw size={14} /> Calculate Schedule
+                                <RefreshCw size={13} /> Recalculate
                             </button>
                         </div>
 
                         {/* Plan Velocity Summary Cards */}
                         <div className='comp-metrics-summary-bar'>
                             <div className='metric-stat-box'>
-                                <span className='label'>Total Timeframe</span>
+                                <span className='label'>Total Time</span>
                                 <span className='val'>{compDurationValue} {compDurationUnit.toLowerCase()}</span>
                             </div>
                             <div className='metric-stat-box'>
-                                <span className='label'>Hourly Target Rate</span>
+                                <span className='label'>Hourly Target</span>
                                 <span className='val'>+${planVelocityMetrics.hourlyReq} / hr</span>
                             </div>
                             <div className='metric-stat-box'>
-                                <span className='label'>Daily Target Rate</span>
+                                <span className='label'>Daily Target</span>
                                 <span className='val'>+${planVelocityMetrics.dailyReq} / day</span>
                             </div>
                             <div className='metric-stat-box'>
-                                <span className='label'>Total Target Balance</span>
+                                <span className='label'>Final Target</span>
                                 <span className='val' style={{ color: '#00f0ff' }}>
                                     ${(Number(compStartCapital) + Number(compTargetProfit)).toFixed(2)}
                                 </span>
                             </div>
                         </div>
 
-                        {/* Compounding Stages Schedule Table */}
-                        <div className='comp-table-wrap'>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Milestone</th>
-                                        <th>Target Timeline</th>
-                                        <th>Account Balance</th>
-                                        <th>{compRiskPercent}% Safe Stake</th>
-                                        <th>Stage Profit</th>
-                                        <th>Cumulative Profit</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {compStages.map(st => (
-                                        <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
-                                            <td className='stage-name'>Stage #{st.stage}</td>
-                                            <td className='stage-time'>
-                                                <Clock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                                                {st.timeLabel}
-                                            </td>
-                                            <td className='stage-bal'>${st.targetBalance.toFixed(2)}</td>
-                                            <td className='stage-stake'>${st.recommendedStake.toFixed(2)}</td>
-                                            <td className='stage-profit'>+${st.stageProfit.toFixed(2)}</td>
-                                            <td className='stage-cum'>+${st.cumulativeProfit.toFixed(2)}</td>
-                                            <td>
-                                                <span className={`badge-stage-status ${st.status.toLowerCase()}`}>
-                                                    {st.status === 'DONE' && '✓ COMPLETED'}
-                                                    {st.status === 'ACTIVE' && '⚡ IN PROGRESS'}
-                                                    {st.status === 'PENDING' && '⏳ SCHEDULED'}
-                                                </span>
-                                            </td>
+                        {/* Compounding Stages Schedule Table (Collapsible) */}
+                        {showScheduleTable && (
+                            <div className='comp-table-wrap'>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Milestone</th>
+                                            <th>Target Timeline</th>
+                                            <th>Target Balance</th>
+                                            <th>{compRiskPercent}% Stake</th>
+                                            <th>Stage Profit</th>
+                                            <th>Cumulative Profit</th>
+                                            <th>Status</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {compStages.map(st => (
+                                            <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
+                                                <td className='stage-name'>Stage #{st.stage}</td>
+                                                <td className='stage-time'>
+                                                    <Clock size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                                                    {st.timeLabel}
+                                                </td>
+                                                <td className='stage-bal'>${st.targetBalance.toFixed(2)}</td>
+                                                <td className='stage-stake'>${st.recommendedStake.toFixed(2)}</td>
+                                                <td className='stage-profit'>+${st.stageProfit.toFixed(2)}</td>
+                                                <td className='stage-cum'>+${st.cumulativeProfit.toFixed(2)}</td>
+                                                <td>
+                                                    <span className={`badge-stage-status ${st.status.toLowerCase()}`}>
+                                                        {st.status === 'DONE' && '✓ DONE'}
+                                                        {st.status === 'ACTIVE' && '⚡ ACTIVE'}
+                                                        {st.status === 'PENDING' && '⏳ QUEUED'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
 
                     {/* Bottom Grid: Parameters & Trade Journal */}
