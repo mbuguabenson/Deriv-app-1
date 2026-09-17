@@ -12,10 +12,14 @@ import { aiContinuousLearningService } from '@/services/ai-continuous-learning.s
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
     Activity,
+    AlertCircle,
     Calendar,
+    CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     Clock,
+    FileText,
     Flame,
-    Gauge,
     Layers,
     Play,
     Pause,
@@ -23,8 +27,6 @@ import {
     Shield,
     Sparkles,
     Square,
-    TrendingDown,
-    TrendingUp,
     Zap,
 } from 'lucide-react';
 import './autoflipper.scss';
@@ -52,6 +54,34 @@ export interface CompoundingStage {
     status: 'DONE' | 'ACTIVE' | 'PENDING';
 }
 
+export interface TransactionRecord {
+    id: string;
+    contractId?: number | string;
+    transactionId?: number | string;
+    time: string;
+    market: string;
+    symbol: string;
+    contractType: string;
+    barrier: string;
+    entrySpot?: number | string;
+    exitSpot?: number | string;
+    stake: number;
+    payout: number;
+    profit: number;
+    result: 'WIN' | 'LOSS' | 'OPEN';
+    status: 'open' | 'settled';
+}
+
+export interface JournalLogItem {
+    id: string;
+    time: string;
+    type: 'TRADE' | 'STAGE_UNLOCK' | 'GOAL_COMPLETE' | 'SIGNAL' | 'SYSTEM' | 'ERROR';
+    title: string;
+    description: string;
+    level?: 'info' | 'success' | 'warning' | 'error';
+    badge?: string;
+}
+
 export interface TradeLogItem {
     id: string;
     time: string;
@@ -67,6 +97,7 @@ export interface TradeLogItem {
 type AutoRunState = 'IDLE' | 'SCANNING' | 'WAITING_SIGNAL' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
 type DurationUnitType = 'HOURS' | 'DAYS' | 'MINUTES';
 type TradeDurationUnitType = 't' | 's' | 'm';
+type JournalTabType = 'TRANSACTIONS' | 'JOURNAL';
 
 const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
     symbol: m.symbol,
@@ -153,8 +184,8 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
         );
     }
 
-    const W = Math.max(780, slice.length * 16);
-    const H = 110;
+    const W = Math.max(760, slice.length * 15.5);
+    const H = 115;
     const padTop = 16;
     const padBot = 14;
     const usableH = H - padTop - padBot;
@@ -328,8 +359,6 @@ const Autoflipper: React.FC = observer(() => {
     const [selectedSymbol, setSelectedSymbol] = useState<string>('1HZ10V');
     const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(false);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState<boolean>(true);
-    const [showWideView, setShowWideView] = useState<boolean>(false);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
     // Bot execution controls
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
@@ -338,7 +367,7 @@ const Autoflipper: React.FC = observer(() => {
     const [martingale, setMartingale] = useState<string>('2.6');
     const [takeProfit, setTakeProfit] = useState<string>('20.00');
     const [stopLoss, setStopLoss] = useState<string>('50.00');
-    
+
     // Trade Duration Inputs (User customizable)
     const [tradeDurationUnit, setTradeDurationUnit] = useState<TradeDurationUnitType>('t');
     const [tradeDurationValue, setTradeDurationValue] = useState<string>('1');
@@ -358,7 +387,11 @@ const Autoflipper: React.FC = observer(() => {
     const [sessionProfit, setSessionProfit] = useState<number>(0);
     const [winsCount, setWinsCount] = useState<number>(0);
     const [lossesCount, setLossesCount] = useState<number>(0);
-    const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
+
+    // Live Transactions & Execution Journal
+    const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+    const [journalLogs, setJournalLogs] = useState<JournalLogItem[]>([]);
+    const [activeJournalTab, setActiveJournalTab] = useState<JournalTabType>('TRANSACTIONS');
 
     // Modals
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: MilestoneType }>({
@@ -377,6 +410,7 @@ const Autoflipper: React.FC = observer(() => {
     const botStateRef = useRef<AutoRunState>('IDLE');
     const isTradingInProgressRef = useRef<boolean>(false);
     const consecutiveLossesRef = useRef<number>(0);
+    const marketScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         botStateRef.current = botState;
@@ -391,6 +425,13 @@ const Autoflipper: React.FC = observer(() => {
             setRenderTrigger(t => t + 1);
         }
     }, []);
+
+    // Horizontal Market Strip Scroll Helper
+    const scrollMarkets = (direction: 'left' | 'right') => {
+        if (!marketScrollRef.current) return;
+        const offset = direction === 'left' ? -260 : 260;
+        marketScrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    };
 
     // Initialize market storage
     useEffect(() => {
@@ -505,7 +546,6 @@ const Autoflipper: React.FC = observer(() => {
         const u04_last15 = last15.filter(d => d <= 4).length;
         const u04_prev15 = prev15.filter(d => d <= 4).length;
         const isUnder04Increasing = u04_last15 >= u04_prev15;
-        const isOver59Increasing = (15 - u04_last15) >= (15 - u04_prev15);
 
         // Split 2: Under (0-5) vs Over (4-9)
         const under05 = last50.filter(d => d <= 5).length;
@@ -516,7 +556,6 @@ const Autoflipper: React.FC = observer(() => {
         const u05_last15 = last15.filter(d => d <= 5).length;
         const u05_prev15 = prev15.filter(d => d <= 5).length;
         const isUnder05Increasing = u05_last15 >= u05_prev15;
-        const isOver49Increasing = (15 - u05_last15) >= (15 - u05_prev15);
 
         // Highest Entry Digit in Under (0-5)
         const underCounts = [0, 1, 2, 3, 4, 5].map(digit => ({
@@ -553,7 +592,7 @@ const Autoflipper: React.FC = observer(() => {
             activeSignal = 'UNDER'; // Will trade Under 6
             isTriggerReady = currentSpot === highestUnderDigit;
             signalReason = `Under dominance (${under04Pct}%), 7/10 recent ticks under. Waiting for [${highestUnderDigit}] trigger.`;
-        } else if (over59Pct >= 55 && isOver59Increasing && over49 > under05 && last10Over >= 7) {
+        } else if (over59Pct >= 55 && !isUnder04Increasing && over49 > under05 && last10Over >= 7) {
             activeSignal = 'OVER'; // Will trade Over 3
             isTriggerReady = currentSpot === highestOverDigit;
             signalReason = `Over dominance (${over59Pct}%), 7/10 recent ticks over. Waiting for [${highestOverDigit}] trigger.`;
@@ -567,13 +606,11 @@ const Autoflipper: React.FC = observer(() => {
             under04Pct,
             over59Pct,
             isUnder04Increasing,
-            isOver59Increasing,
             under05,
             over49,
             under05Pct,
             over49Pct,
             isUnder05Increasing,
-            isOver49Increasing,
             highestUnderDigit,
             highestUnderDigitPct,
             highestOverDigit,
@@ -749,6 +786,17 @@ const Autoflipper: React.FC = observer(() => {
         if (botState === 'IDLE') {
             setCurrentStake(baseStake);
         }
+        setJournalLogs(prev => [
+            {
+                id: String(Date.now()),
+                time: new Date().toLocaleTimeString(),
+                type: 'SYSTEM',
+                title: 'Compounding Parameters Synchronized',
+                description: `Linked Base Stake: $${baseStake.toFixed(2)} | Target Goal: +$${targetProf.toFixed(2)} (${compStages.length} Stages)`,
+                level: 'info',
+            },
+            ...prev,
+        ]);
     };
 
     // Quick Duration Presets Handler
@@ -770,6 +818,37 @@ const Autoflipper: React.FC = observer(() => {
             const contractType = tradeSignal === 'UNDER' ? 'DIGITUNDER' : 'DIGITOVER';
             const stakeToUse = currentStake;
             const sym = selectedSymbol;
+            const tempTxnId = String(Date.now());
+            const marketLabel = MARKETS.find(m => m.symbol === sym)?.label || sym;
+            const timeStr = new Date().toLocaleTimeString();
+
+            // 1. Immediately post open transaction to Transaction Journal card
+            const initialTxn: TransactionRecord = {
+                id: tempTxnId,
+                time: timeStr,
+                market: marketLabel,
+                symbol: sym,
+                contractType: tradeSignal === 'UNDER' ? 'Under 6' : 'Over 3',
+                barrier,
+                stake: stakeToUse,
+                payout: 0,
+                profit: 0,
+                result: 'OPEN',
+                status: 'open',
+            };
+
+            setTransactions(prev => [initialTxn, ...prev.slice(0, 99)]);
+            setJournalLogs(prev => [
+                {
+                    id: tempTxnId + '-journal',
+                    time: timeStr,
+                    type: 'TRADE',
+                    title: `Signal Triggered: ${tradeSignal === 'UNDER' ? 'UNDER 6' : 'OVER 3'}`,
+                    description: `Purchasing ${marketLabel} contract at $${stakeToUse.toFixed(2)} stake.`,
+                    level: 'info',
+                },
+                ...prev.slice(0, 99),
+            ]);
 
             playSoundCue('signal');
 
@@ -797,7 +876,11 @@ const Autoflipper: React.FC = observer(() => {
                 const contractId = buyResult.contract_id;
                 const transactionId = buyResult.transaction_id || contractId;
                 const startTime = Math.floor(Date.now() / 1000);
-                const marketLabel = MARKETS.find(m => m.symbol === sym)?.label || sym;
+
+                // Update transaction with official contract IDs
+                setTransactions(prev =>
+                    prev.map(t => (t.id === tempTxnId ? { ...t, contractId, transactionId } : t))
+                );
 
                 const initSnapshot = {
                     contract_id: contractId,
@@ -828,6 +911,15 @@ const Autoflipper: React.FC = observer(() => {
 
                 const profit = Number(settledSnapshot?.profit || 0);
                 const isWin = profit > 0;
+                const entrySpotVal =
+                    settledSnapshot?.entry_tick_display_value ??
+                    settledSnapshot?.entry_tick ??
+                    settledSnapshot?.barrier ??
+                    '—';
+                const exitSpotVal =
+                    settledSnapshot?.exit_tick_display_value ??
+                    settledSnapshot?.exit_tick ??
+                    '—';
 
                 // Record cross-bot continuous learning
                 aiContinuousLearningService.recordBotTrade({
@@ -842,24 +934,41 @@ const Autoflipper: React.FC = observer(() => {
                     stake: stakeToUse,
                 });
 
-                const newTradeItem: TradeLogItem = {
-                    id: String(Date.now()),
-                    time: new Date().toLocaleTimeString(),
-                    market: marketLabel,
-                    strategy: tradeSignal === 'UNDER' ? 'AUTOFLIP_UNDER' : 'AUTOFLIP_OVER',
-                    contractType: `${contractType} [${barrier}]`,
-                    prediction: Number(barrier),
-                    stake: stakeToUse,
-                    result: isWin ? 'WIN' : 'LOSS',
-                    profit,
-                };
-
-                setTradeLog(prev => [newTradeItem, ...prev.slice(0, 49)]);
+                // 2. Post completed settlement into Transaction Journal card
+                setTransactions(prev =>
+                    prev.map(t =>
+                        t.id === tempTxnId
+                            ? {
+                                  ...t,
+                                  contractId,
+                                  transactionId,
+                                  profit,
+                                  payout: isWin ? stakeToUse + profit : 0,
+                                  entrySpot: entrySpotVal,
+                                  exitSpot: exitSpotVal,
+                                  result: isWin ? 'WIN' : 'LOSS',
+                                  status: 'settled',
+                              }
+                            : t
+                    )
+                );
 
                 if (isWin) {
                     playSoundCue('win');
                     consecutiveLossesRef.current = 0;
                     setWinsCount(w => w + 1);
+
+                    setJournalLogs(prev => [
+                        {
+                            id: String(Date.now()),
+                            time: new Date().toLocaleTimeString(),
+                            type: 'TRADE',
+                            title: `Trade Won: +$${profit.toFixed(2)}`,
+                            description: `${marketLabel} ${tradeSignal === 'UNDER' ? 'Under 6' : 'Over 3'} settled successfully (Exit: ${exitSpotVal}).`,
+                            level: 'success',
+                        },
+                        ...prev.slice(0, 99),
+                    ]);
 
                     setSessionProfit(p => {
                         const newP = p + profit;
@@ -873,34 +982,34 @@ const Autoflipper: React.FC = observer(() => {
                                 // Compounding Plan Complete!
                                 setMilestone({ isOpen: true, type: 'tp' });
                                 setBotState('IDLE');
-                                const finishLog: TradeLogItem = {
-                                    id: String(Date.now() + 1),
-                                    time: new Date().toLocaleTimeString(),
-                                    market: '🏆 COMPOUNDING COMPLETE',
-                                    strategy: 'TAKE_PROFIT',
-                                    contractType: `ALL ${compStages.length} STAGES (+${newP.toFixed(2)})`,
-                                    prediction: compStages.length,
-                                    stake: stakeToUse,
-                                    result: 'WIN',
-                                    profit: 0,
-                                };
-                                setTradeLog(prevLogs => [finishLog, ...prevLogs.slice(0, 49)]);
+                                setJournalLogs(prevLogs => [
+                                    {
+                                        id: String(Date.now() + 1),
+                                        time: new Date().toLocaleTimeString(),
+                                        type: 'GOAL_COMPLETE',
+                                        title: '🏆 Compounding Target Reached!',
+                                        description: `Full goal of +$${targetGoal.toFixed(2)} completed across all ${compStages.length} stages!`,
+                                        level: 'success',
+                                        badge: 'VICTORY',
+                                    },
+                                    ...prevLogs.slice(0, 99),
+                                ]);
                             } else if (newStageIdx > prevStageIdx && newStageIdx !== -1) {
                                 // Stepped up to next compounding stage
                                 const nextStageObj = compStages[newStageIdx];
                                 setCurrentStake(nextStageObj.recommendedStake);
-                                const stageAdvLog: TradeLogItem = {
-                                    id: String(Date.now() + 1),
-                                    time: new Date().toLocaleTimeString(),
-                                    market: `🚀 STAGE #${nextStageObj.stage} UNLOCKED`,
-                                    strategy: 'RECOVERY',
-                                    contractType: `TARGET +$${nextStageObj.cumulativeProfit.toFixed(2)} (Stake: $${nextStageObj.recommendedStake.toFixed(2)})`,
-                                    prediction: nextStageObj.stage,
-                                    stake: nextStageObj.recommendedStake,
-                                    result: 'WIN',
-                                    profit: 0,
-                                };
-                                setTradeLog(prevLogs => [stageAdvLog, ...prevLogs.slice(0, 49)]);
+                                setJournalLogs(prevLogs => [
+                                    {
+                                        id: String(Date.now() + 1),
+                                        time: new Date().toLocaleTimeString(),
+                                        type: 'STAGE_UNLOCK',
+                                        title: `🚀 STAGE #${nextStageObj.stage} UNLOCKED`,
+                                        description: `Milestone profit +$${nextStageObj.cumulativeProfit.toFixed(2)} reached! Base stake adjusted to $${nextStageObj.recommendedStake.toFixed(2)}.`,
+                                        level: 'success',
+                                        badge: `STAGE #${nextStageObj.stage}`,
+                                    },
+                                    ...prevLogs.slice(0, 99),
+                                ]);
                             } else {
                                 const currentBase = (compStages[newStageIdx === -1 ? compStages.length - 1 : newStageIdx] || activeStage).recommendedStake;
                                 setCurrentStake(currentBase);
@@ -922,6 +1031,19 @@ const Autoflipper: React.FC = observer(() => {
                     const nextStake = Math.round(stakeToUse * mult * 100) / 100;
                     setCurrentStake(nextStake);
                     setLossesCount(l => l + 1);
+
+                    setJournalLogs(prev => [
+                        {
+                            id: String(Date.now()),
+                            time: new Date().toLocaleTimeString(),
+                            type: 'TRADE',
+                            title: `Trade Lost: -$${Math.abs(profit).toFixed(2)}`,
+                            description: `${marketLabel} ${tradeSignal === 'UNDER' ? 'Under 6' : 'Over 3'} closed out. Martingale stake scaled to $${nextStake.toFixed(2)}.`,
+                            level: 'error',
+                        },
+                        ...prev.slice(0, 99),
+                    ]);
+
                     setSessionProfit(p => {
                         const newP = p + profit;
                         const sl = Number(stopLoss) || 50;
@@ -936,9 +1058,38 @@ const Autoflipper: React.FC = observer(() => {
                 // Auto switch market if enabled
                 if (autoSwitchMarkets && bestMarketCandidate && bestMarketCandidate !== selectedSymbol) {
                     setSelectedSymbol(bestMarketCandidate);
+                    setJournalLogs(prev => [
+                        {
+                            id: String(Date.now() + 2),
+                            time: new Date().toLocaleTimeString(),
+                            type: 'SYSTEM',
+                            title: 'Auto-Switch Market Activated',
+                            description: `Switched active scanner to highest-momentum asset: ${bestMarketCandidate}.`,
+                            level: 'info',
+                        },
+                        ...prev.slice(0, 99),
+                    ]);
                 }
             } catch (err: any) {
                 console.error('[Autoflipper] Trade Execution Error:', err);
+                setTransactions(prev =>
+                    prev.map(t =>
+                        t.id === tempTxnId
+                            ? { ...t, result: 'LOSS', status: 'settled', profit: -stakeToUse }
+                            : t
+                    )
+                );
+                setJournalLogs(prev => [
+                    {
+                        id: String(Date.now()),
+                        time: new Date().toLocaleTimeString(),
+                        type: 'ERROR',
+                        title: 'Trade Purchase Exception',
+                        description: err?.message || 'Error communicating with Deriv WebSocket server.',
+                        level: 'error',
+                    },
+                    ...prev.slice(0, 99),
+                ]);
             } finally {
                 isTradingInProgressRef.current = false;
                 if (botStateRef.current === 'TRADING') {
@@ -996,19 +1147,55 @@ const Autoflipper: React.FC = observer(() => {
         setCurrentStake(baseStake);
         setBotState('WAITING_SIGNAL');
         playSoundCue('signal');
+
+        setJournalLogs(prev => [
+            {
+                id: String(Date.now()),
+                time: new Date().toLocaleTimeString(),
+                type: 'SYSTEM',
+                title: 'Autoflipper Engine Activated',
+                description: `Started with Base Stake $${baseStake.toFixed(2)}. Monitoring ${selectedSymbol} for regime flip triggers.`,
+                level: 'info',
+            },
+            ...prev,
+        ]);
     };
 
     const handlePauseBot = () => {
-        setBotState(prev => (prev === 'PAUSED' ? 'WAITING_SIGNAL' : 'PAUSED'));
+        const nextState = botState === 'PAUSED' ? 'WAITING_SIGNAL' : 'PAUSED';
+        setBotState(nextState);
+        setJournalLogs(prev => [
+            {
+                id: String(Date.now()),
+                time: new Date().toLocaleTimeString(),
+                type: 'SYSTEM',
+                title: nextState === 'PAUSED' ? 'Bot Paused' : 'Bot Resumed',
+                description: nextState === 'PAUSED' ? 'Execution halted by user.' : 'Resumed active regime monitoring.',
+                level: 'warning',
+            },
+            ...prev,
+        ]);
     };
 
     const handleStopBot = () => {
         setBotState('IDLE');
         isTradingInProgressRef.current = false;
+        setJournalLogs(prev => [
+            {
+                id: String(Date.now()),
+                time: new Date().toLocaleTimeString(),
+                type: 'SYSTEM',
+                title: 'Bot Stopped',
+                description: 'Engine returned to idle state.',
+                level: 'warning',
+            },
+            ...prev,
+        ]);
     };
 
     const handleClearLogs = () => {
-        setTradeLog([]);
+        setTransactions([]);
+        setJournalLogs([]);
         setWinsCount(0);
         setLossesCount(0);
         setSessionProfit(0);
@@ -1023,7 +1210,7 @@ const Autoflipper: React.FC = observer(() => {
             <div className='autoflipper__header'>
                 <div className='autoflipper__header-title-box'>
                     <div className='af-icon-badge'>
-                        <Flame size={28} />
+                        <Flame size={24} />
                     </div>
                     <div className='af-title-text'>
                         <div className='title-row'>
@@ -1036,7 +1223,7 @@ const Autoflipper: React.FC = observer(() => {
                                 {botState === 'IDLE' && '● ENGINE READY'}
                             </span>
                         </div>
-                        <span>Regime-Flipping Over 3 / Under 6 Neural Engine with Time-Compounding Automation</span>
+                        <span>Under 6 / Over 3 Neural Regime-Flipping Engine with Linked Compounding Schedule</span>
                     </div>
                 </div>
 
@@ -1093,68 +1280,20 @@ const Autoflipper: React.FC = observer(() => {
                 </div>
             </div>
 
-            {/* ── 2. Market Selector & Options Ribbon ── */}
-            <div className='autoflipper__market-bar'>
-                <div className='af-select-group'>
-                    <label>Active Synthetic Market:</label>
-                    <select
-                        value={selectedSymbol}
-                        onChange={e => setSelectedSymbol(e.target.value)}
-                    >
-                        {MARKETS.map(m => (
-                            <option key={m.symbol} value={m.symbol}>
-                                {m.label} ({m.symbol})
-                            </option>
-                        ))}
-                    </select>
-
-                    <div className='badge-live-price'>
-                        <span className='dot-pulse' />
-                        <span>PRICE: {currentMarket.currentPrice}</span>
-                    </div>
-
-                    <div className='badge-digit-glow' title='Current Spot Last Digit'>
-                        {currentMarket.lastDigit}
-                    </div>
-                </div>
-
-                <div className='af-actions-cluster'>
+            {/* ── 2. Active Markets in ONE LINE (Horizontal Ticker Ribbon) ── */}
+            <div className='autoflipper__markets-strip'>
+                <div className='strip-nav'>
                     <button
-                        className={`af-toggle-button ${!sidebarCollapsed ? 'af-toggle-button--active' : ''}`}
-                        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                        title='Toggle market list sidebar'
+                        className='strip-nav-btn'
+                        onClick={() => scrollMarkets('left')}
+                        type='button'
+                        title='Scroll Left'
                     >
-                        📋 {sidebarCollapsed ? 'Show Markets' : 'Hide Markets'}
-                    </button>
-
-                    <button
-                        className={`af-toggle-button ${scanAllMarkets ? 'af-toggle-button--active' : ''}`}
-                        onClick={() => setScanAllMarkets(!scanAllMarkets)}
-                        title='Scan all derived synthetic indices simultaneously'
-                    >
-                        ⚡ Scan All ({scanAllMarkets ? 'ON' : 'OFF'})
-                    </button>
-
-                    <button
-                        className={`af-toggle-button ${showWideView ? 'af-toggle-button--active' : ''}`}
-                        onClick={() => setShowWideView(!showWideView)}
-                    >
-                        📊 {showWideView ? 'Collapse Matrix' : 'Wide Market Matrix'}
-                    </button>
-
-                    <button
-                        className={`af-toggle-button ${autoSwitchMarkets ? 'af-toggle-button--active' : ''}`}
-                        onClick={() => setAutoSwitchMarkets(!autoSwitchMarkets)}
-                        title='Automatically switch to highest bias market between runs'
-                    >
-                        🔄 Auto-Switch ({autoSwitchMarkets ? 'ON' : 'OFF'})
+                        <ChevronLeft size={16} />
                     </button>
                 </div>
-            </div>
 
-            {/* ── 3. Expandable Wide View Matrix ── */}
-            {showWideView && (
-                <div className='autoflipper__wide-view'>
+                <div className='strip-scroll-track' ref={marketScrollRef}>
                     {MARKETS.map(m => {
                         const mState = marketsDataRef.current.get(m.symbol);
                         const digits = mState?.digits || [];
@@ -1166,686 +1305,710 @@ const Autoflipper: React.FC = observer(() => {
                         const oPct = Math.round((o59 / total) * 100);
                         const isSelected = m.symbol === selectedSymbol;
                         const isBest = m.symbol === bestMarketCandidate;
+                        const lastDigit = mState?.lastDigit ?? 0;
+                        const isUnder = lastDigit <= 4;
 
                         return (
                             <div
                                 key={m.symbol}
-                                className={`af-wide-card ${isSelected ? 'af-wide-card--selected' : ''} ${isBest ? 'af-wide-card--recommended' : ''}`}
-                                onClick={() => {
-                                    setSelectedSymbol(m.symbol);
-                                    setShowWideView(false);
-                                }}
+                                className={`af-market-pill ${isSelected ? 'af-market-pill--selected' : ''} ${isBest ? 'af-market-pill--recommended' : ''}`}
+                                onClick={() => setSelectedSymbol(m.symbol)}
                             >
-                                <div className='af-wide-card__header'>
-                                    <span className='name'>{m.label}</span>
-                                    <span
-                                        className={`digit-badge digit-badge--${(mState?.lastDigit ?? 0) <= 4 ? 'under' : 'over'}`}
-                                    >
-                                        {mState?.lastDigit ?? '—'}
+                                <div className='pill-info'>
+                                    <span className='pill-name'>{m.label}</span>
+                                    <span className='pill-price'>{mState?.currentPrice || '0.00'}</span>
+                                </div>
+                                <div className={`pill-digit ${isUnder ? 'pill-digit--under' : 'pill-digit--over'}`}>
+                                    {lastDigit}
+                                </div>
+                                <div className='pill-bias'>
+                                    <span className={uPct >= oPct ? 'bias-u' : 'bias-o'}>
+                                        {uPct >= oPct ? `U:${uPct}%` : `O:${oPct}%`}
                                     </span>
                                 </div>
-                                <div className='af-wide-card__price'>Price: {mState?.currentPrice ?? '0.00'}</div>
-                                <div className='af-wide-card__stats-row'>
-                                    <div className='split-line'>
-                                        <span style={{ color: '#10b981' }}>Under (0-4): {uPct}%</span>
-                                        <span style={{ color: '#f59e0b' }}>Over (5-9): {oPct}%</span>
-                                    </div>
-                                    <div className='mini-bar'>
-                                        <div className='bar-under' style={{ width: `${uPct}%` }} />
-                                        <div className='bar-over' style={{ width: `${oPct}%` }} />
-                                    </div>
-                                </div>
+                                {isBest && <span className='pill-best-tag'>TOP</span>}
                             </div>
                         );
                     })}
                 </div>
-            )}
 
-            {/* ── 4. Main Body: Sidebar + Workspace ── */}
-            <div className={`autoflipper__body ${sidebarCollapsed ? 'autoflipper__body--collapsed' : ''}`}>
-                {/* Left Sidebar */}
-                {!sidebarCollapsed && (
-                    <div className='autoflipper__sidebar'>
-                        <div className='autoflipper__sidebar-header'>
-                            <h3>SYNTHETIC ASSETS</h3>
-                            <span className='badge'>LIVE FEED</span>
-                        </div>
-                        <div className='autoflipper__sidebar-list'>
-                            {MARKETS.map(m => {
-                                const mState = marketsDataRef.current.get(m.symbol);
-                                const digits = mState?.digits || [];
-                                const last50 = digits.slice(-50);
-                                const u04 = last50.filter(d => d <= 4).length;
-                                const o59 = last50.filter(d => d >= 5).length;
-                                const isSelected = m.symbol === selectedSymbol;
-                                const lastDigit = mState?.lastDigit ?? 0;
+                <div className='strip-nav'>
+                    <button
+                        className='strip-nav-btn'
+                        onClick={() => scrollMarkets('right')}
+                        type='button'
+                        title='Scroll Right'
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
 
-                                return (
-                                    <div
-                                        key={m.symbol}
-                                        className={`af-market-card ${isSelected ? 'af-market-card--active' : ''}`}
-                                        onClick={() => setSelectedSymbol(m.symbol)}
-                                    >
-                                        <div className='af-market-card__top'>
-                                            <span className='symbol-name'>{m.label}</span>
-                                            <span
-                                                className={`digit-pill digit-pill--${lastDigit <= 4 ? 'under' : 'over'}`}
-                                            >
-                                                {lastDigit}
-                                            </span>
-                                        </div>
-                                        <div className='af-market-card__mid'>
-                                            <span className='price'>{mState?.currentPrice ?? '0.00'}</span>
-                                            <span className={`bias ${u04 >= o59 ? 'bias--under' : 'bias--over'}`}>
-                                                {u04 >= o59 ? `Under ${u04}` : `Over ${o59}`}
-                                            </span>
-                                        </div>
-                                        <div className='af-market-card__bot'>
-                                            <span>Flipping Signal:</span>
-                                            <span className='rec-pick'>
-                                                {u04 >= o59 ? 'Under 6' : 'Over 3'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
+                <div className='strip-actions'>
+                    <button
+                        className={`btn-strip-toggle ${scanAllMarkets ? 'btn-strip-toggle--active' : ''}`}
+                        onClick={() => setScanAllMarkets(!scanAllMarkets)}
+                        type='button'
+                        title='Scan all synthetic markets simultaneously'
+                    >
+                        <Zap size={12} /> Scan All ({scanAllMarkets ? 'ON' : 'OFF'})
+                    </button>
+                    <button
+                        className={`btn-strip-toggle ${autoSwitchMarkets ? 'btn-strip-toggle--active' : ''}`}
+                        onClick={() => setAutoSwitchMarkets(!autoSwitchMarkets)}
+                        type='button'
+                        title='Automatically switch to highest bias market between runs'
+                    >
+                        <RefreshCw size={12} /> Auto-Switch ({autoSwitchMarkets ? 'ON' : 'OFF'})
+                    </button>
+                </div>
+            </div>
 
-                {/* Right Workspace */}
-                <div className='autoflipper__workspace'>
-                    {/* Live Trajectory Spline Chart */}
-                    <div className='autoflipper__chart-card'>
-                        <div className='af-chart-top'>
-                            <div className='af-price-badge-group'>
-                                <div className='af-current-price-box'>
-                                    <span className='label'>LIVE STREAM ({currentMarket.symbol})</span>
-                                    <div className='price-row'>
-                                        <span className='price'>{currentMarket.currentPrice}</span>
-                                        <span className='live-dot' />
-                                    </div>
-                                </div>
-                                <div
-                                    className={`af-last-digit-big af-last-digit-big--${currentMarket.lastDigit <= 4 ? 'under' : 'over'}`}
-                                >
-                                    <span className='digit-label'>LAST SPOT</span>
-                                    <span className='digit-val'>{currentMarket.lastDigit}</span>
-                                    <span className='digit-sub'>
-                                        {currentMarket.lastDigit <= 4 ? 'Under (0–4)' : 'Over (5–9)'}
-                                    </span>
+            {/* ── 3. Balanced Analytics Command Deck (2 Equal Columns: Chart & Dual Model Radar) ── */}
+            <div className='autoflipper__analytics-deck'>
+                {/* Left Card: 50-Ticks Spline Trajectory Chart */}
+                <div className='autoflipper__chart-card'>
+                    <div className='af-chart-top'>
+                        <div className='af-price-badge-group'>
+                            <div className='af-current-price-box'>
+                                <span className='label'>LIVE STREAM ({currentMarket.symbol})</span>
+                                <div className='price-row'>
+                                    <span className='price'>{currentMarket.currentPrice}</span>
+                                    <span className='live-dot' />
                                 </div>
                             </div>
-
-                            <div className='af-chart-legend'>
-                                <div className='legend-item'>
-                                    <span className='dot dot--curve' />
-                                    <span>50-Ticks Spline Area</span>
-                                </div>
-                                <div className='legend-item'>
-                                    <span className='dot dot--under' />
-                                    <span>Under (0–4)</span>
-                                </div>
-                                <div className='legend-item'>
-                                    <span className='dot dot--over' />
-                                    <span>Over (5–9)</span>
-                                </div>
-                                <div className='legend-item'>
-                                    <span className='dot dot--curr' />
-                                    <span>Active Spot</span>
-                                </div>
+                            <div
+                                className={`af-last-digit-big af-last-digit-big--${currentMarket.lastDigit <= 4 ? 'under' : 'over'}`}
+                            >
+                                <span className='digit-label'>LAST SPOT</span>
+                                <span className='digit-val'>{currentMarket.lastDigit}</span>
+                                <span className='digit-sub'>
+                                    {currentMarket.lastDigit <= 4 ? 'Under (0–4)' : 'Over (5–9)'}
+                                </span>
                             </div>
                         </div>
 
-                        <div className='af-chart-wrap'>
-                            <DigitLineChart digits={currentMarket.digits} />
+                        <div className='af-chart-legend'>
+                            <div className='legend-item'>
+                                <span className='dot dot--curve' />
+                                <span>50-Ticks Spline</span>
+                            </div>
+                            <div className='legend-item'>
+                                <span className='dot dot--under' />
+                                <span>Under (0–4)</span>
+                            </div>
+                            <div className='legend-item'>
+                                <span className='dot dot--over' />
+                                <span>Over (5–9)</span>
+                            </div>
+                            <div className='legend-item'>
+                                <span className='dot dot--curr' />
+                                <span>Active Spot</span>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Dual Statistical Models Deck (0-4 vs 5-9 & 0-5 vs 4-9) */}
-                    <div className='autoflipper__stats-grid'>
-                        {/* Split Model 1: Under 0-4 vs Over 5-9 */}
-                        <div className='stat-split-card'>
-                            <div className='card-header'>
-                                <h3>
-                                    <Activity size={16} /> Parity Split: Under (0-4) vs Over (5-9)
-                                </h3>
-                                <span className={`badge-edge ${flipAnalysis.under04Pct >= 50 ? 'under-edge' : 'over-edge'}`}>
-                                    {flipAnalysis.under04Pct >= 50 ? `Under Edge (+${flipAnalysis.under04Pct}%)` : `Over Edge (+${flipAnalysis.over59Pct}%)`}
+                    <div className='af-chart-wrap'>
+                        <DigitLineChart digits={currentMarket.digits} />
+                    </div>
+                </div>
+
+                {/* Right Card: Dual Statistical Models & Glowing Entry Radar HUD */}
+                <div className='autoflipper__radar-card'>
+                    <div className='radar-top-header'>
+                        <h3>
+                            <Sparkles size={16} /> Parity &amp; Dominant Frequency Trigger Radar
+                        </h3>
+                        <div className='radar-pulse-badge'>
+                            <span className='dot-pulse' />
+                            <span>{flipAnalysis.signalReason}</span>
+                        </div>
+                    </div>
+
+                    {/* Dual Parity Models */}
+                    <div className='radar-models-grid'>
+                        {/* Split 1: Under 0-4 vs Over 5-9 */}
+                        <div className='mini-split-box'>
+                            <div className='box-head'>
+                                <span>Under (0-4) vs Over (5-9)</span>
+                                <span className={`edge-tag ${flipAnalysis.under04Pct >= 50 ? 'edge-tag--under' : 'edge-tag--over'}`}>
+                                    {flipAnalysis.under04Pct >= 50 ? `+${flipAnalysis.under04Pct}% Under` : `+${flipAnalysis.over59Pct}% Over`}
                                 </span>
                             </div>
-
-                            <div className='split-metrics-row'>
-                                <div className='metric-side under-side'>
-                                    <span className='title'>Under (0,1,2,3,4)</span>
-                                    <span className='pct'>{flipAnalysis.under04Pct}%</span>
-                                    <span className='count'>{flipAnalysis.under04} of 50 Ticks</span>
-                                </div>
-                                <div className='metric-side over-side'>
-                                    <span className='title'>Over (5,6,7,8,9)</span>
-                                    <span className='pct'>{flipAnalysis.over59Pct}%</span>
-                                    <span className='count'>{flipAnalysis.over59} of 50 Ticks</span>
-                                </div>
+                            <div className='split-bar-track'>
+                                <div className='bar-under' style={{ width: `${flipAnalysis.under04Pct}%` }} />
+                                <div className='bar-over' style={{ width: `${flipAnalysis.over59Pct}%` }} />
                             </div>
-
-                            <div className='split-bar-wrap'>
-                                <div className='fill-under' style={{ width: `${flipAnalysis.under04Pct}%` }} />
-                                <div className='fill-over' style={{ width: `${flipAnalysis.over59Pct}%` }} />
-                            </div>
-
-                            <div className='trend-footer'>
-                                <span>Momentum Velocity:</span>
-                                <span className={`trend-tag ${flipAnalysis.isUnder04Increasing ? 'up' : 'down'}`}>
-                                    {flipAnalysis.isUnder04Increasing ? (
-                                        <>
-                                             <TrendingUp size={14} /> Under Accelerating
-                                        </>
-                                    ) : (
-                                        <>
-                                            <TrendingDown size={14} /> Over Accelerating
-                                        </>
-                                    )}
-                                </span>
+                            <div className='box-foot'>
+                                <span>{flipAnalysis.under04} of 50 Under</span>
+                                <span>{flipAnalysis.over59} of 50 Over</span>
                             </div>
                         </div>
 
-                        {/* Split Model 2: Under 0-5 vs Over 4-9 */}
-                        <div className='stat-split-card'>
-                            <div className='card-header'>
-                                <h3>
-                                    <Gauge size={16} /> Extended Range: Under (0-5) vs Over (4-9)
-                                </h3>
-                                <span className={`badge-edge ${flipAnalysis.under05Pct >= 50 ? 'under-edge' : 'over-edge'}`}>
-                                    {flipAnalysis.under05Pct >= 50 ? `Under Dominant (${flipAnalysis.under05Pct}%)` : `Over Dominant (${flipAnalysis.over49Pct}%)`}
-                                </span>
-                            </div>
-
-                            <div className='split-metrics-row'>
-                                <div className='metric-side under-side'>
-                                    <span className='title'>Under (0–5 Range)</span>
-                                    <span className='pct'>{flipAnalysis.under05Pct}%</span>
-                                    <span className='count'>{flipAnalysis.under05} of 50 Ticks</span>
-                                </div>
-                                <div className='metric-side over-side'>
-                                    <span className='title'>Over (4–9 Range)</span>
-                                    <span className='pct'>{flipAnalysis.over49Pct}%</span>
-                                    <span className='count'>{flipAnalysis.over49} of 50 Ticks</span>
-                                </div>
-                            </div>
-
-                            <div className='split-bar-wrap'>
-                                <div className='fill-under' style={{ width: `${flipAnalysis.under05Pct}%` }} />
-                                <div className='fill-over' style={{ width: `${flipAnalysis.over49Pct}%` }} />
-                            </div>
-
-                            <div className='trend-footer'>
-                                <span>10-Tick Immediate Bias:</span>
+                        {/* Split 2: Under 0-5 vs Over 4-9 */}
+                        <div className='mini-split-box'>
+                            <div className='box-head'>
+                                <span>Extended: (0-5) vs (4-9)</span>
                                 <div className='af-tick-pills-row'>
-                                    {flipAnalysis.last10.map((d, i) => (
+                                    {flipAnalysis.last10.slice(-6).map((d, i) => (
                                         <span key={i} className={`mini-digit-badge ${d <= 4 ? 'under' : 'over'}`}>
                                             {d}
                                         </span>
                                     ))}
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* Glowing Entry Digits HUD */}
-                    <div className='autoflipper__entry-hud'>
-                        <div className='hud-header'>
-                            <h3>
-                                <Sparkles size={16} /> Dominant Frequency Entry Radar (Glowing Triggers)
-                            </h3>
-                            <div className='live-pulse-badge'>
-                                <span className='dot-pulse' />
-                                <span>{flipAnalysis.signalReason}</span>
+                            <div className='split-bar-track'>
+                                <div className='bar-under' style={{ width: `${flipAnalysis.under05Pct}%` }} />
+                                <div className='bar-over' style={{ width: `${flipAnalysis.over49Pct}%` }} />
                             </div>
-                        </div>
-
-                        <div className='entry-cards-row'>
-                            {/* Under Target Entry Card */}
-                            <div className={`glowing-digit-card glowing-digit-card--under ${flipAnalysis.activeSignal === 'UNDER' ? 'is-active-trigger' : ''}`}>
-                                <div className='info-col'>
-                                    <span className='tag'>Dominant Under Trigger (0-5)</span>
-                                    <span className='title'>Target: Trade Under 6</span>
-                                    <span className='sub'>Occurred {flipAnalysis.highestUnderDigitPct}% in recent stream</span>
-                                </div>
-                                <div className='digit-orb' title={`Highest Under Digit: ${flipAnalysis.highestUnderDigit}`}>
-                                    {flipAnalysis.highestUnderDigit}
-                                </div>
-                            </div>
-
-                            {/* Over Target Entry Card */}
-                            <div className={`glowing-digit-card glowing-digit-card--over ${flipAnalysis.activeSignal === 'OVER' ? 'is-active-trigger' : ''}`}>
-                                <div className='info-col'>
-                                    <span className='tag'>Dominant Over Trigger (4-9)</span>
-                                    <span className='title'>Target: Trade Over 3</span>
-                                    <span className='sub'>Occurred {flipAnalysis.highestOverDigitPct}% in recent stream</span>
-                                </div>
-                                <div className='digit-orb' title={`Highest Over Digit: ${flipAnalysis.highestOverDigit}`}>
-                                    {flipAnalysis.highestOverDigit}
-                                </div>
+                            <div className='box-foot'>
+                                <span>{flipAnalysis.under05Pct}% Range Under</span>
+                                <span>{flipAnalysis.over49Pct}% Range Over</span>
                             </div>
                         </div>
                     </div>
 
-                    {/* ── 5. Advanced Compounding & Duration Engine Matrix ── */}
-                    <div className='autoflipper__compounding-card'>
-                        <div className='comp-header'>
-                            <div className='title-wrap'>
-                                <h3>
-                                    <Layers size={16} /> Time-Target Compounding Plan
-                                </h3>
-                                <span>Custom Duration ({compDurationValue} {compDurationUnit.toLowerCase()}) &bull; {compRiskPercent}% Risk &bull; {compNumStages} Stages</span>
+                    {/* Glowing Entry Trigger Cards */}
+                    <div className='radar-trigger-row'>
+                        <div className={`trigger-card trigger-card--under ${flipAnalysis.activeSignal === 'UNDER' ? 'is-active-trigger' : ''}`}>
+                            <div className='trigger-info'>
+                                <span className='trigger-tag'>Under Trigger (0–5)</span>
+                                <span className='trigger-title'>Target: Under 6</span>
+                                <span className='trigger-sub'>Freq: {flipAnalysis.highestUnderDigitPct}% in stream</span>
                             </div>
-                            <div className='comp-header-actions'>
-                                <button
-                                    className={`btn-toggle-link ${isCompoundingLinked ? 'btn-toggle-link--active' : ''}`}
-                                    onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
-                                    type='button'
-                                    title='Toggle auto-linking compounding milestones directly to the trading engine'
-                                >
-                                    🔗 Engine Linked: {isCompoundingLinked ? 'ON' : 'OFF'}
-                                </button>
-                                <span className='risk-notice'>
-                                    🛡️ {compRiskPercent}% Risk/Stage
-                                </span>
-                                <button
-                                    className='btn-toggle-schedule'
-                                    onClick={() => setShowScheduleTable(!showScheduleTable)}
-                                    type='button'
-                                >
-                                    {showScheduleTable ? '▲ Hide Milestones' : '▼ View Milestones Table'}
-                                </button>
+                            <div className='trigger-orb' title={`Highest Under Digit: ${flipAnalysis.highestUnderDigit}`}>
+                                {flipAnalysis.highestUnderDigit}
                             </div>
                         </div>
 
-                        {/* Duration Unit Selector Tabs & Presets */}
-                        <div className='comp-duration-selector-row'>
-                            <div className='unit-switch-group'>
-                                <span className='label'>Unit:</span>
-                                <div className='btn-switch-group'>
-                                    <button
-                                        className={`btn-unit ${compDurationUnit === 'HOURS' ? 'btn-unit--active' : ''}`}
-                                        onClick={() => {
-                                            setCompDurationUnit('HOURS');
-                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'HOURS', compRiskPercent, compNumStages);
-                                        }}
-                                        type='button'
-                                    >
-                                        <Clock size={12} /> Hours
-                                    </button>
-                                    <button
-                                        className={`btn-unit ${compDurationUnit === 'DAYS' ? 'btn-unit--active' : ''}`}
-                                        onClick={() => {
-                                            setCompDurationUnit('DAYS');
-                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'DAYS', compRiskPercent, compNumStages);
-                                        }}
-                                        type='button'
-                                    >
-                                        <Calendar size={12} /> Days
-                                    </button>
-                                    <button
-                                        className={`btn-unit ${compDurationUnit === 'MINUTES' ? 'btn-unit--active' : ''}`}
-                                        onClick={() => {
-                                            setCompDurationUnit('MINUTES');
-                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'MINUTES', compRiskPercent, compNumStages);
-                                        }}
-                                        type='button'
-                                    >
-                                        <Zap size={12} /> Mins
-                                    </button>
-                                </div>
+                        <div className={`trigger-card trigger-card--over ${flipAnalysis.activeSignal === 'OVER' ? 'is-active-trigger' : ''}`}>
+                            <div className='trigger-info'>
+                                <span className='trigger-tag'>Over Trigger (4–9)</span>
+                                <span className='trigger-title'>Target: Over 3</span>
+                                <span className='trigger-sub'>Freq: {flipAnalysis.highestOverDigitPct}% in stream</span>
                             </div>
-
-                            <div className='presets-wrap'>
-                                <span className='presets-label'>Quick:</span>
-                                <div className='preset-chips'>
-                                    <button type='button' onClick={() => applyDurationPreset('12', 'HOURS')}>12h</button>
-                                    <button type='button' onClick={() => applyDurationPreset('24', 'HOURS')}>24h</button>
-                                    <button type='button' onClick={() => applyDurationPreset('48', 'HOURS')}>48h</button>
-                                    <button type='button' onClick={() => applyDurationPreset('3', 'DAYS')}>3d</button>
-                                    <button type='button' onClick={() => applyDurationPreset('7', 'DAYS')}>7d</button>
-                                    <button type='button' onClick={() => applyDurationPreset('14', 'DAYS')}>14d</button>
-                                    <button type='button' onClick={() => applyDurationPreset('30', 'DAYS')}>30d</button>
-                                </div>
+                            <div className='trigger-orb' title={`Highest Over Digit: ${flipAnalysis.highestOverDigit}`}>
+                                {flipAnalysis.highestOverDigit}
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
 
-                        {/* Interactive Input Figures Form */}
-                        <div className='comp-inputs-row'>
-                            <div className='input-group'>
-                                <label>Duration ({compDurationUnit})</label>
+            {/* ── 4. Advanced Compounding & Duration Engine Matrix ── */}
+            <div className='autoflipper__compounding-card'>
+                <div className='comp-header'>
+                    <div className='title-wrap'>
+                        <h3>
+                            <Layers size={16} /> Time-Target Compounding Plan
+                        </h3>
+                        <span>Custom Duration ({compDurationValue} {compDurationUnit.toLowerCase()}) &bull; {compRiskPercent}% Risk &bull; {compNumStages} Stages</span>
+                    </div>
+                    <div className='comp-header-actions'>
+                        <button
+                            className={`btn-toggle-link ${isCompoundingLinked ? 'btn-toggle-link--active' : ''}`}
+                            onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
+                            type='button'
+                            title='Toggle auto-linking compounding milestones directly to the trading engine'
+                        >
+                            🔗 Engine Linked: {isCompoundingLinked ? 'ON' : 'OFF'}
+                        </button>
+                        <span className='risk-notice'>
+                            🛡️ {compRiskPercent}% Risk/Stage
+                        </span>
+                        <button
+                            className='btn-toggle-schedule'
+                            onClick={() => setShowScheduleTable(!showScheduleTable)}
+                            type='button'
+                        >
+                            {showScheduleTable ? '▲ Hide Milestones' : '▼ View Milestones Table'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Duration Unit Selector Tabs & Presets */}
+                <div className='comp-duration-selector-row'>
+                    <div className='unit-switch-group'>
+                        <span className='label'>Unit:</span>
+                        <div className='btn-switch-group'>
+                            <button
+                                className={`btn-unit ${compDurationUnit === 'HOURS' ? 'btn-unit--active' : ''}`}
+                                onClick={() => {
+                                    setCompDurationUnit('HOURS');
+                                    generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'HOURS', compRiskPercent, compNumStages);
+                                }}
+                                type='button'
+                            >
+                                <Clock size={12} /> Hours
+                            </button>
+                            <button
+                                className={`btn-unit ${compDurationUnit === 'DAYS' ? 'btn-unit--active' : ''}`}
+                                onClick={() => {
+                                    setCompDurationUnit('DAYS');
+                                    generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'DAYS', compRiskPercent, compNumStages);
+                                }}
+                                type='button'
+                            >
+                                <Calendar size={12} /> Days
+                            </button>
+                            <button
+                                className={`btn-unit ${compDurationUnit === 'MINUTES' ? 'btn-unit--active' : ''}`}
+                                onClick={() => {
+                                    setCompDurationUnit('MINUTES');
+                                    generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'MINUTES', compRiskPercent, compNumStages);
+                                }}
+                                type='button'
+                            >
+                                <Zap size={12} /> Mins
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className='presets-wrap'>
+                        <span className='presets-label'>Quick Presets:</span>
+                        <div className='preset-chips'>
+                            <button type='button' onClick={() => applyDurationPreset('12', 'HOURS')}>12h</button>
+                            <button type='button' onClick={() => applyDurationPreset('24', 'HOURS')}>24h</button>
+                            <button type='button' onClick={() => applyDurationPreset('48', 'HOURS')}>48h</button>
+                            <button type='button' onClick={() => applyDurationPreset('3', 'DAYS')}>3d</button>
+                            <button type='button' onClick={() => applyDurationPreset('7', 'DAYS')}>7d</button>
+                            <button type='button' onClick={() => applyDurationPreset('14', 'DAYS')}>14d</button>
+                            <button type='button' onClick={() => applyDurationPreset('30', 'DAYS')}>30d</button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Interactive Input Figures Form */}
+                <div className='comp-inputs-row'>
+                    <div className='input-group'>
+                        <label>Duration ({compDurationUnit})</label>
+                        <input
+                            type='number'
+                            min='1'
+                            step='1'
+                            value={compDurationValue}
+                            onChange={e => setCompDurationValue(e.target.value)}
+                            placeholder='24'
+                        />
+                    </div>
+
+                    <div className='input-group'>
+                        <label>Start Capital ({currency})</label>
+                        <input
+                            type='number'
+                            min='5'
+                            step='10'
+                            value={compStartCapital}
+                            onChange={e => setCompStartCapital(e.target.value)}
+                            placeholder='100.00'
+                        />
+                    </div>
+
+                    <div className='input-group'>
+                        <label>Target Profit ({currency})</label>
+                        <input
+                            type='number'
+                            min='10'
+                            step='10'
+                            value={compTargetProfit}
+                            onChange={e => setCompTargetProfit(e.target.value)}
+                            placeholder='250.00'
+                        />
+                    </div>
+
+                    <div className='input-group'>
+                        <label>Risk % / Trade</label>
+                        <input
+                            type='number'
+                            min='0.5'
+                            max='10'
+                            step='0.5'
+                            value={compRiskPercent}
+                            onChange={e => setCompRiskPercent(e.target.value)}
+                            placeholder='2.0'
+                        />
+                    </div>
+
+                    <div className='input-group'>
+                        <label>Target Stages</label>
+                        <select
+                            value={compNumStages}
+                            onChange={e => setCompNumStages(e.target.value)}
+                        >
+                            <option value='4'>4 Stages</option>
+                            <option value='6'>6 Stages</option>
+                            <option value='8'>8 Stages (Std)</option>
+                            <option value='10'>10 Stages</option>
+                            <option value='12'>12 Stages</option>
+                            <option value='16'>16 Stages</option>
+                            <option value='24'>24 Stages</option>
+                        </select>
+                    </div>
+
+                    <button
+                        className='btn-generate'
+                        onClick={() => generateCompoundingPlan()}
+                        type='button'
+                    >
+                        <RefreshCw size={13} /> Recalculate
+                    </button>
+
+                    <button
+                        className='btn-sync-engine'
+                        onClick={applyCompoundingToEngine}
+                        type='button'
+                        title='Directly link and apply compounding parameters to Trade Engine'
+                    >
+                        ⚡ Sync with Engine
+                    </button>
+                </div>
+
+                {/* Live Active Compounding Stage Gauge */}
+                <div className='comp-live-stage-gauge'>
+                    <div className='gauge-top'>
+                        <div className='gauge-left'>
+                            <span className='gauge-badge'>
+                                {isAllStagesComplete ? '🏆 GOAL REACHED' : `STAGE #${activeStage.stage} OF ${compStages.length}`}
+                            </span>
+                            <span className='gauge-title'>
+                                {activeStage.timeLabel} Target: <strong>+${activeStage.cumulativeProfit.toFixed(2)}</strong> ({currency})
+                            </span>
+                        </div>
+                        <div className='gauge-right'>
+                            <span>Base Stake: <strong>${activeStage.recommendedStake.toFixed(2)}</strong></span>
+                            <span className='gauge-pct'>{stageProgressPct}%</span>
+                        </div>
+                    </div>
+                    <div className='gauge-bar-track'>
+                        <div
+                            className='gauge-bar-fill'
+                            style={{ width: `${stageProgressPct}%` }}
+                        />
+                    </div>
+                    <div className='gauge-sub'>
+                        <span>Progress: <strong>${stageCurrentProgress.toFixed(2)} / ${activeStage.stageProfit.toFixed(2)}</strong></span>
+                        <span className='link-state-indicator'>
+                            {isCompoundingLinked ? '🔗 Trade Engine Linked & Auto-Escalating' : '⚠️ Manual Stake Mode'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Plan Velocity Summary Cards */}
+                <div className='comp-metrics-summary-bar'>
+                    <div className='metric-stat-box'>
+                        <span className='label'>Total Time</span>
+                        <span className='val'>{compDurationValue} {compDurationUnit.toLowerCase()}</span>
+                    </div>
+                    <div className='metric-stat-box'>
+                        <span className='label'>Hourly Target</span>
+                        <span className='val'>+${planVelocityMetrics.hourlyReq} / hr</span>
+                    </div>
+                    <div className='metric-stat-box'>
+                        <span className='label'>Daily Target</span>
+                        <span className='val'>+${planVelocityMetrics.dailyReq} / day</span>
+                    </div>
+                    <div className='metric-stat-box'>
+                        <span className='label'>Final Target Balance</span>
+                        <span className='val' style={{ color: '#00f0ff' }}>
+                            ${(Number(compStartCapital) + Number(compTargetProfit)).toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Compounding Stages Schedule Table (Collapsible) */}
+                {showScheduleTable && (
+                    <div className='comp-table-wrap'>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Milestone</th>
+                                    <th>Target Timeline</th>
+                                    <th>Target Balance</th>
+                                    <th>{compRiskPercent}% Stake</th>
+                                    <th>Stage Profit</th>
+                                    <th>Cumulative Profit</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stagesWithStatus.map(st => (
+                                    <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
+                                        <td className='stage-name'>Stage #{st.stage}</td>
+                                        <td className='stage-time'>
+                                            <Clock size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                                            {st.timeLabel}
+                                        </td>
+                                        <td className='stage-bal'>${st.targetBalance.toFixed(2)}</td>
+                                        <td className='stage-stake'>${st.recommendedStake.toFixed(2)}</td>
+                                        <td className='stage-profit'>+${st.stageProfit.toFixed(2)}</td>
+                                        <td className='stage-cum'>+${st.cumulativeProfit.toFixed(2)}</td>
+                                        <td>
+                                            <span className={`badge-stage-status ${st.status.toLowerCase()}`}>
+                                                {st.status === 'DONE' && '✓ DONE'}
+                                                {st.status === 'ACTIVE' && '⚡ ACTIVE'}
+                                                {st.status === 'PENDING' && '⏳ QUEUED'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* ── 5. Bottom Balanced Grid: Parameters & Transactions Journal ── */}
+            <div className='autoflipper__bottom-grid'>
+                {/* Left Card: Trading Parameters Panel */}
+                <div className='autoflipper__params-card'>
+                    <div className='params-card-header'>
+                        <h3>
+                            <Shield size={16} /> Trading Parameters &amp; Risk Matrix
+                        </h3>
+                    </div>
+
+                    {/* Compounding Engine Link Banner */}
+                    <div className={`comp-engine-badge ${isCompoundingLinked ? 'comp-engine-badge--active' : ''}`}>
+                        <span className='dot' />
+                        <span>
+                            {isCompoundingLinked
+                                ? `Linked with Stage #${activeStage.stage} (Base Stake: $${activeStage.recommendedStake.toFixed(2)}, Goal: +$${(Number(compTargetProfit) || 250).toFixed(2)})`
+                                : 'Manual Stake Mode: Driven by input fields below'}
+                        </span>
+                        <button
+                            className='btn-switch-link'
+                            type='button'
+                            onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
+                        >
+                            {isCompoundingLinked ? 'Manual Mode' : 'Link Plan'}
+                        </button>
+                    </div>
+
+                    <div className='af-inputs-grid'>
+                        <div className='af-input-group'>
+                            <label>Initial Stake ({currency}) {isCompoundingLinked && '• [Plan Stake]'}</label>
+                            <input
+                                type='number'
+                                step='0.1'
+                                min='0.35'
+                                value={initialStake}
+                                onChange={e => setInitialStake(e.target.value)}
+                                disabled={botState !== 'IDLE'}
+                            />
+                        </div>
+                        <div className='af-input-group'>
+                            <label>Martingale Multiplier</label>
+                            <input
+                                type='number'
+                                step='0.1'
+                                value={martingale}
+                                onChange={e => setMartingale(e.target.value)}
+                                disabled={botState !== 'IDLE'}
+                            />
+                        </div>
+                        <div className='af-input-group'>
+                            <label>Take Profit ({currency}) {isCompoundingLinked && '• [Plan Goal]'}</label>
+                            <input
+                                type='number'
+                                value={takeProfit}
+                                onChange={e => setTakeProfit(e.target.value)}
+                                disabled={botState !== 'IDLE'}
+                            />
+                        </div>
+                        <div className='af-input-group'>
+                            <label>Stop Loss ({currency})</label>
+                            <input
+                                type='number'
+                                value={stopLoss}
+                                onChange={e => setStopLoss(e.target.value)}
+                                disabled={botState !== 'IDLE'}
+                            />
+                        </div>
+
+                        {/* Custom Trade Duration Figure & Unit */}
+                        <div className='af-input-group'>
+                            <label>Trade Duration</label>
+                            <div className='af-duration-input-composite'>
                                 <input
                                     type='number'
                                     min='1'
                                     step='1'
-                                    value={compDurationValue}
-                                    onChange={e => setCompDurationValue(e.target.value)}
-                                    placeholder='24'
+                                    value={tradeDurationValue}
+                                    onChange={e => setTradeDurationValue(e.target.value)}
+                                    disabled={botState !== 'IDLE'}
                                 />
-                            </div>
-
-                            <div className='input-group'>
-                                <label>Start Capital ({currency})</label>
-                                <input
-                                    type='number'
-                                    min='5'
-                                    step='10'
-                                    value={compStartCapital}
-                                    onChange={e => setCompStartCapital(e.target.value)}
-                                    placeholder='100.00'
-                                />
-                            </div>
-
-                            <div className='input-group'>
-                                <label>Target Profit ({currency})</label>
-                                <input
-                                    type='number'
-                                    min='10'
-                                    step='10'
-                                    value={compTargetProfit}
-                                    onChange={e => setCompTargetProfit(e.target.value)}
-                                    placeholder='250.00'
-                                />
-                            </div>
-
-                            <div className='input-group'>
-                                <label>Risk % / Trade</label>
-                                <input
-                                    type='number'
-                                    min='0.5'
-                                    max='10'
-                                    step='0.5'
-                                    value={compRiskPercent}
-                                    onChange={e => setCompRiskPercent(e.target.value)}
-                                    placeholder='2.0'
-                                />
-                            </div>
-
-                            <div className='input-group'>
-                                <label>Target Stages</label>
                                 <select
-                                    value={compNumStages}
-                                    onChange={e => setCompNumStages(e.target.value)}
+                                    value={tradeDurationUnit}
+                                    onChange={e => setTradeDurationUnit(e.target.value as TradeDurationUnitType)}
+                                    disabled={botState !== 'IDLE'}
                                 >
-                                    <option value='4'>4 Stages</option>
-                                    <option value='6'>6 Stages</option>
-                                    <option value='8'>8 Stages (Std)</option>
-                                    <option value='10'>10 Stages</option>
-                                    <option value='12'>12 Stages</option>
-                                    <option value='16'>16 Stages</option>
-                                    <option value='24'>24 Stages</option>
+                                    <option value='t'>Ticks</option>
+                                    <option value='s'>Seconds</option>
+                                    <option value='m'>Minutes</option>
                                 </select>
                             </div>
+                        </div>
 
+                        <div className='af-input-group'>
+                            <label>Strategy Mode</label>
+                            <select value='auto' disabled>
+                                <option value='auto'>Under 6 / Over 3 (Auto-Pilot)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Execution Buttons */}
+                    <div className='af-buttons-row'>
+                        {botState === 'IDLE' ? (
+                            <button className='af-btn af-btn--start' onClick={handleStartBot}>
+                                <Play size={18} /> START AUTOFLIPPER
+                            </button>
+                        ) : (
+                            <>
+                                <button className='af-btn af-btn--pause' onClick={handlePauseBot}>
+                                    {botState === 'PAUSED' ? <Play size={16} /> : <Pause size={16} />}
+                                    {botState === 'PAUSED' ? 'RESUME' : 'PAUSE'}
+                                </button>
+                                <button className='af-btn af-btn--stop' onClick={handleStopBot}>
+                                    <Square size={16} /> STOP BOT
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Card: Live Transactions & Execution Journal */}
+                <div className='autoflipper__logs-card'>
+                    <div className='af-logs-header'>
+                        <div className='af-logs-tabs'>
                             <button
-                                className='btn-generate'
-                                onClick={() => generateCompoundingPlan()}
+                                className={`af-tab-btn ${activeJournalTab === 'TRANSACTIONS' ? 'af-tab-btn--active' : ''}`}
+                                onClick={() => setActiveJournalTab('TRANSACTIONS')}
                                 type='button'
                             >
-                                <RefreshCw size={13} /> Recalculate
+                                <FileText size={14} /> Live Transactions ({transactions.length})
                             </button>
-
                             <button
-                                className='btn-sync-engine'
-                                onClick={applyCompoundingToEngine}
+                                className={`af-tab-btn ${activeJournalTab === 'JOURNAL' ? 'af-tab-btn--active' : ''}`}
+                                onClick={() => setActiveJournalTab('JOURNAL')}
                                 type='button'
-                                title='Directly link and apply compounding parameters to Trade Engine'
                             >
-                                ⚡ Sync with Engine
+                                <Activity size={14} /> System Journal ({journalLogs.length})
                             </button>
                         </div>
 
-                        {/* Live Active Compounding Stage Gauge */}
-                        <div className='comp-live-stage-gauge'>
-                            <div className='gauge-top'>
-                                <div className='gauge-left'>
-                                    <span className='gauge-badge'>
-                                        {isAllStagesComplete ? '🏆 GOAL REACHED' : `STAGE #${activeStage.stage} OF ${compStages.length}`}
-                                    </span>
-                                    <span className='gauge-title'>
-                                        {activeStage.timeLabel} Target: <strong>+${activeStage.cumulativeProfit.toFixed(2)}</strong> ({currency})
-                                    </span>
-                                </div>
-                                <div className='gauge-right'>
-                                    <span>Base Stake: <strong>${activeStage.recommendedStake.toFixed(2)}</strong></span>
-                                    <span className='gauge-pct'>{stageProgressPct}%</span>
-                                </div>
-                            </div>
-                            <div className='gauge-bar-track'>
-                                <div
-                                    className='gauge-bar-fill'
-                                    style={{ width: `${stageProgressPct}%` }}
-                                />
-                            </div>
-                            <div className='gauge-sub'>
-                                <span>Progress: <strong>${stageCurrentProgress.toFixed(2)} / ${activeStage.stageProfit.toFixed(2)}</strong></span>
-                                <span className='link-state-indicator'>
-                                    {isCompoundingLinked ? '🔗 Trade Engine Linked & Auto-Escalating' : '⚠️ Manual Stake Mode'}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Plan Velocity Summary Cards */}
-                        <div className='comp-metrics-summary-bar'>
-                            <div className='metric-stat-box'>
-                                <span className='label'>Total Time</span>
-                                <span className='val'>{compDurationValue} {compDurationUnit.toLowerCase()}</span>
-                            </div>
-                            <div className='metric-stat-box'>
-                                <span className='label'>Hourly Target</span>
-                                <span className='val'>+${planVelocityMetrics.hourlyReq} / hr</span>
-                            </div>
-                            <div className='metric-stat-box'>
-                                <span className='label'>Daily Target</span>
-                                <span className='val'>+${planVelocityMetrics.dailyReq} / day</span>
-                            </div>
-                            <div className='metric-stat-box'>
-                                <span className='label'>Final Target</span>
-                                <span className='val' style={{ color: '#00f0ff' }}>
-                                    ${(Number(compStartCapital) + Number(compTargetProfit)).toFixed(2)}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Compounding Stages Schedule Table (Collapsible) */}
-                        {showScheduleTable && (
-                            <div className='comp-table-wrap'>
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Milestone</th>
-                                            <th>Target Timeline</th>
-                                            <th>Target Balance</th>
-                                            <th>{compRiskPercent}% Stake</th>
-                                            <th>Stage Profit</th>
-                                            <th>Cumulative Profit</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {stagesWithStatus.map(st => (
-                                            <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
-                                                <td className='stage-name'>Stage #{st.stage}</td>
-                                                <td className='stage-time'>
-                                                    <Clock size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                                                    {st.timeLabel}
-                                                </td>
-                                                <td className='stage-bal'>${st.targetBalance.toFixed(2)}</td>
-                                                <td className='stage-stake'>${st.recommendedStake.toFixed(2)}</td>
-                                                <td className='stage-profit'>+${st.stageProfit.toFixed(2)}</td>
-                                                <td className='stage-cum'>+${st.cumulativeProfit.toFixed(2)}</td>
-                                                <td>
-                                                    <span className={`badge-stage-status ${st.status.toLowerCase()}`}>
-                                                        {st.status === 'DONE' && '✓ DONE'}
-                                                        {st.status === 'ACTIVE' && '⚡ ACTIVE'}
-                                                        {st.status === 'PENDING' && '⏳ QUEUED'}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        {(transactions.length > 0 || journalLogs.length > 0) && (
+                            <button className='af-clear-btn' onClick={handleClearLogs} type='button'>
+                                Clear
+                            </button>
                         )}
                     </div>
 
-                    {/* Bottom Grid: Parameters & Trade Journal */}
-                    <div className='autoflipper__bottom-grid'>
-                        {/* Trading Parameters Panel */}
-                        <div className='autoflipper__params-card'>
-                            <h3>
-                                <Shield size={16} /> Trading Parameters &amp; Risk Matrix
-                            </h3>
-
-                            {/* Compounding Engine Link Banner */}
-                            <div className={`comp-engine-badge ${isCompoundingLinked ? 'comp-engine-badge--active' : ''}`}>
-                                <span className='dot' />
-                                <span>
-                                    {isCompoundingLinked
-                                        ? `Linked with Stage #${activeStage.stage} (Base Stake: $${activeStage.recommendedStake.toFixed(2)}, Goal: +$${(Number(compTargetProfit) || 250).toFixed(2)})`
-                                        : 'Manual Stake Mode: Driven by inputs below'}
-                                </span>
-                                <button
-                                    className='btn-switch-link'
-                                    type='button'
-                                    onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
-                                >
-                                    {isCompoundingLinked ? 'Switch to Manual' : 'Link Compounding'}
-                                </button>
-                            </div>
-
-                            <div className='af-inputs-grid'>
-                                <div className='af-input-group'>
-                                    <label>Initial Stake ({currency}) {isCompoundingLinked && '• [Stage Stake]'}</label>
-                                    <input
-                                        type='number'
-                                        step='0.1'
-                                        min='0.35'
-                                        value={initialStake}
-                                        onChange={e => setInitialStake(e.target.value)}
-                                        disabled={botState !== 'IDLE'}
-                                    />
+                    {/* Content View */}
+                    {activeJournalTab === 'TRANSACTIONS' ? (
+                        <div className='af-transactions-view'>
+                            {transactions.length === 0 ? (
+                                <div className='af-logs-empty'>
+                                    <div className='af-logs-empty__icon'>📑</div>
+                                    <span>No active transactions yet. Start Autoflipper to post live trades.</span>
                                 </div>
-                                <div className='af-input-group'>
-                                    <label>Martingale Multiplier</label>
-                                    <input
-                                        type='number'
-                                        step='0.1'
-                                        value={martingale}
-                                        onChange={e => setMartingale(e.target.value)}
-                                        disabled={botState !== 'IDLE'}
-                                    />
+                            ) : (
+                                <div className='af-table-container'>
+                                    <table className='af-txn-table'>
+                                        <thead>
+                                            <tr>
+                                                <th>Time</th>
+                                                <th>Ref / ID</th>
+                                                <th>Market</th>
+                                                <th>Type</th>
+                                                <th>Entry/Exit</th>
+                                                <th>Stake</th>
+                                                <th>Payout</th>
+                                                <th>Profit</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {transactions.map(txn => {
+                                                const isWin = txn.result === 'WIN';
+                                                const isOpen = txn.result === 'OPEN';
+                                                return (
+                                                    <tr key={txn.id} className={`txn-row txn-row--${txn.result.toLowerCase()}`}>
+                                                        <td className='time-cell'>{txn.time}</td>
+                                                        <td className='ref-cell'>
+                                                            {txn.contractId ? `#${txn.contractId}` : 'Pending...'}
+                                                        </td>
+                                                        <td className='market-cell'>{txn.market}</td>
+                                                        <td className='type-cell'>
+                                                            <span className={`type-badge type-badge--${txn.contractType.toLowerCase().includes('under') ? 'under' : 'over'}`}>
+                                                                {txn.contractType}
+                                                            </span>
+                                                        </td>
+                                                        <td className='spot-cell'>
+                                                            {isOpen ? (
+                                                                <span className='spot-open'>Running...</span>
+                                                            ) : (
+                                                                <span>{txn.entrySpot} &rarr; <strong>{txn.exitSpot}</strong></span>
+                                                            )}
+                                                        </td>
+                                                        <td className='stake-cell'>${txn.stake.toFixed(2)}</td>
+                                                        <td className='payout-cell'>
+                                                            {isOpen ? '—' : `$${txn.payout.toFixed(2)}`}
+                                                        </td>
+                                                        <td className={`profit-cell ${isWin ? 'profit-cell--win' : !isOpen ? 'profit-cell--loss' : ''}`}>
+                                                            {isOpen ? (
+                                                                <span className='profit-open'>$0.00</span>
+                                                            ) : isWin ? (
+                                                                `+$${txn.profit.toFixed(2)}`
+                                                            ) : (
+                                                                `-$${Math.abs(txn.profit).toFixed(2)}`
+                                                            )}
+                                                        </td>
+                                                        <td className='status-cell'>
+                                                            <span className={`status-pill status-pill--${txn.result.toLowerCase()}`}>
+                                                                {txn.result === 'WIN' && '✓ WON'}
+                                                                {txn.result === 'LOSS' && '✗ LOST'}
+                                                                {txn.result === 'OPEN' && '⏳ OPEN'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
-                                <div className='af-input-group'>
-                                    <label>Take Profit ({currency}) {isCompoundingLinked && '• [Target Goal]'}</label>
-                                    <input
-                                        type='number'
-                                        value={takeProfit}
-                                        onChange={e => setTakeProfit(e.target.value)}
-                                        disabled={botState !== 'IDLE'}
-                                    />
-                                </div>
-                                <div className='af-input-group'>
-                                    <label>Stop Loss ({currency})</label>
-                                    <input
-                                        type='number'
-                                        value={stopLoss}
-                                        onChange={e => setStopLoss(e.target.value)}
-                                        disabled={botState !== 'IDLE'}
-                                    />
-                                </div>
-                                
-                                {/* Custom Trade Duration Figure & Unit */}
-                                <div className='af-input-group'>
-                                    <label>Trade Duration</label>
-                                    <div className='af-duration-input-composite'>
-                                        <input
-                                            type='number'
-                                            min='1'
-                                            step='1'
-                                            value={tradeDurationValue}
-                                            onChange={e => setTradeDurationValue(e.target.value)}
-                                            disabled={botState !== 'IDLE'}
-                                        />
-                                        <select
-                                            value={tradeDurationUnit}
-                                            onChange={e => setTradeDurationUnit(e.target.value as TradeDurationUnitType)}
-                                            disabled={botState !== 'IDLE'}
-                                        >
-                                            <option value='t'>Ticks</option>
-                                            <option value='s'>Seconds</option>
-                                            <option value='m'>Minutes</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className='af-input-group'>
-                                    <label>Strategy Mode</label>
-                                    <select value='auto' disabled>
-                                        <option value='auto'>Under 6 / Over 3 (Auto-Pilot)</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Execution Buttons */}
-                            <div className='af-buttons-row'>
-                                {botState === 'IDLE' ? (
-                                    <button className='af-btn af-btn--start' onClick={handleStartBot}>
-                                        <Play size={18} /> START AUTOFLIPPER
-                                    </button>
-                                ) : (
-                                    <>
-                                        <button className='af-btn af-btn--pause' onClick={handlePauseBot}>
-                                            {botState === 'PAUSED' ? <Play size={16} /> : <Pause size={16} />}
-                                            {botState === 'PAUSED' ? 'RESUME' : 'PAUSE'}
-                                        </button>
-                                        <button className='af-btn af-btn--stop' onClick={handleStopBot}>
-                                            <Square size={16} /> STOP BOT
-                                        </button>
-                                    </>
-                                )}
-                            </div>
+                            )}
                         </div>
-
-                        {/* Live Trade Journal */}
-                        <div className='autoflipper__logs-card'>
-                            <div className='af-logs-header'>
-                                <h3>
-                                    <Activity size={16} /> Live Execution Journal
-                                </h3>
-                                {tradeLog.length > 0 && (
-                                    <button className='af-clear-btn' onClick={handleClearLogs}>
-                                        Clear
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className='af-logs-list'>
-                                {tradeLog.length === 0 ? (
-                                    <div className='af-logs-empty'>
-                                        Engine idle. Start Autoflipper to begin live regime-flip trading.
-                                    </div>
-                                ) : (
-                                    tradeLog.map(item => (
-                                        <div key={item.id} className={`af-log-row af-log-row--${item.result.toLowerCase()}`}>
-                                            <span className='time'>{item.time}</span>
-                                            <span className='market'>{item.market}</span>
-                                            <span className='strategy'>{item.strategy}</span>
-                                            <span className='contract'>{item.contractType}</span>
-                                            <span className='stake'>${item.stake.toFixed(2)}</span>
-                                            <span className={`profit ${item.profit >= 0 ? 'profit--pos' : 'profit--neg'}`}>
-                                                {item.profit >= 0 ? `+$${item.profit.toFixed(2)}` : `-$${Math.abs(item.profit).toFixed(2)}`}
-                                            </span>
-                                            <span className='result'>{item.result}</span>
+                    ) : (
+                        <div className='af-journal-view'>
+                            {journalLogs.length === 0 ? (
+                                <div className='af-logs-empty'>
+                                    <div className='af-logs-empty__icon'>📝</div>
+                                    <span>Engine log idle. Operational and milestone events will post here.</span>
+                                </div>
+                            ) : (
+                                <div className='af-journal-list'>
+                                    {journalLogs.map(log => (
+                                        <div key={log.id} className={`af-journal-item af-journal-item--${log.level || 'info'}`}>
+                                            <div className='journal-item-head'>
+                                                <div className='journal-title-wrap'>
+                                                    {log.level === 'success' && <CheckCircle2 size={13} className='icon-success' />}
+                                                    {log.level === 'error' && <AlertCircle size={13} className='icon-error' />}
+                                                    {log.level === 'warning' && <AlertCircle size={13} className='icon-warning' />}
+                                                    {log.level === 'info' && <Activity size={13} className='icon-info' />}
+                                                    <span className='title'>{log.title}</span>
+                                                </div>
+                                                <span className='time'>{log.time}</span>
+                                            </div>
+                                            <div className='journal-item-body'>
+                                                <span className='desc'>{log.description}</span>
+                                                {log.badge && <span className='badge'>{log.badge}</span>}
+                                            </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
