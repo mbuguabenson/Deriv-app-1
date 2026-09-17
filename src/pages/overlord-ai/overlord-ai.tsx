@@ -595,18 +595,47 @@ const OverlordAi: React.FC = observer(() => {
         );
     }, [selectedSymbol, renderTrigger]);
 
-    // ── Pure Overlord AI Statistical Analysis Function (100% Accuracy Engine) ──
+    // ── Pure Overlord AI Statistical Analysis & Edge Engine (100% Quantitative Gated Logic) ──
     const evaluateOverlordAnalysis = (
         digits: number[],
         mode: OverlordStrategyMode,
         lastDigit: number
     ) => {
         const totalTicks = digits.length;
+        if (totalTicks < 15) {
+            return {
+                totalTicks,
+                frequencies: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 },
+                percentages: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 },
+                lowRatio: 50,
+                highRatio: 50,
+                under8Pct: 80,
+                over1Pct: 80,
+                under7Pct: 70,
+                over2Pct: 70,
+                under6Pct: 60,
+                over3Pct: 60,
+                last10Low: 5,
+                last10High: 5,
+                chosenStrategy: mode,
+                signal: 'NEUTRAL' as const,
+                targetBarrier: 8,
+                signalConfidence: 50,
+                isTriggerReady: false,
+                triggerDigits: [] as number[],
+                highestDigit: 0,
+                lowestDigit: 9,
+                highestUnderDigit: 0,
+                highestOverDigit: 9,
+                edgePct: 0,
+                reason: 'Awaiting tick stream...',
+            };
+        }
 
+        // 1. Whole-Sample Frequencies & Percentages (0-9 Spectrum Display)
         const frequencies: Record<number, number> = {
             0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0,
         };
-
         digits.forEach(d => {
             if (frequencies[d] !== undefined) frequencies[d]++;
         });
@@ -617,39 +646,41 @@ const OverlordAi: React.FC = observer(() => {
             percentages[i] = Math.round((frequencies[i] / sampleSize) * 1000) / 10;
         }
 
-        // Low Digits (0–4) vs High Digits (5–9)
-        const lowCount = [0, 1, 2, 3, 4].reduce((sum, d) => sum + frequencies[d], 0);
-        const lowRatio = Math.round((lowCount / sampleSize) * 100);
+        // 2. Rolling 50-Tick Window (Real Active Market State & Statistical Edge)
+        const sample50 = digits.slice(-50);
+        const count50 = sample50.length;
+
+        const u8_50 = sample50.filter(d => d <= 7).length;
+        const o1_50 = sample50.filter(d => d >= 2).length;
+        const u7_50 = sample50.filter(d => d <= 6).length;
+        const o2_50 = sample50.filter(d => d >= 3).length;
+        const u6_50 = sample50.filter(d => d <= 5).length;
+        const o3_50 = sample50.filter(d => d >= 4).length;
+        const low_50 = sample50.filter(d => d <= 4).length;
+        const high_50 = count50 - low_50;
+
+        const under8Pct = Math.round((u8_50 / count50) * 100);
+        const over1Pct = Math.round((o1_50 / count50) * 100);
+        const under7Pct = Math.round((u7_50 / count50) * 100);
+        const over2Pct = Math.round((o2_50 / count50) * 100);
+        const under6Pct = Math.round((u6_50 / count50) * 100);
+        const over3Pct = Math.round((o3_50 / count50) * 100);
+        const lowRatio = Math.round((low_50 / count50) * 100);
         const highRatio = 100 - lowRatio;
 
-        // Specific Barriers Frequency
-        const under8Count = [0, 1, 2, 3, 4, 5, 6, 7].reduce((s, d) => s + frequencies[d], 0);
-        const over1Count = [2, 3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
-        const under7Count = [0, 1, 2, 3, 4, 5, 6].reduce((s, d) => s + frequencies[d], 0);
-        const over2Count = [3, 4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
-        const under6Count = [0, 1, 2, 3, 4, 5].reduce((s, d) => s + frequencies[d], 0);
-        const over3Count = [4, 5, 6, 7, 8, 9].reduce((s, d) => s + frequencies[d], 0);
+        // 3. Local Frequencies in Recent 50 Ticks (for accurate Catalyst Entry Digits)
+        const localFreq: Record<number, number> = {
+            0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0,
+        };
+        sample50.forEach(d => {
+            if (localFreq[d] !== undefined) localFreq[d]++;
+        });
 
-        const under8Pct = Math.round((under8Count / sampleSize) * 100);
-        const over1Pct = Math.round((over1Count / sampleSize) * 100);
-        const under7Pct = Math.round((under7Count / sampleSize) * 100);
-        const over2Pct = Math.round((over2Count / sampleSize) * 100);
-        const under6Pct = Math.round((under6Count / sampleSize) * 100);
-        const over3Pct = Math.round((over3Count / sampleSize) * 100);
-
-        // Micro-momentum (last 10 ticks)
-        const last10 = digits.slice(-10);
-        const last10Low = last10.filter(d => d <= 4).length;
-        const last10High = 10 - last10Low;
-        const last10Under = last10.filter(d => d <= 5).length;
-        const last10Over = last10.filter(d => d >= 4).length;
-
-        // Highest Entry Digit in Under (0-5) & Over (4-9)
         let highestUnderDigit = 0;
         let maxUnderCount = -1;
         for (let i = 0; i <= 5; i++) {
-            if (frequencies[i] > maxUnderCount) {
-                maxUnderCount = frequencies[i];
+            if (localFreq[i] > maxUnderCount) {
+                maxUnderCount = localFreq[i];
                 highestUnderDigit = i;
             }
         }
@@ -657,86 +688,17 @@ const OverlordAi: React.FC = observer(() => {
         let highestOverDigit = 9;
         let maxOverCount = -1;
         for (let i = 4; i <= 9; i++) {
-            if (frequencies[i] > maxOverCount) {
-                maxOverCount = frequencies[i];
+            if (localFreq[i] > maxOverCount) {
+                maxOverCount = localFreq[i];
                 highestOverDigit = i;
             }
         }
 
-        // Strategy Resolution
-        let chosenStrategy: OverlordStrategyMode = mode;
-        if (mode === 'ALL_AUTO') {
-            const scores = [
-                { mode: 'OVER_1_UNDER_8' as OverlordStrategyMode, edge: Math.max(under8Pct, over1Pct) },
-                { mode: 'OVER_2_UNDER_7' as OverlordStrategyMode, edge: Math.max(under7Pct, over2Pct) },
-                { mode: 'OVER_3_UNDER_6' as OverlordStrategyMode, edge: Math.max(under6Pct, over3Pct) },
-            ];
-            scores.sort((a, b) => b.edge - a.edge);
-            chosenStrategy = scores[0].mode;
-        }
-
-        let targetBarrier = 8;
-        let signal: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
-        let signalConfidence = 50;
-        let isTriggerReady = false;
-        let triggerDigits: number[] = [];
-
-        const isUnderCondition = lowRatio >= 55 || (under6Count >= over3Count && last10Under >= 6);
-        const isOverCondition = highRatio >= 55 || (over3Count >= under6Count && last10Over >= 6);
-
-        if (chosenStrategy === 'OVER_1_UNDER_8') {
-            const isUnderFavored = under8Count >= over1Count;
-            if (isUnderFavored && (isUnderCondition || under8Pct >= 70)) {
-                signal = 'UNDER';
-                targetBarrier = 8;
-                signalConfidence = Math.min(99, Math.round(under8Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
-                triggerDigits = [0, 1, 2, 3, 4, 5, 6, 7];
-                isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 7 && lastDigit <= 4);
-            } else if (!isUnderFavored && (isOverCondition || over1Pct >= 70)) {
-                signal = 'OVER';
-                targetBarrier = 1;
-                signalConfidence = Math.min(99, Math.round(over1Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
-                triggerDigits = [2, 3, 4, 5, 6, 7, 8, 9];
-                isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 7 && lastDigit >= 5);
-            }
-        } else if (chosenStrategy === 'OVER_2_UNDER_7') {
-            const isUnderFavored = under7Count >= over2Count;
-            if (isUnderFavored && (isUnderCondition || under7Pct >= 65)) {
-                signal = 'UNDER';
-                targetBarrier = 7;
-                signalConfidence = Math.min(95, Math.round(under7Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
-                triggerDigits = [0, 1, 2, 3, 4, 5, 6];
-                isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 7 && lastDigit <= 3);
-            } else if (!isUnderFavored && (isOverCondition || over2Pct >= 65)) {
-                signal = 'OVER';
-                targetBarrier = 2;
-                signalConfidence = Math.min(95, Math.round(over2Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
-                triggerDigits = [3, 4, 5, 6, 7, 8, 9];
-                isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 7 && lastDigit >= 6);
-            }
-        } else if (chosenStrategy === 'OVER_3_UNDER_6') {
-            const isUnderFavored = under6Count >= over3Count;
-            if (isUnderFavored && (isUnderCondition || under6Pct >= 55)) {
-                signal = 'UNDER';
-                targetBarrier = 6;
-                signalConfidence = Math.min(92, Math.round(under6Pct * 0.95 + (last10Under >= 7 ? 5 : 0)));
-                triggerDigits = [0, 1, 2, 3, 4, 5];
-                isTriggerReady = lastDigit === highestUnderDigit || (last10Under >= 8 && lastDigit <= 2);
-            } else if (!isUnderFavored && (isOverCondition || over3Pct >= 55)) {
-                signal = 'OVER';
-                targetBarrier = 3;
-                signalConfidence = Math.min(92, Math.round(over3Pct * 0.95 + (last10Over >= 7 ? 5 : 0)));
-                triggerDigits = [4, 5, 6, 7, 8, 9];
-                isTriggerReady = lastDigit === highestOverDigit || (last10Over >= 8 && lastDigit >= 7);
-            }
-        }
-
-        // Find Highest & Lowest Frequency Digits
+        // Global spectrum hot & cold digits
         let highestDigit = 0;
         let highestFreq = -1;
         let lowestDigit = 0;
         let lowestFreq = 999999;
-
         for (let i = 0; i <= 9; i++) {
             if (frequencies[i] > highestFreq) {
                 highestFreq = frequencies[i];
@@ -745,6 +707,277 @@ const OverlordAi: React.FC = observer(() => {
             if (frequencies[i] < lowestFreq) {
                 lowestFreq = frequencies[i];
                 lowestDigit = i;
+            }
+        }
+
+        // 4. Micro-momentum (last 10 ticks)
+        const last10 = digits.slice(-10);
+        const last10Low = last10.filter(d => d <= 4).length;
+        const last10High = 10 - last10Low;
+        const last10Under8 = last10.filter(d => d <= 7).length;
+        const last10Over1 = last10.filter(d => d >= 2).length;
+        const last10Under7 = last10.filter(d => d <= 6).length;
+        const last10Over2 = last10.filter(d => d >= 3).length;
+        const last10Under6 = last10.filter(d => d <= 5).length;
+        const last10Over3 = last10.filter(d => d >= 4).length;
+
+        // 5. Anti-Exhaustion & Trend Reversal Filter (last 3 ticks)
+        const last3 = digits.slice(-3);
+        const isUnderExhausted =
+            last3.length >= 2 &&
+            (last3.every(d => d >= 7) || last3.filter(d => d >= 8).length >= 2);
+        const isOverExhausted =
+            last3.length >= 2 &&
+            (last3.every(d => d <= 2) || last3.filter(d => d <= 1).length >= 2);
+
+        // Previous tick for pullback detection
+        const prevDigit = digits.length >= 2 ? digits[digits.length - 2] : lastDigit;
+
+        // 6. Quantitative Edge Calculation (Actual % vs Baseline Expected Win Rate)
+        // Baseline: Under 8 / Over 1 = 80%, Under 7 / Over 2 = 70%, Under 6 / Over 3 = 60%
+        const edgeU8 = (under8Pct - 80) * 1.5 + (last10Under8 - 8) * 3 + (last10Low - 5) * 2;
+        const edgeO1 = (over1Pct - 80) * 1.5 + (last10Over1 - 8) * 3 + (last10High - 5) * 2;
+
+        const edgeU7 = (under7Pct - 70) * 1.6 + (last10Under7 - 7) * 3 + (last10Low - 5) * 2;
+        const edgeO2 = (over2Pct - 70) * 1.6 + (last10Over2 - 7) * 3 + (last10High - 5) * 2;
+
+        const edgeU6 = (under6Pct - 60) * 1.8 + (last10Under6 - 6) * 3 + (last10Low - 5) * 2;
+        const edgeO3 = (over3Pct - 60) * 1.8 + (last10Over3 - 6) * 3 + (last10High - 5) * 2;
+
+        // 7. Strategy & Signal Resolution
+        let chosenStrategy: OverlordStrategyMode = mode;
+        let signal: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
+        let targetBarrier = 8;
+        let signalConfidence = 50;
+        let isTriggerReady = false;
+        let triggerDigits: number[] = [];
+        let edgePct = 0;
+        let reason = '';
+
+        if (mode === 'ALL_AUTO') {
+            const candidateStrategies = [
+                {
+                    mode: 'OVER_1_UNDER_8' as OverlordStrategyMode,
+                    dir: 'UNDER' as const,
+                    barrier: 8,
+                    edge: edgeU8,
+                    pct: under8Pct,
+                    m10: last10Under8,
+                    ex: isUnderExhausted,
+                    minPct: 82,
+                    minM10: 8,
+                },
+                {
+                    mode: 'OVER_1_UNDER_8' as OverlordStrategyMode,
+                    dir: 'OVER' as const,
+                    barrier: 1,
+                    edge: edgeO1,
+                    pct: over1Pct,
+                    m10: last10Over1,
+                    ex: isOverExhausted,
+                    minPct: 82,
+                    minM10: 8,
+                },
+                {
+                    mode: 'OVER_2_UNDER_7' as OverlordStrategyMode,
+                    dir: 'UNDER' as const,
+                    barrier: 7,
+                    edge: edgeU7,
+                    pct: under7Pct,
+                    m10: last10Under7,
+                    ex: isUnderExhausted,
+                    minPct: 72,
+                    minM10: 7,
+                },
+                {
+                    mode: 'OVER_2_UNDER_7' as OverlordStrategyMode,
+                    dir: 'OVER' as const,
+                    barrier: 2,
+                    edge: edgeO2,
+                    pct: over2Pct,
+                    m10: last10Over2,
+                    ex: isOverExhausted,
+                    minPct: 72,
+                    minM10: 7,
+                },
+                {
+                    mode: 'OVER_3_UNDER_6' as OverlordStrategyMode,
+                    dir: 'UNDER' as const,
+                    barrier: 6,
+                    edge: edgeU6,
+                    pct: under6Pct,
+                    m10: last10Under6,
+                    ex: isUnderExhausted,
+                    minPct: 62,
+                    minM10: 6,
+                },
+                {
+                    mode: 'OVER_3_UNDER_6' as OverlordStrategyMode,
+                    dir: 'OVER' as const,
+                    barrier: 3,
+                    edge: edgeO3,
+                    pct: over3Pct,
+                    m10: last10Over3,
+                    ex: isOverExhausted,
+                    minPct: 62,
+                    minM10: 6,
+                },
+            ];
+
+            candidateStrategies.sort((a, b) => b.edge - a.edge);
+            const best = candidateStrategies[0];
+
+            if (best && best.edge > 0 && best.pct >= best.minPct && best.m10 >= best.minM10 && !best.ex) {
+                chosenStrategy = best.mode;
+                signal = best.dir;
+                targetBarrier = best.barrier;
+                edgePct = Math.round(best.edge * 10) / 10;
+                signalConfidence = Math.min(99, Math.round(65 + best.edge * 2));
+            } else {
+                chosenStrategy = best?.mode || 'OVER_1_UNDER_8';
+                signal = 'NEUTRAL';
+                signalConfidence = 50;
+                reason = 'Consolidating — Waiting for statistically verified momentum edge';
+            }
+        } else if (mode === 'OVER_1_UNDER_8') {
+            const isUnderValid =
+                under8Pct >= 82 && last10Under8 >= 8 && last10Low >= 5 && !isUnderExhausted;
+            const isOverValid =
+                over1Pct >= 82 && last10Over1 >= 8 && last10High >= 5 && !isOverExhausted;
+
+            if (isUnderValid && edgeU8 >= edgeO1) {
+                signal = 'UNDER';
+                targetBarrier = 8;
+                edgePct = Math.round(edgeU8 * 10) / 10;
+                signalConfidence = Math.min(
+                    99,
+                    Math.max(65, Math.round(75 + (under8Pct - 80) * 2 + (last10Under8 - 8) * 4))
+                );
+            } else if (isOverValid) {
+                signal = 'OVER';
+                targetBarrier = 1;
+                edgePct = Math.round(edgeO1 * 10) / 10;
+                signalConfidence = Math.min(
+                    99,
+                    Math.max(65, Math.round(75 + (over1Pct - 80) * 2 + (last10Over1 - 8) * 4))
+                );
+            } else {
+                signal = 'NEUTRAL';
+                signalConfidence = 50;
+                reason = `Waiting for Over 1 / Under 8 edge (U8: ${under8Pct}%, O1: ${over1Pct}%, Last 10: ${last10Low}L/${last10High}H)`;
+            }
+        } else if (mode === 'OVER_2_UNDER_7') {
+            const isUnderValid =
+                under7Pct >= 72 && last10Under7 >= 7 && last10Low >= 5 && !isUnderExhausted;
+            const isOverValid =
+                over2Pct >= 72 && last10Over2 >= 7 && last10High >= 5 && !isOverExhausted;
+
+            if (isUnderValid && edgeU7 >= edgeO2) {
+                signal = 'UNDER';
+                targetBarrier = 7;
+                edgePct = Math.round(edgeU7 * 10) / 10;
+                signalConfidence = Math.min(
+                    96,
+                    Math.max(65, Math.round(70 + (under7Pct - 70) * 2 + (last10Under7 - 7) * 4))
+                );
+            } else if (isOverValid) {
+                signal = 'OVER';
+                targetBarrier = 2;
+                edgePct = Math.round(edgeO2 * 10) / 10;
+                signalConfidence = Math.min(
+                    96,
+                    Math.max(65, Math.round(70 + (over2Pct - 70) * 2 + (last10Over2 - 7) * 4))
+                );
+            } else {
+                signal = 'NEUTRAL';
+                signalConfidence = 50;
+                reason = `Waiting for Over 2 / Under 7 edge (U7: ${under7Pct}%, O2: ${over2Pct}%, Last 10: ${last10Low}L/${last10High}H)`;
+            }
+        } else if (mode === 'OVER_3_UNDER_6') {
+            const isUnderValid =
+                (under6Pct >= 62 || (lowRatio >= 54 && last10Low >= 6)) &&
+                last10Under6 >= 6 &&
+                !isUnderExhausted;
+            const isOverValid =
+                (over3Pct >= 62 || (highRatio >= 54 && last10High >= 6)) &&
+                last10Over3 >= 6 &&
+                !isOverExhausted;
+
+            if (isUnderValid && edgeU6 >= edgeO3) {
+                signal = 'UNDER';
+                targetBarrier = 6;
+                edgePct = Math.round(edgeU6 * 10) / 10;
+                signalConfidence = Math.min(
+                    92,
+                    Math.max(65, Math.round(65 + (under6Pct - 60) * 2.5 + (last10Under6 - 6) * 4))
+                );
+            } else if (isOverValid) {
+                signal = 'OVER';
+                targetBarrier = 3;
+                edgePct = Math.round(edgeO3 * 10) / 10;
+                signalConfidence = Math.min(
+                    92,
+                    Math.max(65, Math.round(65 + (over3Pct - 60) * 2.5 + (last10Over3 - 6) * 4))
+                );
+            } else {
+                signal = 'NEUTRAL';
+                signalConfidence = 50;
+                reason = `Waiting for Over 3 / Under 6 edge (U6: ${under6Pct}%, O3: ${over3Pct}%, Last 10: ${last10Low}L/${last10High}H)`;
+            }
+        }
+
+        // 8. Strict Entry Trigger Gate
+        if (signal === 'UNDER') {
+            // Safety Barrier Rule: Current lastDigit MUST be strictly less than target barrier
+            const isSafe = lastDigit < targetBarrier;
+            triggerDigits =
+                targetBarrier === 8
+                    ? [0, 1, 2, 3, 4, 5, 6, 7]
+                    : targetBarrier === 7
+                    ? [0, 1, 2, 3, 4, 5, 6]
+                    : [0, 1, 2, 3, 4, 5];
+
+            // Specific Catalyst Entry Trigger:
+            // 1. Matched recent hot low digit
+            // 2. Strong directional follow-through (lastDigit <= 4 and prev was <= 5)
+            // 3. Pullback recovery (prev was >= 5 and current tick reversed back down to <= 3)
+            const isHotHit = lastDigit === highestUnderDigit;
+            const isContinuation = lastDigit <= 4 && prevDigit <= 5;
+            const isPullback = prevDigit >= 5 && lastDigit <= 3;
+
+            isTriggerReady = isSafe && (isHotHit || isContinuation || isPullback);
+            if (!isSafe) {
+                reason = `Barrier safety hold: digit [${lastDigit}] is at or above barrier ${targetBarrier}`;
+            } else if (!isTriggerReady) {
+                reason = `Waiting for Under trigger catalyst: Hot [${highestUnderDigit}] or low reversal (<= 3)`;
+            } else {
+                reason = `Under ${targetBarrier} Triggered: digit [${lastDigit}] (Hot: ${highestUnderDigit}, Edge: +${edgePct}%)`;
+            }
+        } else if (signal === 'OVER') {
+            // Safety Barrier Rule: Current lastDigit MUST be strictly greater than target barrier
+            const isSafe = lastDigit > targetBarrier;
+            triggerDigits =
+                targetBarrier === 1
+                    ? [2, 3, 4, 5, 6, 7, 8, 9]
+                    : targetBarrier === 2
+                    ? [3, 4, 5, 6, 7, 8, 9]
+                    : [4, 5, 6, 7, 8, 9];
+
+            // Specific Catalyst Entry Trigger:
+            // 1. Matched recent hot high digit
+            // 2. Strong directional follow-through (lastDigit >= 5 and prev was >= 4)
+            // 3. Bounce recovery (prev was <= 4 and current tick jumped up to >= 6)
+            const isHotHit = lastDigit === highestOverDigit;
+            const isContinuation = lastDigit >= 5 && prevDigit >= 4;
+            const isBounce = prevDigit <= 4 && lastDigit >= 6;
+
+            isTriggerReady = isSafe && (isHotHit || isContinuation || isBounce);
+            if (!isSafe) {
+                reason = `Barrier safety hold: digit [${lastDigit}] is at or below barrier ${targetBarrier}`;
+            } else if (!isTriggerReady) {
+                reason = `Waiting for Over trigger catalyst: Hot [${highestOverDigit}] or high bounce (>= 6)`;
+            } else {
+                reason = `Over ${targetBarrier} Triggered: digit [${lastDigit}] (Hot: ${highestOverDigit}, Edge: +${edgePct}%)`;
             }
         }
 
@@ -770,6 +1003,10 @@ const OverlordAi: React.FC = observer(() => {
             triggerDigits,
             highestDigit,
             lowestDigit,
+            highestUnderDigit,
+            highestOverDigit,
+            edgePct,
+            reason,
         };
     };
 
@@ -778,7 +1015,7 @@ const OverlordAi: React.FC = observer(() => {
         return evaluateOverlordAnalysis(currentMarket.digits, strategyMode, currentMarket.lastDigit);
     }, [currentMarket.digits, currentMarket.lastDigit, strategyMode, renderTrigger]);
 
-    // ── Multi-Market Cross Scanner Ranking ──
+    // ── Multi-Market Cross Scanner Ranking (50-Tick Statistical Edge + Micro-Momentum) ──
     const rankedMarketCandidates = useMemo(() => {
         return DERIVED_SYNTHETIC_MARKETS.map(meta => {
             const data = marketsDataRef.current.get(meta.symbol);
@@ -788,34 +1025,45 @@ const OverlordAi: React.FC = observer(() => {
                 return {
                     ...meta,
                     digitsCount: count,
-                    bias: 'NEUTRAL',
+                    bias: 'NEUTRAL' as const,
                     score: 50,
                     lastDigit: data?.lastDigit || 0,
                     currentPrice: data?.currentPrice || '0.00',
                 };
             }
 
-            const lowC = digits.filter(d => d <= 4).length;
-            const lowPct = Math.round((lowC / count) * 100);
+            const sample50 = digits.slice(-50);
+            const low50 = sample50.filter(d => d <= 4).length;
+            const lowPct = Math.round((low50 / sample50.length) * 100);
             const last10 = digits.slice(-10);
             const last10Low = last10.filter(d => d <= 4).length;
+
+            const u8_50 = (sample50.filter(d => d <= 7).length / sample50.length) * 100;
+            const o1_50 = (sample50.filter(d => d >= 2).length / sample50.length) * 100;
 
             let score = 50;
             let bias: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
 
-            if (lowPct >= 56 || last10Low >= 7) {
+            const underEdge = (u8_50 - 80) * 1.5 + (lowPct - 50) * 1.2 + (last10Low - 5) * 4;
+            const overEdge = (o1_50 - 80) * 1.5 + (50 - lowPct) * 1.2 + (5 - last10Low) * 4;
+
+            if (underEdge >= 3 && underEdge > overEdge) {
                 bias = 'UNDER';
-                score = Math.min(99, 50 + (lowPct - 50) * 2.5 + (last10Low - 5) * 6);
-            } else if (lowPct <= 44 || last10Low <= 3) {
+                score = Math.min(99, Math.max(52, Math.round(50 + underEdge * 2.5)));
+            } else if (overEdge >= 3 && overEdge > underEdge) {
                 bias = 'OVER';
-                score = Math.min(99, 50 + (50 - lowPct) * 2.5 + (5 - last10Low) * 6);
+                score = Math.min(99, Math.max(52, Math.round(50 + overEdge * 2.5)));
+            } else {
+                bias = 'NEUTRAL';
+                score = Math.round(50 + Math.max(underEdge, overEdge));
+                score = Math.max(30, Math.min(65, score));
             }
 
             return {
                 ...meta,
                 digitsCount: count,
                 bias,
-                score: Math.round(score),
+                score,
                 lastDigit: data?.lastDigit || 0,
                 currentPrice: data?.currentPrice || '0.00',
             };
@@ -1108,7 +1356,7 @@ const OverlordAi: React.FC = observer(() => {
                 const isTriggerReady = liveAnalysis.isTriggerReady;
                 const confidence = liveAnalysis.signalConfidence;
 
-                if (signal === 'NEUTRAL' || confidence < 55) {
+                if (signal === 'NEUTRAL' || confidence < 60) {
                     if (botStateRef.current !== 'WAITING_SIGNAL') {
                         setBotStateSync('WAITING_SIGNAL');
                     }
@@ -1136,15 +1384,23 @@ const OverlordAi: React.FC = observer(() => {
                 const stakeToUse = currentStakeRef.current;
 
                 try {
-                    await executeTradeOrder(
+                    const isWon = await executeTradeOrder(
                         targetSym,
                         contractType,
                         barrier,
                         stakeToUse,
                         currentRunNumber
                     );
+
+                    // If trade lost, reset burst streak for strict recovery discipline
+                    if (!isWon) {
+                        burstRunRef.current = 0;
+                        setCurrentBurstRun(0);
+                    }
                 } catch (tradeError) {
                     console.error('[Overlord AI] Error executing trade:', tradeError);
+                    burstRunRef.current = 0;
+                    setCurrentBurstRun(0);
                 }
 
                 if (abortSignal.aborted || (botStateRef.current as string) === 'IDLE') break;
@@ -1161,6 +1417,12 @@ const OverlordAi: React.FC = observer(() => {
                     if (soundEnabled) playSoundCue('loss');
                     setMilestone({ isOpen: true, type: 'sl' });
                     break;
+                }
+
+                // Record current tick count after settlement so next trade MUST wait for a fresh tick
+                const currentMarketData = marketsDataRef.current.get(targetSym);
+                if (currentMarketData) {
+                    lastProcessedTicksRef.current.set(targetSym, currentMarketData.tickCount || 0);
                 }
 
                 // Check if full burst streak completed
@@ -1198,7 +1460,7 @@ const OverlordAi: React.FC = observer(() => {
                 } else {
                     // Continue burst streak on next tick
                     setBotStateSync('SCANNING');
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 200));
                 }
             }
         };
@@ -1626,7 +1888,7 @@ const OverlordAi: React.FC = observer(() => {
                                     {currentMarket.lastDigit}
                                 </div>
                                 <div className='digit-labels'>
-                                    <span className='digit-sub'>AI SIGNAL</span>
+                                    <span className='digit-sub'>AI QUANTITATIVE SIGNAL</span>
                                     <span
                                         className={`digit-type-text ${
                                             patternEngine.signal === 'UNDER'
@@ -1637,8 +1899,23 @@ const OverlordAi: React.FC = observer(() => {
                                         }`}
                                     >
                                         {patternEngine.signal === 'NEUTRAL'
-                                            ? 'SCANNING...'
-                                            : `${patternEngine.signal} ${patternEngine.targetBarrier} (${patternEngine.signalConfidence}%)`}
+                                            ? 'SCANNING FOR EDGE...'
+                                            : `${patternEngine.signal} ${patternEngine.targetBarrier} (+${patternEngine.edgePct}% EDGE • ${patternEngine.signalConfidence}%)`}
+                                    </span>
+                                    <span
+                                        style={{
+                                            fontSize: '10px',
+                                            color: '#94a3b8',
+                                            marginTop: '2px',
+                                            fontFamily: 'monospace',
+                                            maxWidth: '300px',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                        }}
+                                        title={patternEngine.reason}
+                                    >
+                                        {patternEngine.reason}
                                     </span>
                                 </div>
                             </div>
@@ -1695,15 +1972,15 @@ const OverlordAi: React.FC = observer(() => {
                                 <span className='split-badge'>EDGE CALC</span>
                             </div>
                             <div className='stat-metrics-row'>
-                                <span>Under 8 Frequency:</span>
+                                <span>Under 8 Frequency (50t):</span>
                                 <strong>{patternEngine.under8Pct}%</strong>
                             </div>
                             <div className='stat-metrics-row'>
-                                <span>Under 7 Frequency:</span>
+                                <span>Under 7 Frequency (50t):</span>
                                 <strong>{patternEngine.under7Pct}%</strong>
                             </div>
                             <div className='stat-metrics-row'>
-                                <span>Under 6 Frequency:</span>
+                                <span>Under 6 Frequency (50t):</span>
                                 <strong>{patternEngine.under6Pct}%</strong>
                             </div>
                         </div>
@@ -1720,12 +1997,12 @@ const OverlordAi: React.FC = observer(() => {
                                 }`}
                             >
                                 <div className='digit-orb orb-under'>
-                                    {patternEngine.highestDigit}
+                                    {patternEngine.highestUnderDigit}
                                 </div>
                                 <div className='entry-details'>
-                                    <span className='entry-type'>DOMINANT HOT DIGIT</span>
+                                    <span className='entry-type'>UNDER CATALYST HOT DIGIT</span>
                                     <span className='entry-status'>
-                                        Digit {patternEngine.highestDigit} ({patternEngine.percentages[patternEngine.highestDigit]}%)
+                                        Digit {patternEngine.highestUnderDigit} ({patternEngine.percentages[patternEngine.highestUnderDigit] || 0}%)
                                     </span>
                                     <span className='entry-subtext'>
                                         High probability catalyst for Under triggers
@@ -1741,15 +2018,15 @@ const OverlordAi: React.FC = observer(() => {
                                 }`}
                             >
                                 <div className='digit-orb orb-over'>
-                                    {patternEngine.lowestDigit}
+                                    {patternEngine.highestOverDigit}
                                 </div>
                                 <div className='entry-details'>
-                                    <span className='entry-type'>COLD DIGIT / REVERSAL</span>
+                                    <span className='entry-type'>OVER CATALYST HOT DIGIT</span>
                                     <span className='entry-status'>
-                                        Digit {patternEngine.lowestDigit} ({patternEngine.percentages[patternEngine.lowestDigit]}%)
+                                        Digit {patternEngine.highestOverDigit} ({patternEngine.percentages[patternEngine.highestOverDigit] || 0}%)
                                     </span>
                                     <span className='entry-subtext'>
-                                        Oversold anomaly for Over triggers
+                                        High probability catalyst for Over triggers
                                     </span>
                                 </div>
                             </div>

@@ -168,6 +168,7 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
                         prediction: (normalized_parameters as any).barrier ? Number((normalized_parameters as any).barrier) : undefined,
                         currency: (normalized_parameters as any).currency || 'USD',
                         is_virtual: isVirtual,
+                        master_contract_id: buy.contract_id || buy.transaction_id,
                     },
                     source,
                     activeLoginId
@@ -251,6 +252,7 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
                 prediction: (normalized_parameters as any).barrier ? Number((normalized_parameters as any).barrier) : undefined,
                 currency: (normalized_parameters as any).currency || 'USD',
                 is_virtual: isVirtual,
+                master_contract_id: buy.contract_id || buy.transaction_id,
             },
             source,
             activeLoginId
