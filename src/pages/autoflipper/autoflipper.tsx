@@ -1,24 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
-import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
+import type { MilestoneType } from '@/components/shared/trading-milestone-modal';
+import { observer as globalObserver } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
     Activity,
-    ArrowDownRight,
-    ArrowUpRight,
-    CheckCircle2,
-    Clock,
-    DollarSign,
     Flame,
     Gauge,
-    Grid,
     Layers,
     Play,
     Pause,
@@ -26,10 +21,8 @@ import {
     Shield,
     Sparkles,
     Square,
-    Target,
     TrendingDown,
     TrendingUp,
-    Zap,
 } from 'lucide-react';
 import './autoflipper.scss';
 
@@ -280,7 +273,6 @@ const Autoflipper: React.FC = observer(() => {
     const store = useStore();
     const { client } = store || {};
     const currency = client?.currency || 'USD';
-    const accountBalance = Number(client?.balance || 100);
 
     // Active market state
     const [selectedSymbol, setSelectedSymbol] = useState<string>('1HZ10V');
@@ -311,7 +303,7 @@ const Autoflipper: React.FC = observer(() => {
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
 
     // Modals
-    const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'WIN_STREAK' | 'PROFIT_TARGET' | 'ATH' | null }>({
+    const [milestone, setMilestone] = useState<{ isOpen: boolean; type: MilestoneType }>({
         isOpen: false,
         type: null,
     });
@@ -373,7 +365,6 @@ const Autoflipper: React.FC = observer(() => {
             try {
                 const marketCfg = MARKETS.find(m => m.symbol === sym);
                 const pip = marketCfg?.pip || 2;
-                const mData = marketsDataRef.current.get(sym);
 
                 if (activeSubs.has(sym)) return;
 
@@ -563,7 +554,6 @@ const Autoflipper: React.FC = observer(() => {
     const generateCompoundingPlan = (startCapStr?: string, targetProfStr?: string) => {
         const startCapital = Number(startCapStr || compStartCapital) || 100;
         const targetProf = Number(targetProfStr || compTargetProfit) || 250;
-        const totalTarget = startCapital + targetProf;
 
         const stages: CompoundingStage[] = [];
         const numStages = 8;
@@ -592,7 +582,6 @@ const Autoflipper: React.FC = observer(() => {
     // Update compounding stage statuses when session profit changes
     useEffect(() => {
         if (compStages.length === 0) return;
-        const startCapital = Number(compStartCapital) || 100;
         const updated = compStages.map((st, idx) => {
             if (sessionProfit >= st.cumulativeProfit) {
                 return { ...st, status: 'DONE' as const };
@@ -604,7 +593,7 @@ const Autoflipper: React.FC = observer(() => {
             return { ...st, status: 'PENDING' as const };
         });
         setCompStages(updated);
-    }, [sessionProfit, compStartCapital]);
+    }, [sessionProfit, compStages]);
 
     // ── Trade Execution Logic ──────────────────────────────────────────────────
 
@@ -622,38 +611,78 @@ const Autoflipper: React.FC = observer(() => {
             playSoundCue('signal');
 
             try {
+                const duration = parseInt(tickDuration, 10) || 1;
                 const buyResult = await buyContractForUi({
-                    symbol: sym,
-                    contract_type: contractType,
-                    amount: stakeToUse,
-                    basis: 'stake',
-                    currency,
-                    duration: Number(tickDuration) || 1,
-                    duration_unit: 't',
-                    barrier,
+                    parameters: {
+                        amount: stakeToUse,
+                        basis: 'stake',
+                        contract_type: contractType,
+                        currency,
+                        duration,
+                        duration_unit: 't',
+                        symbol: sym,
+                        barrier: String(barrier),
+                    },
+                    price: stakeToUse,
+                    source: 'Autoflipper',
                 });
 
                 if (!buyResult || !buyResult.contract_id) {
                     throw new Error('No contract ID returned');
                 }
 
-                // Global observer emit for live trading drawer
-                globalObserver.emit('bot.contract', {
-                    contract_id: buyResult.contract_id,
+                const contractId = buyResult.contract_id;
+                const transactionId = buyResult.transaction_id || contractId;
+                const startTime = Math.floor(Date.now() / 1000);
+                const marketLabel = MARKETS.find(m => m.symbol === sym)?.label || sym;
+
+                const initSnapshot = {
+                    contract_id: contractId,
+                    transaction_ids: { buy: transactionId },
+                    buy_price: stakeToUse,
+                    underlying: sym,
+                    underlying_symbol: sym,
+                    display_name: marketLabel,
+                    shortcode: `AF_${contractType}_${barrier}`,
                     contract_type: contractType,
-                    barrier,
-                    stake: stakeToUse,
-                    symbol: sym,
+                    currency: currency || 'USD',
+                    date_start: startTime,
+                    status: 'open',
+                    barrier: String(barrier),
+                };
+
+                // Global observer emit for live trading drawer
+                globalObserver.emit('bot.contract', initSnapshot);
+
+                const settledSnapshot = await streamContractUntilSettled({
+                    contractId,
+                    fallback: initSnapshot,
+                    onUpdate: snapshot => {
+                        globalObserver.emit('bot.contract', snapshot);
+                    },
+                    source: 'Autoflipper',
                 });
 
-                const finalProposal = await streamContractUntilSettled(buyResult.contract_id);
-                const profit = Number(finalProposal.profit || 0);
+                const profit = Number(settledSnapshot?.profit || 0);
                 const isWin = profit > 0;
+
+                // Record cross-bot continuous learning
+                aiContinuousLearningService.recordBotTrade({
+                    botName: 'AUTOFLIPPER',
+                    strategy: tradeSignal === 'UNDER' ? 'AUTOFLIP_UNDER' : 'AUTOFLIP_OVER',
+                    market: sym,
+                    contractType: contractType,
+                    barrier: String(barrier),
+                    prediction: Number(barrier),
+                    isWin,
+                    profit,
+                    stake: stakeToUse,
+                });
 
                 const newTradeItem: TradeLogItem = {
                     id: String(Date.now()),
                     time: new Date().toLocaleTimeString(),
-                    market: MARKETS.find(m => m.symbol === sym)?.label || sym,
+                    market: marketLabel,
                     strategy: tradeSignal === 'UNDER' ? 'AUTOFLIP_UNDER' : 'AUTOFLIP_OVER',
                     contractType: `${contractType} [${barrier}]`,
                     prediction: Number(barrier),
@@ -673,7 +702,7 @@ const Autoflipper: React.FC = observer(() => {
                         const newP = p + profit;
                         const tp = Number(takeProfit) || 20;
                         if (newP >= tp) {
-                            setMilestone({ isOpen: true, type: 'PROFIT_TARGET' });
+                            setMilestone({ isOpen: true, type: 'tp' });
                             setBotState('IDLE');
                         }
                         return newP;
@@ -689,6 +718,7 @@ const Autoflipper: React.FC = observer(() => {
                         const newP = p + profit;
                         const sl = Number(stopLoss) || 50;
                         if (newP <= -sl) {
+                            setMilestone({ isOpen: true, type: 'sl' });
                             setBotState('IDLE');
                         }
                         return newP;
@@ -740,9 +770,10 @@ const Autoflipper: React.FC = observer(() => {
 
     // ── Bot Controls ──
 
-    const handleStartBot = () => {
+    const handleStartBot = async () => {
         if (!isLoggedIn()) {
-            window.location.href = generateOAuthURL();
+            const oauthUrl = await generateOAuthURL();
+            window.location.href = oauthUrl;
             return;
         }
         consecutiveLossesRef.current = 0;
