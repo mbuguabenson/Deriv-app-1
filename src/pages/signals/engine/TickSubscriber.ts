@@ -100,22 +100,13 @@ export class TickSubscriber {
             } else {
                 this.activeSymbols = [
                     'R_10',
-                    '1HZ10V',
-                    '1HZ15V',
                     'R_25',
-                    '1HZ25V',
-                    '1HZ30V',
                     'R_50',
-                    '1HZ50V',
                     'R_75',
-                    '1HZ75V',
-                    '1HZ90V',
                     'R_100',
+                    '1HZ10V',
+                    '1HZ50V',
                     '1HZ100V',
-                    '1HZ150V',
-                    '1HZ200V',
-                    '1HZ250V',
-                    '1HZ300V',
                     'JD10',
                     'JD25',
                     'JD50',
@@ -178,14 +169,19 @@ export class TickSubscriber {
                         subscribe: 1,
                     })
                     .catch((err: any) => {
-                        // Handle AlreadySubscribed gracefully
-                        if (err?.error?.code === 'AlreadySubscribed') return err;
+                        const code = err?.error?.code || err?.code;
+                        if (code === 'AlreadySubscribed' || code === 'InvalidSymbol') return err;
                         return { error: err?.error || err };
                     });
 
                 if (response?.error) {
-                    if (response.error.code !== 'AlreadySubscribed') {
-                        console.warn(
+                    const code = response.error.code;
+                    if (code === 'InvalidSymbol' || code === 'InputValidationFailed') {
+                        this.engines.delete(sym);
+                        continue;
+                    }
+                    if (code !== 'AlreadySubscribed') {
+                        console.info(
                             `[SignalCentre] Subscription note for ${sym}:`,
                             response.error.message || response.error
                         );
@@ -208,7 +204,10 @@ export class TickSubscriber {
                     }
                 }
             } catch (err: any) {
-                console.warn(`[SignalCentre] Failed to subscribe to ${sym}:`, err?.message || err);
+                const code = err?.error?.code || err?.code;
+                if (code !== 'InvalidSymbol' && code !== 'AlreadySubscribed') {
+                    console.info(`[SignalCentre] Notice for ${sym}:`, err?.message || err);
+                }
             }
         }
 

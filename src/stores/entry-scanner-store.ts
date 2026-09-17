@@ -1,7 +1,7 @@
 import { action, makeObservable, observable, runInAction, computed, reaction } from 'mobx';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe } from '@/utils/websocket-handler';
+import { safeSubscribe, subscribeTicks } from '@/utils/websocket-handler';
 import { generateBotXML } from '@/utils/bot-xml-generator';
 import { DBOT_TABS } from '@/constants/bot-contents';
 
@@ -263,18 +263,14 @@ export default class EntryScannerStore {
     // ─── Fetch Symbols ────────────────────────────────────────
 
     private DEFAULT_FALLBACK_SYMBOLS = [
-        { symbol: '1HZ10V', display_name: 'Volatility 10 (1s) Index', is1s: true },
-        { symbol: '1HZ25V', display_name: 'Volatility 25 (1s) Index', is1s: true },
-        { symbol: '1HZ50V', display_name: 'Volatility 50 (1s) Index', is1s: true },
-        { symbol: '1HZ75V', display_name: 'Volatility 75 (1s) Index', is1s: true },
-        { symbol: '1HZ15V', display_name: 'Volatility 15 (1s) Index', is1s: true },
-        { symbol: '1HZ30V', display_name: 'Volatility 30 (1s) Index', is1s: true },
-        { symbol: '1HZ90V', display_name: 'Volatility 90 (1s) Index', is1s: true },
         { symbol: 'R_10', display_name: 'Volatility 10 Index', is1s: false },
         { symbol: 'R_25', display_name: 'Volatility 25 Index', is1s: false },
         { symbol: 'R_50', display_name: 'Volatility 50 Index', is1s: false },
         { symbol: 'R_75', display_name: 'Volatility 75 Index', is1s: false },
         { symbol: 'R_100', display_name: 'Volatility 100 Index', is1s: false },
+        { symbol: '1HZ10V', display_name: 'Volatility 10 (1s) Index', is1s: true },
+        { symbol: '1HZ50V', display_name: 'Volatility 50 (1s) Index', is1s: true },
+        { symbol: '1HZ100V', display_name: 'Volatility 100 (1s) Index', is1s: true },
     ];
 
     @action private fetchActiveSymbols() {
@@ -307,7 +303,7 @@ export default class EntryScannerStore {
                     return;
                 }
                 const filtered = symbols
-                    .filter((s: any) => s.market === 'synthetic_index' && s.submarket === 'random_index')
+                    .filter((s: any) => s.market === 'synthetic_index' && s.submarket === 'random_index' && !s.is_trading_suspended)
                     .map((s: any) => {
                         const sym = s.underlying_symbol || s.symbol;
                         return {
@@ -349,7 +345,7 @@ export default class EntryScannerStore {
                     end: 'latest',
                     count: 1000,
                     style: 'ticks',
-                });
+                }).catch(() => null);
 
                 if (res?.history?.prices && Array.isArray(res.history.prices)) {
                     const prices: number[] = res.history.prices;
@@ -362,34 +358,21 @@ export default class EntryScannerStore {
                     this.initializeMarketStats(market.symbol, market.display_name, digits, market.is1s);
                 }
 
-                // 2. Subscribe to real-time live ticks
-                const tickObservable = (api_base.api as any).subscribe({ ticks: market.symbol });
-                const sub = safeSubscribe(
-                    tickObservable,
-                    (data: any) => {
-                        if (data?.tick && data.tick.symbol === market.symbol) {
-                            const quoteStr = (data.tick.quote || 0).toString();
-                            const parts = quoteStr.split('.');
-                            const decimalPart = parts[1] || '0';
-                            const digit = parseInt(decimalPart[decimalPart.length - 1] || '0', 10);
-                            this.onNewTick(market.symbol, digit);
-                        }
-                    },
-                    (err: any) => {
-                        const isAlreadySub =
-                            err?.error?.code === 'AlreadySubscribed' ||
-                            err?.code === 'AlreadySubscribed' ||
-                            String(err?.message || '').toLowerCase().includes('already subscribed') ||
-                            String(err?.error?.message || '').toLowerCase().includes('already subscribed');
-                        if (isAlreadySub) return;
-                        console.warn(`[EntryScanner] Stream error for ${market.symbol}:`, err);
+                // 2. Subscribe to real-time live ticks via centralized multiplexer
+                const sub = subscribeTicks(market.symbol, (data: any) => {
+                    if (data?.tick && data.tick.symbol === market.symbol) {
+                        const quoteStr = (data.tick.quote || 0).toString();
+                        const parts = quoteStr.split('.');
+                        const decimalPart = parts[1] || '0';
+                        const digit = parseInt(decimalPart[decimalPart.length - 1] || '0', 10);
+                        this.onNewTick(market.symbol, digit);
                     }
-                );
+                });
 
                 this._tick_subs.set(market.symbol, sub);
                 await new Promise(r => setTimeout(r, 60)); // Rate limiting guard
             } catch (err) {
-                console.warn(`[EntryScanner] Error subscribing to ${market.symbol}:`, err);
+                // Ignore benign tick subscription errors
             }
         }
 

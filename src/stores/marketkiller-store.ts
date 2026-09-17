@@ -221,17 +221,16 @@ export default class MarketkillerStore {
         this.root_store = root_store;
         this.stats_engine = new DigitStatsEngine();
 
-        // Initial ribbon markets - covering all core volatility and jump indices
+        // Initial ribbon markets - covering core continuous volatility and jump indices
         const initialMarkets = [
             'R_10',
-            '1HZ10V',
             'R_25',
-            '1HZ25V',
             'R_50',
-            '1HZ50V',
             'R_75',
-            '1HZ75V',
             'R_100',
+            '1HZ10V',
+            '1HZ50V',
+            '1HZ100V',
             'JD10',
             'JD25',
             'JD50',

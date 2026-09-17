@@ -287,6 +287,15 @@ class DerivTickManager {
                         }, 2500);
                         return;
                     }
+                    if (
+                        errCode === 'InvalidSymbol' ||
+                        errCode === 'InputValidationFailed' ||
+                        errMsg.includes('invalid') ||
+                        errMsg.includes('not found')
+                    ) {
+                        this.streams.delete(symbol);
+                        return;
+                    }
                 }
                 if (res.subscription?.id) {
                     record.subscriptionId = res.subscription.id;
@@ -297,14 +306,18 @@ class DerivTickManager {
                 }
             }
         } catch (err: any) {
-            const code = err?.error?.code || err?.code;
-            const msg = String(err?.error?.message || err?.message || '').toLowerCase();
+            const code = err?.error?.code || err?.code || (typeof err === 'object' && err?.error?.code);
+            const msg = String(
+                err?.error?.message ||
+                    err?.message ||
+                    (typeof err === 'object' ? JSON.stringify(err) : err) ||
+                    ''
+            ).toLowerCase();
 
             if (code === 'AlreadySubscribed' || msg.includes('already subscribed')) {
                 // Ticks are already flowing on this connection for this symbol
                 record.isSubscribedInDeriv = true;
             } else if (code === 'RateLimit' || msg.includes('rate limit')) {
-                console.warn(`[DerivTickManager] RateLimit reached on ${symbol}, backing off for 2.5s.`);
                 this.isRateLimited = true;
                 if (!this.subscriptionQueue.includes(symbol)) {
                     this.subscriptionQueue.unshift(symbol);
@@ -313,8 +326,15 @@ class DerivTickManager {
                     this.isRateLimited = false;
                     void this.processSubscriptionQueue();
                 }, 2500);
-            } else if (code === 'InvalidSymbol' || code === 'InputValidationFailed') {
-                // Expected for certain closed or unsupported markets
+            } else if (
+                code === 'InvalidSymbol' ||
+                code === 'InputValidationFailed' ||
+                msg.includes('invalid') ||
+                msg.includes('not found') ||
+                msg.includes('is invalid')
+            ) {
+                // Deriv symbol unsupported or invalid for this account/endpoint - delete cleanly
+                this.streams.delete(symbol);
             } else {
                 console.info(`[DerivTickManager] Subscription notice for ${symbol}:`, err?.message || err);
             }

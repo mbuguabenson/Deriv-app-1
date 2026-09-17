@@ -47,17 +47,34 @@ export const safeSubscribe = (
                 isAlreadySubscribed = true;
             }
 
-            if (isAlreadySubscribed) {
-                // Ignore already subscribed duplicate stream errors
+            const code =
+                (errorDetails as any)?.code ||
+                (error as any)?.error?.code ||
+                (error as any)?.code;
+            const msg = String(
+                (errorDetails as any)?.message ||
+                    (error as any)?.error?.message ||
+                    (error as any)?.message ||
+                    ''
+            ).toLowerCase();
+
+            if (
+                isAlreadySubscribed ||
+                code === 'AlreadySubscribed' ||
+                code === 'InvalidSymbol' ||
+                code === 'InputValidationFailed' ||
+                msg.includes('invalid') ||
+                msg.includes('already subscribed')
+            ) {
+                // Ignore benign Deriv stream notices (already subscribed, unsupported symbols)
                 return;
             }
 
             if (onError) {
                 onError(error);
             } else {
-                const code = (errorDetails as any)?.code;
-                if (code === 'InvalidSymbol' || code === 'InputValidationFailed' || code === 'RateLimit') {
-                    console.info('[WebSocketHandler] Stream notice:', (errorDetails as any)?.message || errorDetails);
+                if (code === 'RateLimit' || msg.includes('rate limit')) {
+                    console.info('[WebSocketHandler] Rate limit notice:', (errorDetails as any)?.message || errorDetails);
                 } else {
                     console.error(
                         '[WebSocketHandler] Unhandled stream error:\n',
