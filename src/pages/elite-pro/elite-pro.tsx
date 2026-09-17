@@ -2,41 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite';
 import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base } from '@/external/bot-skeleton';
-import {
-    autoListStrategies,
-    autoPause,
-    autoResume,
-    autoStart,
-    autoStop,
-} from '@/external/bot-skeleton/services/api/automation';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
-    Activity,
-    ArrowUpRight,
-    CheckCircle2,
-    Flame,
-    Gauge,
-    Grid,
     LayoutGrid,
-    Minus,
     Pause,
     Play,
-    Radio,
-    RotateCcw,
-    Shield,
-    Sparkles,
     Square,
     Target,
-    TrendingDown,
-    TrendingUp,
-    Zap,
 } from 'lucide-react';
 import './elite-pro.scss';
 
@@ -64,12 +43,6 @@ type TradeLogEntry = {
 };
 
 type AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
-type ExecutionMode = 'local' | 'deriv_server';
-
-type StrategyOption = {
-    id: string;
-    name?: string;
-};
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -269,7 +242,7 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
 
 const ElitePro: React.FC = observer(() => {
     const store = useStore();
-    const { run_panel, summary_card, transactions, client } = store;
+    const { client } = store;
     const currency = client?.currency || 'USD';
     const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
@@ -279,17 +252,10 @@ const ElitePro: React.FC = observer(() => {
     const [showWideView, setShowWideView] = useState(false);
     const [autoInputBestMarket, setAutoInputBestMarket] = useState(true);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState(true);
-    const [maxRunsBeforeSwitch, setMaxRunsBeforeSwitch] = useState('7');
     const [marketsSideExpanded, setMarketsSideExpanded] = useState(true);
     const [isAiLearningHubOpen, setIsAiLearningHubOpen] = useState(false);
 
     // ── Strategy Configuration & Inputs ──
-    const [executionMode, setExecutionMode] = useState<ExecutionMode>('local');
-    const [strategies, setStrategies] = useState<StrategyOption[]>([]);
-    const [selectedStrategy, setSelectedStrategy] = useState('');
-    const [activeRunId, setActiveRunId] = useState<string | null>(null);
-    const [serverRunStatus, setServerRunStatus] = useState<string>('idle');
-
     const [stake, setStake] = useState('0.50');
     const [takeProfit, setTakeProfit] = useState('10.00');
     const [stopLoss, setStopLoss] = useState('25.00');
@@ -316,7 +282,6 @@ const ElitePro: React.FC = observer(() => {
     const autoAbortRef = useRef<AbortController | null>(null);
     const autoStateRef = useRef<AutoState>('IDLE');
     const contractStreamAbortRef = useRef<Set<AbortController>>(new Set());
-    const serverSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
     const selectedSymbolRef = useRef(selectedSymbol);
 
     const totalProfitRef = useRef(0);
@@ -1030,7 +995,7 @@ const ElitePro: React.FC = observer(() => {
                             stakeToUse
                         );
 
-                        if (abortSignal.aborted || autoStateRef.current === 'IDLE') break;
+                        if (abortSignal.aborted || (autoStateRef.current as AutoState) === 'IDLE') break;
 
                         const isWin = profit > 0;
                         const resultStr = isWin ? 'WIN' : 'LOSS';
@@ -1136,17 +1101,17 @@ const ElitePro: React.FC = observer(() => {
                         }
 
                         // Always cycle back to SCANNING so the loop continues effortlessly!
-                        if (autoStateRef.current !== 'IDLE') {
+                        if ((autoStateRef.current as AutoState) !== 'IDLE') {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
                         await new Promise(r => setTimeout(r, 400));
                     } catch (err) {
-                        if (abortSignal.aborted || autoStateRef.current === 'IDLE') break;
+                        if (abortSignal.aborted || (autoStateRef.current as AutoState) === 'IDLE') break;
                         const msg = err instanceof Error ? err.message : String(err);
                         console.error('[ElitePro] Trade execution loop error:', msg);
                         addLogEntry('EXECUTION ERROR', currentData.label, 'LOSS', 0, msg);
-                        if (autoStateRef.current !== 'IDLE') {
+                        if ((autoStateRef.current as AutoState) !== 'IDLE') {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
@@ -1236,11 +1201,6 @@ const ElitePro: React.FC = observer(() => {
             window.removeEventListener('PH_TRIGGER_ENGINE_ACTION', handleTrigger);
         };
     }, [startAutoTrading, stopAutoTrading]);
-
-    const handleLogin = async () => {
-        const oauthUrl = await generateOAuthURL();
-        if (oauthUrl) window.location.replace(oauthUrl);
-    };
 
     // Derived active analysis data
     const activeData = getActiveData();
