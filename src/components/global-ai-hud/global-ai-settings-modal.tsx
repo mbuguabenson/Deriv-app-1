@@ -2,9 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
     aiGlobalAutoTraderService,
     GlobalAiConfig,
-    GlobalAiState,
     StrategyFamily,
-    GlobalAiMode,
 } from '@/services/ai-global-autotrader.service';
 import { aiMarketPatternService, MarketPatternTelemetry } from '@/services/ai-market-pattern.service';
 import {
@@ -12,9 +10,7 @@ import {
     Sliders,
     TrendingUp,
     Shield,
-    Volume2,
     Bell,
-    CheckCircle2,
     X,
     Activity,
     Zap,
@@ -41,26 +37,10 @@ export const GlobalAiSettingsModal: React.FC<GlobalAiSettingsModalProps> = ({ is
         minConfidence: 75,
     });
 
-    const [state, setState] = useState<GlobalAiState>(() => ({
-        isRunning: false,
-        status: 'IDLE',
-        activeMarket: 'R_100',
-        activeMarketLabel: 'Vol 100',
-        currentStake: 0.50,
-        totalProfit: 0,
-        wins: 0,
-        losses: 0,
-        consecutiveLosses: 0,
-        winRate: 0,
-        lastActionMessage: '',
-        aiThoughts: [],
-    }));
-
     const [telemetry, setTelemetry] = useState<Map<string, MarketPatternTelemetry>>(new Map());
 
     useEffect(() => {
-        const unsubTrader = aiGlobalAutoTraderService.subscribe((s, c) => {
-            setState(s);
+        const unsubTrader = aiGlobalAutoTraderService.subscribe((_s, c) => {
             setConfig(c);
         });
         const unsubPattern = aiMarketPatternService.subscribe(t => {

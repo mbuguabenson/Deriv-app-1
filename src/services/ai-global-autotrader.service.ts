@@ -15,7 +15,7 @@ import { observer as globalObserver } from '@/external/bot-skeleton/utils/observ
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from './ai-continuous-learning.service';
 import { aiMarketPatternService, RecognizedPattern, MarketTrendState } from './ai-market-pattern.service';
 
@@ -241,7 +241,7 @@ class AiGlobalAutoTraderEngine {
     // EVALUATION & TRADING LOOP
     // ─────────────────────────────────────────────────────────────────────────
 
-    private async evaluateExecutionTick(triggerSymbol: string): Promise<void> {
+    private async evaluateExecutionTick(_triggerSymbol: string): Promise<void> {
         if (!this.state.isRunning || this.isExecutingTrade) return;
 
         // Check TP/SL boundaries
@@ -377,7 +377,11 @@ class AiGlobalAutoTraderEngine {
                 ...(barrier ? { barrier } : {}),
             };
 
-            const buyRes = await buyContractForUi(proposal);
+            const buyRes = await buyContractForUi({
+                parameters: proposal,
+                price: stake,
+                source: 'GLOBAL_AI_AUTOTRADER',
+            });
             const contractId = buyRes?.contract_id;
 
             if (!contractId) {
@@ -385,8 +389,10 @@ class AiGlobalAutoTraderEngine {
             }
 
             // Stream and await contract settlement
-            const settledContract = await streamContractUntilSettled(contractId, {
-                onUpdate: c => {
+            const settledContract = await streamContractUntilSettled({
+                contractId: Number(contractId),
+                source: 'GLOBAL_AI_AUTOTRADER',
+                onUpdate: (c: Record<string, any>) => {
                     this.pushToGlobalTransactions(c);
                 },
             });
