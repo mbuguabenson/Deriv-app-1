@@ -256,22 +256,22 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                     const y = padTop + usableH - (level / 9) * usableH;
                     const isKeyBarrier = level === 3 || level === 6;
                     return (
-                        <g key={level} className='af-chart-grid-line'>
+                        <g key={level} className={`af-chart-grid-line ${isKeyBarrier ? 'af-chart-grid-line--barrier' : ''}`}>
                             <line
                                 x1='0'
                                 y1={y}
                                 x2={W}
                                 y2={y}
-                                stroke={isKeyBarrier ? 'rgba(0, 240, 255, 0.22)' : 'rgba(255, 255, 255, 0.07)'}
+                                stroke={isKeyBarrier ? 'var(--af-chart-barrier-stroke, rgba(0, 240, 255, 0.45))' : 'var(--af-chart-grid-stroke, rgba(255, 255, 255, 0.08))'}
                                 strokeWidth={isKeyBarrier ? '1.2' : '1'}
                                 strokeDasharray={isKeyBarrier ? '4 4' : undefined}
                             />
                             <text
                                 x='6'
                                 y={y - 4}
-                                fill={isKeyBarrier ? '#00f0ff' : 'rgba(255, 255, 255, 0.35)'}
+                                fill={isKeyBarrier ? 'var(--af-chart-barrier-text, #00f0ff)' : 'var(--af-chart-grid-text, rgba(255, 255, 255, 0.4))'}
                                 fontSize='10'
-                                fontWeight={isKeyBarrier ? 700 : 400}
+                                fontWeight={isKeyBarrier ? 700 : 500}
                                 fontFamily='monospace'
                             >
                                 {level} {level === 6 ? '• (UNDER 6 TARGET)' : level === 3 ? '• (OVER 3 TARGET)' : ''}
@@ -318,7 +318,7 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                                 height={isLatest ? 8 : 6}
                                 rx={isLatest ? 2 : 1.5}
                                 fill={isLatest ? '#ffffff' : isUnder ? '#10b981' : '#f59e0b'}
-                                stroke={isLatest ? '#00f0ff' : '#0e1726'}
+                                stroke={isLatest ? '#00f0ff' : 'var(--af-point-stroke, #0e1726)'}
                                 strokeWidth={isLatest ? 2 : 1}
                                 filter={isLatest ? 'url(#afSpotGlow)' : undefined}
                             />
@@ -326,7 +326,7 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                                 x={p.x}
                                 y={p.y - (isLatest ? 10 : 8)}
                                 textAnchor='middle'
-                                fill={isLatest ? '#ffffff' : isUnder ? '#10b981' : '#f59e0b'}
+                                fill={isLatest ? 'var(--af-point-latest-text, #ffffff)' : isUnder ? '#10b981' : '#f59e0b'}
                                 fontSize={isLatest ? 13 : 11}
                                 fontWeight={isLatest ? 900 : 700}
                                 fontFamily='system-ui, -apple-system, sans-serif'
