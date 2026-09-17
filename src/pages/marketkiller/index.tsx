@@ -14,10 +14,12 @@ const Marketkiller = observer(() => {
     useEffect(() => {
         // Kickstart streaming ticks & stats on mount
         marketkiller.subscribeToTicks();
+        marketkiller.subscribeToRibbon();
 
         return () => {
             // Safety cleanup hook
             marketkiller.is_running = false;
+            marketkiller.cleanupSubscriptions();
         };
     }, [symbol]);
 

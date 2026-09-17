@@ -1,7 +1,7 @@
 import { action, makeObservable, observable, reaction, runInAction } from 'mobx';
 import { api_base, observer as globalObserver } from '@/external/bot-skeleton';
 import { DigitStatsEngine } from '@/lib/digit-stats-engine';
-import { safeSubscribe } from '@/utils/websocket-handler';
+import { subscribeTicks } from '@/utils/websocket-handler';
 import RootStore from './root-store';
 
 type TMarketkillerSubtab = 'onetrader' | 'matches';
@@ -20,6 +20,8 @@ export type TMarketState = {
     digit: number | null;
     is_up: boolean;
 };
+
+export type TStrategyType = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITEVEN' | 'DIGITODD' | 'DIGITOVER' | 'DIGITUNDER';
 
 export default class MarketkillerStore {
     root_store: RootStore;
@@ -85,11 +87,14 @@ export default class MarketkillerStore {
     @observable accessor matches_settings = {
         check_ticks: 15,
         predictions: [] as number[],
+        slot_strategies: [] as TStrategyType[],
+        default_strategy: 'DIGITMATCH' as TStrategyType,
         is_running: false,
         is_auto: true,
         stake: 0.35,
         duration: 1,
         simultaneous_trades: 1,
+        bulk_trades_count: 1,
         enabled_conditions: [true, true, true, true, false, false],
         c4_op: '>=',
         c4_val: 12,
@@ -110,9 +115,9 @@ export default class MarketkillerStore {
 
     @observable accessor is_executing = false;
 
-    private tick_subscription: any = null;
+    private main_tick_unsub: (() => void) | null = null;
     private recent_powers: number[][] = [];
-    private ribbon_subscriptions: Map<string, any> = new Map();
+    private ribbon_unsubs: Map<string, () => void> = new Map();
 
     // ── Rate-Limit Guard ──────────────────────────────────────────────────────
     // directBuy fires all trades in parallel (no proposal subscription limit).
@@ -153,6 +158,7 @@ export default class MarketkillerStore {
             const rawBarrier =
                 config.barrier !== undefined && config.barrier !== null ? config.barrier : config.prediction;
             const currency = this.root_store?.client?.currency || 'USD';
+            const isEvenOdd = config.type === 'DIGITEVEN' || config.type === 'DIGITODD';
             const parameters: Record<string, any> = {
                 amount: safeStake,
                 basis: 'stake',
@@ -162,7 +168,7 @@ export default class MarketkillerStore {
                 duration_unit: 't',
                 underlying_symbol: config.symbol,
             };
-            if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+            if (!isEvenOdd && rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
                 parameters.barrier = String(rawBarrier);
             }
 
@@ -322,7 +328,6 @@ export default class MarketkillerStore {
         });
     };
 
-    private tick_listener_sub: any = null;
     private is_subscribing = false;
 
     @action
@@ -331,114 +336,68 @@ export default class MarketkillerStore {
         this.is_subscribing = true;
 
         try {
-            // Cleanup previous tick subscription ID if exists
-            if (this.tick_subscription) {
+            if (this.main_tick_unsub) {
                 try {
-                    await api_base.api.send({ forget: this.tick_subscription });
-                } catch (e) {
-                    /* ignore */
-                }
-                this.tick_subscription = null;
-            }
-
-            // Cleanup RxJS listener to prevent memory leaks and duplicate ticks
-            if (this.tick_listener_sub) {
-                try {
-                    this.tick_listener_sub.unsubscribe();
-                } catch (e) {
-                    /* ignore */
-                }
-                this.tick_listener_sub = null;
-            }
-
-            if (!api_base?.api || api_base.api.connection?.readyState !== 1) {
-                if (retry_count < 10) {
-                    setTimeout(() => this.subscribeToTicks(retry_count + 1), 1000);
-                }
-                return;
+                    this.main_tick_unsub();
+                } catch (_) {}
+                this.main_tick_unsub = null;
             }
 
             const sym = this.symbol;
-            console.log('[Marketkiller] Subscribing to ticks and history for:', sym);
 
             // 1. Initial historical data
-            try {
-                const response = await api_base.api.send({
-                    ticks_history: sym,
-                    count: 100,
-                    end: 'latest',
-                    style: 'ticks',
-                });
-
-                if (this.symbol !== sym) return;
-
-                if (response?.history?.prices && Array.isArray(response.history.prices)) {
-                    const prices: number[] = response.history.prices;
-                    const digits = prices
-                        .map(p => {
-                            const priceStr = parseFloat(String(p)).toFixed(2);
-                            return parseInt(priceStr.slice(-1), 10);
-                        })
-                        .filter(d => !isNaN(d));
-
-                    runInAction(() => {
-                        this.ticks = digits.slice(-120);
-                        if (prices.length > 0) {
-                            const lastPrice = prices[prices.length - 1];
-                            this.current_price = parseFloat(String(lastPrice)).toFixed(2);
-                            this.last_digit = parseInt(this.current_price.slice(-1), 10);
-                            this.stats_engine.updateWithHistory(
-                                this.ticks.slice(-this.matches_settings.check_ticks),
-                                parseFloat(String(this.current_price))
-                            );
-                            this.updateDigitAnalytics();
-                        }
+            if (api_base?.api && api_base.api.connection?.readyState === 1) {
+                try {
+                    const response = await api_base.api.send({
+                        ticks_history: sym,
+                        count: 100,
+                        end: 'latest',
+                        style: 'ticks',
                     });
+
+                    if (this.symbol === sym && response?.history?.prices && Array.isArray(response.history.prices)) {
+                        const prices: number[] = response.history.prices;
+                        const digits = prices
+                            .map(p => {
+                                const priceStr = parseFloat(String(p)).toFixed(2);
+                                return parseInt(priceStr.slice(-1), 10);
+                            })
+                            .filter(d => !isNaN(d));
+
+                        runInAction(() => {
+                            this.ticks = digits.slice(-120);
+                            if (prices.length > 0) {
+                                const lastPrice = prices[prices.length - 1];
+                                this.current_price = parseFloat(String(lastPrice)).toFixed(2);
+                                this.last_digit = parseInt(this.current_price.slice(-1), 10);
+                                this.stats_engine.updateWithHistory(
+                                    this.ticks.slice(-this.matches_settings.check_ticks),
+                                    parseFloat(String(this.current_price))
+                                );
+                                this.updateDigitAnalytics();
+                            }
+                        });
+                    }
+                } catch (histErr) {
+                    console.warn('[Marketkiller] History fetch note:', histErr);
                 }
-            } catch (histErr) {
-                console.warn('[Marketkiller] History fetch note:', histErr);
             }
 
             if (this.symbol !== sym) return;
 
-            // 2. Direct RxJS Observable stream via safeSubscribe
-            const tickObservable = (api_base.api as any)?.subscribe?.({ ticks: sym });
-            const subscription = safeSubscribe(
-                tickObservable,
-                (res: any) => {
-                    if (this.symbol !== sym) return;
-                    if (res?.tick && res.tick.symbol === sym) {
-                        this.onTickArrival(res.tick);
-                    }
-                },
-                (err: any) => {
-                    const code = err?.error?.code || err?.code;
-                    const isAlreadySub =
-                        code === 'AlreadySubscribed' ||
-                        String(err?.message || '').toLowerCase().includes('already subscribed') ||
-                        String(err?.error?.message || '').toLowerCase().includes('already subscribed');
-                    if (isAlreadySub) return;
-                    if (code === 'InvalidSymbol') {
-                        console.info(`[Marketkiller] Symbol ${sym} unavailable for streaming.`);
-                        return;
-                    }
-                    console.warn(`[Marketkiller] Stream error for ${sym}:`, err);
+            // 2. Centralized multiplexed subscription with auto-reconnect & rate-limit safety
+            const unsub = subscribeTicks(sym, (res: any) => {
+                if (this.symbol !== sym) return;
+                if (res?.tick && res.tick.symbol === sym) {
+                    this.onTickArrival(res.tick);
                 }
-            );
+            });
 
-            this.tick_listener_sub = {
-                unsubscribe: () => {
-                    try {
-                        subscription?.unsubscribe?.();
-                    } catch (e) {}
-                },
-            };
+            this.main_tick_unsub = unsub;
+            runInAction(() => {
+                this.is_connected = true;
+            });
         } catch (error: any) {
-            const errCode = error?.error?.code || error?.code;
-            if (errCode === 'InvalidSymbol') {
-                this.is_subscribing = false;
-                return;
-            }
             console.warn('[Marketkiller] tick sub note:', error?.message || error);
             if (retry_count < 5) {
                 setTimeout(() => this.subscribeToTicks(retry_count + 1), 2000);
@@ -449,37 +408,50 @@ export default class MarketkillerStore {
     };
 
     @action
-    private subscribeToRibbon = async () => {
-        if (!api_base.api || api_base.api.connection?.readyState !== 1) return;
-
-        this.live_market_ribbon.forEach(async m => {
+    public subscribeToRibbon = () => {
+        // Clean up previous ribbon subscriptions
+        this.ribbon_unsubs.forEach(unsub => {
             try {
-                const response = await api_base.api.send({ ticks: m.symbol, subscribe: 1 });
-                if (response.subscription) {
-                    this.ribbon_subscriptions.set(m.symbol, response.subscription.id);
-                }
-            } catch (e) {
-                // ignore
-            }
+                unsub();
+            } catch (_) {}
         });
+        this.ribbon_unsubs.clear();
 
-        api_base.api.onMessage().subscribe((res: any) => {
-            const data = res?.data || res;
-            if (data?.msg_type === 'tick' && data?.tick) {
-                const tick = data.tick;
-                const index = this.live_market_ribbon.findIndex(m => m?.symbol === tick.symbol);
-                if (index !== -1) {
-                    runInAction(() => {
-                        const m = this.live_market_ribbon[index];
-                        if (!m) return;
-                        const price = parseFloat(tick.quote).toFixed(tick.pip_size || 2);
-                        m.is_up = parseFloat(price) >= parseFloat(String(m.price));
-                        m.price = price;
-                        m.digit = parseInt(price.slice(-1));
-                    });
+        this.live_market_ribbon.forEach(m => {
+            const unsub = subscribeTicks(m.symbol, (res: any) => {
+                if (res?.tick) {
+                    const tick = res.tick;
+                    const index = this.live_market_ribbon.findIndex(item => item?.symbol === tick.symbol);
+                    if (index !== -1) {
+                        runInAction(() => {
+                            const item = this.live_market_ribbon[index];
+                            if (!item) return;
+                            const price = parseFloat(String(tick.quote)).toFixed(tick.pip_size || 2);
+                            item.is_up = parseFloat(price) >= parseFloat(String(item.price));
+                            item.price = price;
+                            item.digit = parseInt(price.slice(-1), 10);
+                        });
+                    }
                 }
-            }
+            });
+            this.ribbon_unsubs.set(m.symbol, unsub);
         });
+    };
+
+    @action
+    public cleanupSubscriptions = () => {
+        if (this.main_tick_unsub) {
+            try {
+                this.main_tick_unsub();
+            } catch (_) {}
+            this.main_tick_unsub = null;
+        }
+        this.ribbon_unsubs.forEach(unsub => {
+            try {
+                unsub();
+            } catch (_) {}
+        });
+        this.ribbon_unsubs.clear();
     };
 
     @action
@@ -748,6 +720,7 @@ export default class MarketkillerStore {
             const rawBarrier =
                 config.barrier !== undefined && config.barrier !== null ? config.barrier : config.prediction;
             const currency = this.root_store?.client?.currency || 'USD';
+            const isEvenOdd = config.type === 'DIGITEVEN' || config.type === 'DIGITODD';
             const parameters: Record<string, any> = {
                 amount: safeStake,
                 basis: 'stake',
@@ -757,7 +730,7 @@ export default class MarketkillerStore {
                 duration_unit: 't',
                 underlying_symbol: config.symbol,
             };
-            if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+            if (!isEvenOdd && rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
                 parameters.barrier = String(rawBarrier);
             }
 
@@ -881,36 +854,66 @@ export default class MarketkillerStore {
 
     @action
     public executeOneShot = async () => {
+        const bulkCount = this.matches_settings.bulk_trades_count || 1;
         const sortedDigits = [...this.digit_stats].sort((a, b) => b.count - a.count).map(s => s.digit);
+        const leastDigits = [...this.digit_stats].sort((a, b) => a.count - b.count).map(s => s.digit);
 
-        // Ensure we fetch EXACTLY the number of active slots chosen by the user. Unedited slots will default to '0'.
-        const targets: number[] = this.matches_settings.is_auto
-            ? sortedDigits.slice(0, this.matches_settings.simultaneous_trades || 1)
-            : Array.from({ length: this.matches_settings.simultaneous_trades || 1 }).map(
-                  (_, i) => this.matches_settings.predictions[i] ?? 0
-              );
+        const activeSlotsCount = this.matches_settings.simultaneous_trades || 1;
+        const trades: any[] = [];
 
-        if (targets.length === 0) return;
+        for (let i = 0; i < activeSlotsCount; i++) {
+            const slotStrat = this.matches_settings.slot_strategies[i] || this.matches_settings.default_strategy || 'DIGITMATCH';
 
-        const trades = targets.map(digit => ({
-            type: 'DIGITMATCH',
-            symbol: this.symbol,
-            barrier: digit,
-            stake: this.matches_settings.stake,
-        }));
+            let targetDigit: number | undefined;
+            if (this.matches_settings.is_auto) {
+                if (slotStrat === 'DIGITDIFF') {
+                    targetDigit = leastDigits[i] ?? 0;
+                } else if (slotStrat === 'DIGITOVER') {
+                    targetDigit = 1;
+                } else if (slotStrat === 'DIGITUNDER') {
+                    targetDigit = 8;
+                } else {
+                    targetDigit = sortedDigits[i] ?? 0;
+                }
+            } else {
+                targetDigit = this.matches_settings.predictions[i] ?? (slotStrat === 'DIGITOVER' ? 1 : slotStrat === 'DIGITUNDER' ? 8 : 0);
+            }
 
-        await this.executeConcurrentTrades(trades);
+            const barrier = (slotStrat === 'DIGITEVEN' || slotStrat === 'DIGITODD') ? undefined : targetDigit;
+
+            for (let b = 0; b < bulkCount; b++) {
+                trades.push({
+                    type: slotStrat,
+                    symbol: this.symbol,
+                    barrier,
+                    stake: this.matches_settings.stake,
+                });
+            }
+        }
+
+        if (trades.length > 0) {
+            await this.executeConcurrentTrades(trades);
+        }
     };
 
     @action
-    public executeSingleManualTrade = async (digit: number) => {
-        const trade = {
-            type: 'DIGITMATCH',
-            symbol: this.symbol,
-            barrier: digit,
-            stake: this.matches_settings.stake,
-        };
+    public executeSingleManualTrade = async (
+        target: number | string,
+        strategyType?: TStrategyType,
+        customBulkCount?: number
+    ) => {
+        const strat = strategyType || this.matches_settings.default_strategy || 'DIGITMATCH';
+        const count = customBulkCount || this.matches_settings.bulk_trades_count || 1;
+        const stake = this.matches_settings.stake;
+        const barrier = (strat === 'DIGITEVEN' || strat === 'DIGITODD') ? undefined : Number(target);
 
-        await this.executeConcurrentTrades([trade]);
+        const trades = Array(count).fill(null).map(() => ({
+            type: strat,
+            symbol: this.symbol,
+            barrier,
+            stake,
+        }));
+
+        await this.executeConcurrentTrades(trades);
     };
 }
