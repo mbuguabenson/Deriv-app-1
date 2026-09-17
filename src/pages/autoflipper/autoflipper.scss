@@ -1123,6 +1123,31 @@
                 gap: 0.45rem;
                 flex-wrap: wrap;
 
+                .btn-toggle-link {
+                    background: rgba(16, 28, 52, 0.85);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    color: #94a3b8;
+                    font-size: 0.68rem;
+                    font-weight: 800;
+                    padding: 0.22rem 0.6rem;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+
+                    &:hover {
+                        background: rgba(24, 42, 78, 0.9);
+                        border-color: rgba(0, 240, 255, 0.4);
+                        color: #ffffff;
+                    }
+
+                    &--active {
+                        background: rgba(16, 185, 129, 0.18);
+                        border-color: #10b981;
+                        color: #10b981;
+                        box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+                    }
+                }
+
                 .risk-notice {
                     font-size: 0.68rem;
                     font-weight: 800;
@@ -1309,6 +1334,124 @@
                     box-shadow: 0 0 18px rgba(0, 240, 255, 0.45);
                 }
             }
+
+            .btn-sync-engine {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.35rem;
+                background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(168, 85, 247, 0.25));
+                border: 1px solid #00f0ff;
+                color: #00f0ff;
+                font-weight: 900;
+                font-size: 0.78rem;
+                padding: 0.38rem 0.75rem;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+
+                &:hover {
+                    background: linear-gradient(135deg, rgba(0, 240, 255, 0.35), rgba(168, 85, 247, 0.4));
+                    transform: translateY(-1px);
+                    box-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
+                }
+            }
+        }
+
+        // Live Active Compounding Stage Gauge
+        .comp-live-stage-gauge {
+            background: rgba(6, 14, 28, 0.75);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 9px;
+            padding: 0.45rem 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+
+            .gauge-top {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.35rem;
+
+                .gauge-left {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.45rem;
+
+                    .gauge-badge {
+                        background: rgba(0, 240, 255, 0.18);
+                        border: 1px solid #00f0ff;
+                        color: #00f0ff;
+                        font-size: 0.64rem;
+                        font-weight: 900;
+                        padding: 0.08rem 0.45rem;
+                        border-radius: 4px;
+                        letter-spacing: 0.3px;
+                    }
+
+                    .gauge-title {
+                        font-size: 0.72rem;
+                        color: #f8fafc;
+                        strong {
+                            color: #00f0ff;
+                        }
+                    }
+                }
+
+                .gauge-right {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.6rem;
+                    font-size: 0.7rem;
+                    color: #cbd5e1;
+
+                    strong {
+                        color: #ffb020;
+                        font-family: monospace;
+                    }
+
+                    .gauge-pct {
+                        color: #10b981;
+                        font-weight: 800;
+                    }
+                }
+            }
+
+            .gauge-bar-track {
+                width: 100%;
+                height: 6px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 3px;
+                overflow: hidden;
+
+                .gauge-bar-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, #00f0ff, #10b981);
+                    box-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+                    transition: width 0.35s ease;
+                }
+            }
+
+            .gauge-sub {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 0.65rem;
+                color: #94a3b8;
+
+                strong {
+                    color: #f8fafc;
+                    font-family: monospace;
+                }
+
+                .link-state-indicator {
+                    color: #10b981;
+                    font-weight: 700;
+                }
+            }
         }
 
         // Summary bar
@@ -1482,6 +1625,57 @@
             font-weight: 900;
             margin: 0;
             color: #f8fafc;
+        }
+
+        .comp-engine-badge {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.45rem;
+            background: rgba(10, 18, 36, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 7px;
+            padding: 0.3rem 0.65rem;
+            font-size: 0.68rem;
+            color: #94a3b8;
+
+            .dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #64748b;
+                flex-shrink: 0;
+            }
+
+            &--active {
+                background: rgba(0, 240, 255, 0.08);
+                border-color: rgba(0, 240, 255, 0.3);
+                color: #e2e8f0;
+
+                .dot {
+                    background: #00f0ff;
+                    box-shadow: 0 0 6px #00f0ff;
+                    animation: afPulseDot 1.2s infinite;
+                }
+            }
+
+            .btn-switch-link {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                color: #cbd5e1;
+                font-size: 0.65rem;
+                font-weight: 700;
+                padding: 0.15rem 0.45rem;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+
+                &:hover {
+                    background: rgba(0, 240, 255, 0.2);
+                    border-color: #00f0ff;
+                    color: #00f0ff;
+                }
+            }
         }
 
         .af-inputs-grid {

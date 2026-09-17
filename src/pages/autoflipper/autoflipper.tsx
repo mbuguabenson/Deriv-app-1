@@ -352,6 +352,7 @@ const Autoflipper: React.FC = observer(() => {
     const [compNumStages, setCompNumStages] = useState<string>('8');
     const [compStages, setCompStages] = useState<CompoundingStage[]>([]);
     const [showScheduleTable, setShowScheduleTable] = useState<boolean>(false);
+    const [isCompoundingLinked, setIsCompoundingLinked] = useState<boolean>(true);
 
     // Session Statistics
     const [sessionProfit, setSessionProfit] = useState<number>(0);
@@ -615,7 +616,8 @@ const Autoflipper: React.FC = observer(() => {
         customDurVal?: string,
         customDurUnit?: DurationUnitType,
         customRiskPct?: string,
-        customStagesCount?: string
+        customStagesCount?: string,
+        forceSyncWithEngine: boolean = false
     ) => {
         const startCapital = Number(customStartCap ?? compStartCapital) || 100;
         const targetProf = Number(customTargetProf ?? compTargetProfit) || 250;
@@ -659,6 +661,15 @@ const Autoflipper: React.FC = observer(() => {
         }
 
         setCompStages(stages);
+
+        if (isCompoundingLinked || forceSyncWithEngine) {
+            setTakeProfit(targetProf.toFixed(2));
+            const baseStake = stages[0]?.recommendedStake || 1.0;
+            setInitialStake(baseStake.toFixed(2));
+            if (botStateRef.current === 'IDLE') {
+                setCurrentStake(baseStake);
+            }
+        }
     };
 
     // Calculate hourly/daily velocity required
@@ -684,10 +695,9 @@ const Autoflipper: React.FC = observer(() => {
         };
     }, [compTargetProfit, compDurationValue, compDurationUnit]);
 
-    // Update compounding stage statuses when session profit changes
-    useEffect(() => {
-        if (compStages.length === 0) return;
-        const updated = compStages.map((st, idx) => {
+    // Derived stages with dynamic completion status based on live session profit
+    const stagesWithStatus = useMemo(() => {
+        return compStages.map((st, idx) => {
             if (sessionProfit >= st.cumulativeProfit) {
                 return { ...st, status: 'DONE' as const };
             }
@@ -697,8 +707,49 @@ const Autoflipper: React.FC = observer(() => {
             }
             return { ...st, status: 'PENDING' as const };
         });
-        setCompStages(updated);
-    }, [sessionProfit, compStages]);
+    }, [compStages, sessionProfit]);
+
+    // Active compounding stage detection
+    const activeStageIndex = useMemo(() => {
+        if (!compStages.length) return 0;
+        const idx = compStages.findIndex(st => sessionProfit < st.cumulativeProfit);
+        return idx === -1 ? compStages.length - 1 : idx;
+    }, [compStages, sessionProfit]);
+
+    const activeStage = useMemo(() => {
+        return (
+            stagesWithStatus[activeStageIndex] || {
+                stage: 1,
+                timeLabel: '1h',
+                targetBalance: Number(compStartCapital) || 100,
+                recommendedStake: Number(initialStake) || 1.0,
+                stageProfit: 30,
+                cumulativeProfit: 30,
+                status: 'ACTIVE' as const,
+            }
+        );
+    }, [stagesWithStatus, activeStageIndex, compStartCapital, initialStake]);
+
+    // Stage progress calculation
+    const activeStageStartProfit = activeStageIndex > 0 ? (stagesWithStatus[activeStageIndex - 1]?.cumulativeProfit ?? 0) : 0;
+    const stageRequiredProfit = Math.max(0.01, activeStage.stageProfit);
+    const stageCurrentProgress = Math.max(0, Math.min(stageRequiredProfit, sessionProfit - activeStageStartProfit));
+    const stageProgressPct = Math.min(100, Math.max(0, Math.round((stageCurrentProgress / stageRequiredProfit) * 100)));
+    const isAllStagesComplete =
+        stagesWithStatus.length > 0 &&
+        sessionProfit >= (stagesWithStatus[stagesWithStatus.length - 1]?.cumulativeProfit ?? 0);
+
+    // Apply Compounding Plan parameters directly to Trade Engine
+    const applyCompoundingToEngine = () => {
+        setIsCompoundingLinked(true);
+        const targetProf = Number(compTargetProfit) || 250;
+        setTakeProfit(targetProf.toFixed(2));
+        const baseStake = activeStage.recommendedStake || compStages[0]?.recommendedStake || Number(initialStake) || 1.0;
+        setInitialStake(baseStake.toFixed(2));
+        if (botState === 'IDLE') {
+            setCurrentStake(baseStake);
+        }
+    };
 
     // Quick Duration Presets Handler
     const applyDurationPreset = (value: string, unit: DurationUnitType) => {
@@ -808,14 +859,59 @@ const Autoflipper: React.FC = observer(() => {
                 if (isWin) {
                     playSoundCue('win');
                     consecutiveLossesRef.current = 0;
-                    setCurrentStake(Number(initialStake) || 1);
                     setWinsCount(w => w + 1);
+
                     setSessionProfit(p => {
                         const newP = p + profit;
-                        const tp = Number(takeProfit) || 20;
-                        if (newP >= tp) {
-                            setMilestone({ isOpen: true, type: 'tp' });
-                            setBotState('IDLE');
+
+                        if (isCompoundingLinked && compStages.length > 0) {
+                            const targetGoal = Number(compTargetProfit) || 250;
+                            const prevStageIdx = compStages.findIndex(st => p < st.cumulativeProfit);
+                            const newStageIdx = compStages.findIndex(st => newP < st.cumulativeProfit);
+
+                            if (newP >= targetGoal) {
+                                // Compounding Plan Complete!
+                                setMilestone({ isOpen: true, type: 'tp' });
+                                setBotState('IDLE');
+                                const finishLog: TradeLogItem = {
+                                    id: String(Date.now() + 1),
+                                    time: new Date().toLocaleTimeString(),
+                                    market: '🏆 COMPOUNDING COMPLETE',
+                                    strategy: 'TAKE_PROFIT',
+                                    contractType: `ALL ${compStages.length} STAGES (+${newP.toFixed(2)})`,
+                                    prediction: compStages.length,
+                                    stake: stakeToUse,
+                                    result: 'WIN',
+                                    profit: 0,
+                                };
+                                setTradeLog(prevLogs => [finishLog, ...prevLogs.slice(0, 49)]);
+                            } else if (newStageIdx > prevStageIdx && newStageIdx !== -1) {
+                                // Stepped up to next compounding stage
+                                const nextStageObj = compStages[newStageIdx];
+                                setCurrentStake(nextStageObj.recommendedStake);
+                                const stageAdvLog: TradeLogItem = {
+                                    id: String(Date.now() + 1),
+                                    time: new Date().toLocaleTimeString(),
+                                    market: `🚀 STAGE #${nextStageObj.stage} UNLOCKED`,
+                                    strategy: 'RECOVERY',
+                                    contractType: `TARGET +$${nextStageObj.cumulativeProfit.toFixed(2)} (Stake: $${nextStageObj.recommendedStake.toFixed(2)})`,
+                                    prediction: nextStageObj.stage,
+                                    stake: nextStageObj.recommendedStake,
+                                    result: 'WIN',
+                                    profit: 0,
+                                };
+                                setTradeLog(prevLogs => [stageAdvLog, ...prevLogs.slice(0, 49)]);
+                            } else {
+                                const currentBase = (compStages[newStageIdx === -1 ? compStages.length - 1 : newStageIdx] || activeStage).recommendedStake;
+                                setCurrentStake(currentBase);
+                            }
+                        } else {
+                            setCurrentStake(Number(initialStake) || 1);
+                            const tp = Number(takeProfit) || 20;
+                            if (newP >= tp) {
+                                setMilestone({ isOpen: true, type: 'tp' });
+                                setBotState('IDLE');
+                            }
                         }
                         return newP;
                     });
@@ -862,6 +958,10 @@ const Autoflipper: React.FC = observer(() => {
             stopLoss,
             autoSwitchMarkets,
             bestMarketCandidate,
+            isCompoundingLinked,
+            compStages,
+            compTargetProfit,
+            activeStage,
         ]
     );
 
@@ -890,7 +990,10 @@ const Autoflipper: React.FC = observer(() => {
             return;
         }
         consecutiveLossesRef.current = 0;
-        setCurrentStake(Number(initialStake) || 1);
+        const baseStake = isCompoundingLinked
+            ? (activeStage.recommendedStake || Number(initialStake) || 1.0)
+            : (Number(initialStake) || 1.0);
+        setCurrentStake(baseStake);
         setBotState('WAITING_SIGNAL');
         playSoundCue('signal');
     };
@@ -938,6 +1041,14 @@ const Autoflipper: React.FC = observer(() => {
                 </div>
 
                 <div className='autoflipper__header-actions'>
+                    {isCompoundingLinked && (
+                        <div className='af-metric-pill' title={`Active Milestone: Stage ${activeStage.stage} of ${compStages.length}`}>
+                            <span className='af-metric-pill__label'>Target Stage</span>
+                            <span className='af-metric-pill__val' style={{ color: '#00f0ff' }}>
+                                #{activeStage.stage}/{compStages.length}
+                            </span>
+                        </div>
+                    )}
                     <div className='af-metric-pill'>
                         <span className='af-metric-pill__label'>Session P/L</span>
                         <span
@@ -1227,7 +1338,7 @@ const Autoflipper: React.FC = observer(() => {
                                 <span className={`trend-tag ${flipAnalysis.isUnder04Increasing ? 'up' : 'down'}`}>
                                     {flipAnalysis.isUnder04Increasing ? (
                                         <>
-                                            <TrendingUp size={14} /> Under Accelerating
+                                             <TrendingUp size={14} /> Under Accelerating
                                         </>
                                     ) : (
                                         <>
@@ -1329,6 +1440,14 @@ const Autoflipper: React.FC = observer(() => {
                                 <span>Custom Duration ({compDurationValue} {compDurationUnit.toLowerCase()}) &bull; {compRiskPercent}% Risk &bull; {compNumStages} Stages</span>
                             </div>
                             <div className='comp-header-actions'>
+                                <button
+                                    className={`btn-toggle-link ${isCompoundingLinked ? 'btn-toggle-link--active' : ''}`}
+                                    onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
+                                    type='button'
+                                    title='Toggle auto-linking compounding milestones directly to the trading engine'
+                                >
+                                    🔗 Engine Linked: {isCompoundingLinked ? 'ON' : 'OFF'}
+                                </button>
                                 <span className='risk-notice'>
                                     🛡️ {compRiskPercent}% Risk/Stage
                                 </span>
@@ -1468,6 +1587,45 @@ const Autoflipper: React.FC = observer(() => {
                             >
                                 <RefreshCw size={13} /> Recalculate
                             </button>
+
+                            <button
+                                className='btn-sync-engine'
+                                onClick={applyCompoundingToEngine}
+                                type='button'
+                                title='Directly link and apply compounding parameters to Trade Engine'
+                            >
+                                ⚡ Sync with Engine
+                            </button>
+                        </div>
+
+                        {/* Live Active Compounding Stage Gauge */}
+                        <div className='comp-live-stage-gauge'>
+                            <div className='gauge-top'>
+                                <div className='gauge-left'>
+                                    <span className='gauge-badge'>
+                                        {isAllStagesComplete ? '🏆 GOAL REACHED' : `STAGE #${activeStage.stage} OF ${compStages.length}`}
+                                    </span>
+                                    <span className='gauge-title'>
+                                        {activeStage.timeLabel} Target: <strong>+${activeStage.cumulativeProfit.toFixed(2)}</strong> ({currency})
+                                    </span>
+                                </div>
+                                <div className='gauge-right'>
+                                    <span>Base Stake: <strong>${activeStage.recommendedStake.toFixed(2)}</strong></span>
+                                    <span className='gauge-pct'>{stageProgressPct}%</span>
+                                </div>
+                            </div>
+                            <div className='gauge-bar-track'>
+                                <div
+                                    className='gauge-bar-fill'
+                                    style={{ width: `${stageProgressPct}%` }}
+                                />
+                            </div>
+                            <div className='gauge-sub'>
+                                <span>Progress: <strong>${stageCurrentProgress.toFixed(2)} / ${activeStage.stageProfit.toFixed(2)}</strong></span>
+                                <span className='link-state-indicator'>
+                                    {isCompoundingLinked ? '🔗 Trade Engine Linked & Auto-Escalating' : '⚠️ Manual Stake Mode'}
+                                </span>
+                            </div>
                         </div>
 
                         {/* Plan Velocity Summary Cards */}
@@ -1508,7 +1666,7 @@ const Autoflipper: React.FC = observer(() => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {compStages.map(st => (
+                                        {stagesWithStatus.map(st => (
                                             <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
                                                 <td className='stage-name'>Stage #{st.stage}</td>
                                                 <td className='stage-time'>
@@ -1541,9 +1699,27 @@ const Autoflipper: React.FC = observer(() => {
                             <h3>
                                 <Shield size={16} /> Trading Parameters &amp; Risk Matrix
                             </h3>
+
+                            {/* Compounding Engine Link Banner */}
+                            <div className={`comp-engine-badge ${isCompoundingLinked ? 'comp-engine-badge--active' : ''}`}>
+                                <span className='dot' />
+                                <span>
+                                    {isCompoundingLinked
+                                        ? `Linked with Stage #${activeStage.stage} (Base Stake: $${activeStage.recommendedStake.toFixed(2)}, Goal: +$${(Number(compTargetProfit) || 250).toFixed(2)})`
+                                        : 'Manual Stake Mode: Driven by inputs below'}
+                                </span>
+                                <button
+                                    className='btn-switch-link'
+                                    type='button'
+                                    onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
+                                >
+                                    {isCompoundingLinked ? 'Switch to Manual' : 'Link Compounding'}
+                                </button>
+                            </div>
+
                             <div className='af-inputs-grid'>
                                 <div className='af-input-group'>
-                                    <label>Initial Stake ({currency})</label>
+                                    <label>Initial Stake ({currency}) {isCompoundingLinked && '• [Stage Stake]'}</label>
                                     <input
                                         type='number'
                                         step='0.1'
@@ -1564,7 +1740,7 @@ const Autoflipper: React.FC = observer(() => {
                                     />
                                 </div>
                                 <div className='af-input-group'>
-                                    <label>Take Profit ({currency})</label>
+                                    <label>Take Profit ({currency}) {isCompoundingLinked && '• [Target Goal]'}</label>
                                     <input
                                         type='number'
                                         value={takeProfit}
