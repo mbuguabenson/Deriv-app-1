@@ -7,7 +7,7 @@ import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { subscribeTicks } from '@/utils/websocket-handler';
+import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
@@ -242,7 +242,7 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
 
 const ElitePro: React.FC = observer(() => {
     const store = useStore();
-    const { client } = store;
+    const { run_panel, summary_card, transactions, client } = store;
     const currency = client?.currency || 'USD';
     const logged_in = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
