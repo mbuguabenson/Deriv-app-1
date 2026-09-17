@@ -6,8 +6,11 @@ import { useStore } from '@/hooks/useStore';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
 import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { isLoggedIn } from '@/utils/token-bridge';
+import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
+import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
     BarChart2,
+    Brain,
     Download,
     Flame,
     Layers,
@@ -355,6 +358,7 @@ const OverlordAi: React.FC = observer(() => {
 
     // ── Session State & Execution Engine ──
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
+    const [isAiLearningHubOpen, setIsAiLearningHubOpen] = useState<boolean>(false);
     const [currentStake, setCurrentStake] = useState<number>(1.0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
     const [, setMartingaleStage] = useState<number>(0);
@@ -527,6 +531,7 @@ const OverlordAi: React.FC = observer(() => {
                     const quote = tickData?.quote;
                     if (quote !== undefined && quote !== null) {
                         const digit = extractLastDigit(quote, pip);
+                        aiContinuousLearningService.ingestMarketTick(sym, digit);
                         const activeM = marketsDataRef.current.get(sym);
                         if (activeM) {
                             activeM.digits.push(digit);
@@ -1174,6 +1179,18 @@ const OverlordAi: React.FC = observer(() => {
                 const profitVal = Number(settledContract.profit || 0);
                 const exitDigit = extractLastDigit(settledContract.exit_tick || settledContract.current_spot || 0);
 
+                // Record cross-bot learning outcome
+                aiContinuousLearningService.recordBotTrade({
+                    botName: 'OVERLORD_AI',
+                    strategy: activeStrategy,
+                    market: selectedMarket,
+                    contractType: activeStrategy,
+                    prediction: currentPrediction,
+                    isWin: isWon,
+                    profit: profitVal,
+                    stake: currentStake,
+                });
+
                 // Update Session Log
                 setTradeLog(prev =>
                     prev.map(item =>
@@ -1615,6 +1632,15 @@ const OverlordAi: React.FC = observer(() => {
                         >
                             <Sparkles size={14} />
                             {autoPickBestMarket ? 'AUTO-MARKET ACTIVE' : 'MANUAL MARKET'}
+                        </button>
+
+                        <button
+                            type='button'
+                            className='btn-control btn-ai-learning-hub'
+                            onClick={() => setIsAiLearningHubOpen(true)}
+                            title='Open Neural Learning Lab & 24/7 Machine Mode'
+                        >
+                            <Brain size={14} /> AI LEARNING LAB
                         </button>
                     </div>
 
@@ -2255,6 +2281,11 @@ const OverlordAi: React.FC = observer(() => {
                 currency={currency}
                 botName='Overlord AI'
                 onClose={() => setMilestone({ isOpen: false, type: null })}
+            />
+
+            <AiLearningHubModal
+                isOpen={isAiLearningHubOpen}
+                onClose={() => setIsAiLearningHubOpen(false)}
             />
         </div>
     );

@@ -7,6 +7,8 @@ import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
 import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
+import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
     Activity,
     ArrowUpRight,
@@ -305,6 +307,7 @@ const AutoXEo: React.FC = observer(() => {
         isOpen: false,
         type: null,
     });
+    const [isAiLearningModalOpen, setIsAiLearningModalOpen] = useState<boolean>(false);
 
     // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
     const botStateRef = useRef<AutoRunState>('IDLE');
@@ -455,6 +458,7 @@ const AutoXEo: React.FC = observer(() => {
                         const prices: number[] = res.history.prices || [];
                         const digits = prices.map(p => extractLastDigit(p, pip));
                         mData.digits = digits;
+                        digits.forEach(d => aiContinuousLearningService.ingestMarketTick(sym, d));
                         if (prices.length > 0) {
                             const lastP = prices[prices.length - 1];
                             mData.currentPrice = Number(lastP).toFixed(pip);
@@ -474,6 +478,7 @@ const AutoXEo: React.FC = observer(() => {
                     if (tickData?.symbol === sym && tickData?.quote !== undefined) {
                         const quote = Number(tickData.quote);
                         const lastD = extractLastDigit(quote, pip);
+                        aiContinuousLearningService.ingestMarketTick(sym, lastD);
                         const item = marketsDataRef.current.get(sym);
                         if (item) {
                             item.currentPrice = quote.toFixed(pip);
@@ -818,6 +823,19 @@ const AutoXEo: React.FC = observer(() => {
                 pushContractToDrawer(settledSnapshot);
                 const profitVal = Number(settledSnapshot?.profit || 0);
                 const isWin = profitVal > 0;
+
+                // Record cross-bot learning outcome
+                aiContinuousLearningService.recordBotTrade({
+                    botName: 'AUTO_EO',
+                    strategy: contractType,
+                    market,
+                    contractType: contractType,
+                    barrier: String(barrier ?? ''),
+                    prediction: contractType === 'DIGITEVEN' ? 'EVEN' : 'ODD',
+                    isWin,
+                    profit: profitVal,
+                    stake,
+                });
 
                 if (isWin) {
                     playSoundCue('win');
@@ -1217,6 +1235,14 @@ const AutoXEo: React.FC = observer(() => {
                 </div>
 
                 <div className='auto-x-eo__header-controls'>
+                    <button
+                        className='btn-ai-lab'
+                        onClick={() => setIsAiLearningModalOpen(true)}
+                        title='Open Multi-Bot Continuous Neural Learning Lab & 24/7 Machine Mode'
+                        type='button'
+                    >
+                        <Zap size={15} /> AI Learning Lab
+                    </button>
                     {botState === 'IDLE' ? (
                         <button className='btn-start' onClick={handleStartBot}>
                             <Play size={18} /> START AUTO TRADER
@@ -1615,6 +1641,11 @@ const AutoXEo: React.FC = observer(() => {
                 currency={currency}
                 botName='Auto X E/O'
                 onClose={() => setMilestone({ isOpen: false, type: null })}
+            />
+
+            <AiLearningHubModal
+                isOpen={isAiLearningModalOpen}
+                onClose={() => setIsAiLearningModalOpen(false)}
             />
         </div>
     );

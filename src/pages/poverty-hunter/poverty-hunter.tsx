@@ -7,6 +7,8 @@ import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
 import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
+import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import './poverty-hunter.scss';
 
 // ─── Interfaces & Types ────────────────────────────────────────────────────────
@@ -250,6 +252,7 @@ const PovertyHunter: React.FC = observer(() => {
         isOpen: false,
         type: null,
     });
+    const [isAiLearningModalOpen, setIsAiLearningModalOpen] = useState<boolean>(false);
 
     // ── Synchronized Refs for Non-Stalling Async Engine Loop ──
     const botStateRef = useRef<AutoRunState>('IDLE');
@@ -407,6 +410,7 @@ const PovertyHunter: React.FC = observer(() => {
                         const prices: number[] = res.history.prices || [];
                         const digits = prices.map(p => extractLastDigit(p, pip));
                         mData.digits = digits;
+                        digits.forEach(d => aiContinuousLearningService.ingestMarketTick(sym, d));
                         if (prices.length > 0) {
                             const lastP = prices[prices.length - 1];
                             mData.currentPrice = Number(lastP).toFixed(pip);
@@ -426,6 +430,7 @@ const PovertyHunter: React.FC = observer(() => {
                     if (tickData?.symbol === sym && tickData?.quote !== undefined) {
                         const quote = Number(tickData.quote);
                         const lastD = extractLastDigit(quote, pip);
+                        aiContinuousLearningService.ingestMarketTick(sym, lastD);
                         const item = marketsDataRef.current.get(sym);
                         if (item) {
                             item.currentPrice = quote.toFixed(pip);
@@ -693,6 +698,19 @@ const PovertyHunter: React.FC = observer(() => {
                 pushContractToDrawer(settledSnapshot);
                 const profitVal = Number(settledSnapshot?.profit || 0);
                 const isWin = profitVal > 0;
+
+                // Record cross-bot learning outcome
+                aiContinuousLearningService.recordBotTrade({
+                    botName: 'POVERTY_HUNTER',
+                    strategy: isInRecoveryRef.current ? 'RECOVERY' : 'DIFFERS',
+                    market,
+                    contractType: contractType,
+                    barrier: String(barrier),
+                    prediction: Number(barrier),
+                    isWin,
+                    profit: profitVal,
+                    stake,
+                });
 
                 if (isWin) {
                     updateLogResult(logId, 'WIN', profitVal);
@@ -1122,6 +1140,15 @@ const PovertyHunter: React.FC = observer(() => {
                             {currentStake.toFixed(2)} {currency}
                         </span>
                     </div>
+                    <button
+                        className='ph-ai-lab-btn'
+                        onClick={() => setIsAiLearningModalOpen(true)}
+                        title='Open Multi-Bot Continuous Neural Learning Lab & 24/7 Machine Mode'
+                        type='button'
+                    >
+                        <span className='ph-ai-lab-btn__dot' />
+                        🧠 AI Learning Lab
+                    </button>
                 </div>
             </div>
 
@@ -1550,6 +1577,11 @@ const PovertyHunter: React.FC = observer(() => {
                 currency={currency}
                 botName='Poverty Hunter'
                 onClose={() => setMilestone({ isOpen: false, type: null })}
+            />
+
+            <AiLearningHubModal
+                isOpen={isAiLearningModalOpen}
+                onClose={() => setIsAiLearningModalOpen(false)}
             />
         </div>
     );

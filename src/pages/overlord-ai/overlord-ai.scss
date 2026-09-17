@@ -374,6 +374,20 @@
             }
         }
 
+        &.btn-ai-learning-hub {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(6, 182, 212, 0.2));
+            border-color: rgba(139, 92, 246, 0.5);
+            color: #c084fc;
+
+            &:hover {
+                background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(6, 182, 212, 0.35));
+                border-color: #38bdf8;
+                color: #ffffff;
+                box-shadow: 0 0 16px rgba(139, 92, 246, 0.4);
+                transform: translateY(-1px);
+            }
+        }
+
         &.btn-autotrade-start {
             background: linear-gradient(135deg, #00e676 0%, #00b0ff 100%);
             border: none;
