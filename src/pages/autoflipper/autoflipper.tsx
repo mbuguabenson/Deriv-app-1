@@ -95,6 +95,11 @@ export interface TradeLogItem {
 }
 
 type AutoRunState = 'IDLE' | 'SCANNING' | 'WAITING_SIGNAL' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
+
+// Minimum ticks required before any signal can be evaluated
+const MIN_TICKS_FOR_SIGNAL = 40;
+// Minimum ticks cooldown after a trade before re-evaluating (prevents immediate re-entry)
+const POST_TRADE_COOLDOWN_TICKS = 5;
 type DurationUnitType = 'HOURS' | 'DAYS' | 'MINUTES';
 type TradeDurationUnitType = 't' | 's' | 'm';
 type JournalTabType = 'TRANSACTIONS' | 'JOURNAL';
@@ -411,6 +416,11 @@ const Autoflipper: React.FC = observer(() => {
     const isTradingInProgressRef = useRef<boolean>(false);
     const consecutiveLossesRef = useRef<number>(0);
     const marketScrollRef = useRef<HTMLDivElement>(null);
+    // Tracks how many ticks have arrived since the last trade settled (cooldown guard)
+    const ticksSinceLastTradeRef = useRef<number>(POST_TRADE_COOLDOWN_TICKS); // start ready
+    // Tracks the last digit that fired a trigger to prevent immediate re-entry on same digit
+    const lastTriggerDigitRef = useRef<number | null>(null);
+    const lastTriggerSignalRef = useRef<'UNDER' | 'OVER' | null>(null);
 
     useEffect(() => {
         botStateRef.current = botState;
@@ -492,6 +502,10 @@ const Autoflipper: React.FC = observer(() => {
                                 item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
                                 item.tickCount = (item.tickCount || 0) + 1;
                                 item.lastTickTime = Date.now();
+                                // Increment post-trade cooldown counter on every new tick
+                                if (ticksSinceLastTradeRef.current < POST_TRADE_COOLDOWN_TICKS) {
+                                    ticksSinceLastTradeRef.current += 1;
+                                }
                                 throttleRender();
                             }
                         }
@@ -540,99 +554,152 @@ const Autoflipper: React.FC = observer(() => {
     }, [selectedSymbol, renderTrigger]);
 
     // ── Dual Statistical Models & Flip Recognition ────────────────────────────
+    // Strict non-overlapping sets:
+    //   UNDER regime: digits 0-4 only  →  trades UNDER 6
+    //   OVER  regime: digits 5-9 only  →  trades OVER 3
+    // Trigger digit is locked inside the correct regime range.
 
     const flipAnalysis = useMemo(() => {
-        const last50 = currentMarket.digits.slice(-50);
-        const total50 = last50.length || 1;
+        const allDigits = currentMarket.digits;
+        const totalCollected = allDigits.length;
 
-        // Split 1: Under (0-4) vs Over (5-9)
+        // ── Not enough data guard ──────────────────────────────────────────────
+        if (totalCollected < MIN_TICKS_FOR_SIGNAL) {
+            return {
+                under04: 0, over59: 0, under04Pct: 0, over59Pct: 0,
+                isUnder04Increasing: false,
+                under05: 0, over49: 0, under05Pct: 0, over49Pct: 0,
+                isUnder05Increasing: false,
+                highestUnderDigit: 3, highestUnderDigitPct: 0,
+                highestOverDigit: 7, highestOverDigitPct: 0,
+                last10Under: 0, last10Over: 0, last10: [],
+                currentSpot: null,
+                activeSignal: 'NEUTRAL' as const,
+                isTriggerReady: false,
+                signalReason: `Collecting data… ${totalCollected}/${MIN_TICKS_FOR_SIGNAL} ticks received.`,
+                hasEnoughData: false,
+            };
+        }
+
+        const last50 = allDigits.slice(-50);
+        const total50 = last50.length; // guaranteed >= MIN_TICKS_FOR_SIGNAL
+
+        // ── Strict non-overlapping regime counts ──────────────────────────────
+        // Under regime: ONLY digits 0-4
         const under04 = last50.filter(d => d <= 4).length;
+        // Over  regime: ONLY digits 5-9
         const over59 = last50.filter(d => d >= 5).length;
-        const under04Pct = Math.round((under04 / total50) * 100);
-        const over59Pct = Math.round((over59 / total50) * 100);
+        // These two always sum to total50 — no overlap.
 
-        // Trend calculation (last 15 vs prev 15)
-        const last15 = currentMarket.digits.slice(-15);
-        const prev15 = currentMarket.digits.slice(-30, -15);
+        const under04Pct = Math.round((under04 / total50) * 100);
+        const over59Pct  = Math.round((over59  / total50) * 100);
+
+        // ── Momentum trend: last 15 vs previous 15 (strictly greater, not equal) ──
+        const last15 = allDigits.slice(-15);
+        const prev15 = allDigits.slice(-30, -15);
         const u04_last15 = last15.filter(d => d <= 4).length;
         const u04_prev15 = prev15.filter(d => d <= 4).length;
-        const isUnder04Increasing = u04_last15 >= u04_prev15;
+        // STRICTLY greater — equal means flat (not trending)
+        const isUnder04Increasing = prev15.length >= 15 && u04_last15 > u04_prev15;
+        const isOver59Increasing  = prev15.length >= 15 && (last15.filter(d => d >= 5).length) > (prev15.filter(d => d >= 5).length);
 
-        // Split 2: Under (0-5) vs Over (4-9)
+        // ── Last 10 ticks (pure regime) ───────────────────────────────────────
+        const last10 = allDigits.slice(-10);
+        const last10Under = last10.filter(d => d <= 4).length;  // 0-4 only
+        const last10Over  = last10.filter(d => d >= 5).length;  // 5-9 only
+
+        // ── Trigger digit: locked within regime-safe range ────────────────────
+        // For UNDER trades (DIGITUNDER 6): trigger digit must be 0-5
+        // (any last digit that IS under 6 is a valid entry point)
+        const underTriggerCounts = [0, 1, 2, 3, 4, 5].map(digit => ({
+            digit,
+            count: last50.filter(d => d === digit).length,
+        }));
+        underTriggerCounts.sort((a, b) => b.count - a.count);
+        const highestUnderDigit = underTriggerCounts[0]?.digit ?? 3;
+        const highestUnderDigitPct = Math.round(((underTriggerCounts[0]?.count || 0) / total50) * 100);
+
+        // For OVER trades (DIGITOVER 3): trigger digit must be 4-9
+        // (any last digit that IS over 3 is a valid entry point)
+        const overTriggerCounts = [4, 5, 6, 7, 8, 9].map(digit => ({
+            digit,
+            count: last50.filter(d => d === digit).length,
+        }));
+        overTriggerCounts.sort((a, b) => b.count - a.count);
+        const highestOverDigit = overTriggerCounts[0]?.digit ?? 7;
+        const highestOverDigitPct = Math.round(((overTriggerCounts[0]?.count || 0) / total50) * 100);
+
+        // Extended counts (for display only — NOT used for entry gating)
         const under05 = last50.filter(d => d <= 5).length;
-        const over49 = last50.filter(d => d >= 4).length;
+        const over49  = last50.filter(d => d >= 4).length;
         const under05Pct = Math.round((under05 / total50) * 100);
-        const over49Pct = Math.round((over49 / total50) * 100);
-
+        const over49Pct  = Math.round((over49  / total50) * 100);
         const u05_last15 = last15.filter(d => d <= 5).length;
         const u05_prev15 = prev15.filter(d => d <= 5).length;
-        const isUnder05Increasing = u05_last15 >= u05_prev15;
+        const isUnder05Increasing = prev15.length >= 15 && u05_last15 > u05_prev15;
 
-        // Highest Entry Digit in Under (0-5)
-        const underCounts = [0, 1, 2, 3, 4, 5].map(digit => ({
-            digit,
-            count: last50.filter(d => d === digit).length,
-        }));
-        underCounts.sort((a, b) => b.count - a.count);
-        const highestUnderDigit = underCounts[0]?.digit ?? 3;
-        const highestUnderDigitPct = Math.round(((underCounts[0]?.count || 0) / total50) * 100);
-
-        // Highest Entry Digit in Over (4-9)
-        const overCounts = [4, 5, 6, 7, 8, 9].map(digit => ({
-            digit,
-            count: last50.filter(d => d === digit).length,
-        }));
-        overCounts.sort((a, b) => b.count - a.count);
-        const highestOverDigit = overCounts[0]?.digit ?? 7;
-        const highestOverDigitPct = Math.round(((overCounts[0]?.count || 0) / total50) * 100);
-
-        // Last 10 Ticks Ratio
-        const last10 = currentMarket.digits.slice(-10);
-        const last10Under = last10.filter(d => d <= 4).length;
-        const last10Over = last10.filter(d => d >= 5).length;
-
-        // Current spot
         const currentSpot = last50.length > 0 ? last50[last50.length - 1] : null;
 
-        // Determine Signal Bias
+        // ── Signal Gate: ALL conditions must be strictly true ─────────────────
+        // UNDER signal: 0-4 dominates with ≥58%, increasing trend, 8/10 recent ticks under
+        const underSignalGate =
+            under04Pct >= 58 &&           // strong regime dominance
+            isUnder04Increasing &&         // strictly trending up (not flat)
+            last10Under >= 8 &&            // 8 of last 10 ticks are under (tighter)
+            over59Pct <= 42;              // over regime is genuinely suppressed
+
+        // OVER signal: 5-9 dominates with ≥58%, increasing trend, 8/10 recent ticks over
+        const overSignalGate =
+            over59Pct >= 58 &&             // strong regime dominance
+            isOver59Increasing &&           // strictly trending up (not flat)
+            last10Over >= 8 &&             // 8 of last 10 ticks are over (tighter)
+            under04Pct <= 42;             // under regime is genuinely suppressed
+
+        // ── Cooldown gate: enough ticks since last trade? ─────────────────────
+        const cooldownReady = ticksSinceLastTradeRef.current >= POST_TRADE_COOLDOWN_TICKS;
+
         let activeSignal: 'UNDER' | 'OVER' | 'NEUTRAL' = 'NEUTRAL';
         let isTriggerReady = false;
         let signalReason = '';
 
-        if (under04Pct >= 55 && isUnder04Increasing && under05 > over49 && last10Under >= 7) {
-            activeSignal = 'UNDER'; // Will trade Under 6
-            isTriggerReady = currentSpot === highestUnderDigit;
-            signalReason = `Under dominance (${under04Pct}%), 7/10 recent ticks under. Waiting for [${highestUnderDigit}] trigger.`;
-        } else if (over59Pct >= 55 && !isUnder04Increasing && over49 > under05 && last10Over >= 7) {
-            activeSignal = 'OVER'; // Will trade Over 3
-            isTriggerReady = currentSpot === highestOverDigit;
-            signalReason = `Over dominance (${over59Pct}%), 7/10 recent ticks over. Waiting for [${highestOverDigit}] trigger.`;
+        if (!cooldownReady) {
+            signalReason = `Post-trade cooldown: ${POST_TRADE_COOLDOWN_TICKS - ticksSinceLastTradeRef.current} ticks remaining.`;
+        } else if (underSignalGate && !overSignalGate) {
+            activeSignal = 'UNDER';
+            // Trigger: current spot must be within Under 6 range (0-5) AND
+            // must differ from the digit that last fired to prevent same-digit re-entry
+            const spotInRange = currentSpot !== null && currentSpot <= 5;
+            const notSameAsCooldown =
+                lastTriggerSignalRef.current !== 'UNDER' ||
+                currentSpot !== lastTriggerDigitRef.current;
+            isTriggerReady = spotInRange && notSameAsCooldown;
+            signalReason = `UNDER CONFIRMED: ${under04Pct}% under dominance, ${last10Under}/10 recent ticks. ${isTriggerReady ? `Trigger digit [${currentSpot}] ✓ FIRE` : `Waiting for Under-6 entry digit (current: ${currentSpot}).`}`;
+        } else if (overSignalGate && !underSignalGate) {
+            activeSignal = 'OVER';
+            // Trigger: current spot must be within Over 3 range (4-9) AND not same as last fire
+            const spotInRange = currentSpot !== null && currentSpot >= 4;
+            const notSameAsCooldown =
+                lastTriggerSignalRef.current !== 'OVER' ||
+                currentSpot !== lastTriggerDigitRef.current;
+            isTriggerReady = spotInRange && notSameAsCooldown;
+            signalReason = `OVER CONFIRMED: ${over59Pct}% over dominance, ${last10Over}/10 recent ticks. ${isTriggerReady ? `Trigger digit [${currentSpot}] ✓ FIRE` : `Waiting for Over-3 entry digit (current: ${currentSpot}).`}`;
         } else {
-            signalReason = 'Market consolidating. Waiting for clear 55%+ regime trend and 7/10 momentum alignment.';
+            signalReason = `Consolidating — Under: ${under04Pct}% (need 58%+), Over: ${over59Pct}% (need 58%+). No clear regime.`;
         }
 
         return {
-            under04,
-            over59,
-            under04Pct,
-            over59Pct,
+            under04, over59, under04Pct, over59Pct,
             isUnder04Increasing,
-            under05,
-            over49,
-            under05Pct,
-            over49Pct,
+            under05, over49, under05Pct, over49Pct,
             isUnder05Increasing,
-            highestUnderDigit,
-            highestUnderDigitPct,
-            highestOverDigit,
-            highestOverDigitPct,
-            last10Under,
-            last10Over,
-            last10,
+            highestUnderDigit, highestUnderDigitPct,
+            highestOverDigit, highestOverDigitPct,
+            last10Under, last10Over, last10,
             currentSpot,
             activeSignal,
             isTriggerReady,
             signalReason,
+            hasEnoughData: true,
         };
     }, [currentMarket.digits]);
 
@@ -828,12 +895,17 @@ const Autoflipper: React.FC = observer(() => {
     const executeTrade = useCallback(
         async (tradeSignal: 'UNDER' | 'OVER') => {
             if (isTradingInProgressRef.current) return;
+            // Double-check cooldown gate inside executeTrade as a safety net
+            if (ticksSinceLastTradeRef.current < POST_TRADE_COOLDOWN_TICKS) return;
             isTradingInProgressRef.current = true;
             setBotState('TRADING');
 
             const barrier = tradeSignal === 'UNDER' ? '6' : '3';
             const contractType = tradeSignal === 'UNDER' ? 'DIGITUNDER' : 'DIGITOVER';
             const stakeToUse = currentStake;
+            // Record what digit/signal last fired to prevent same-digit re-entry
+            lastTriggerSignalRef.current = tradeSignal;
+            lastTriggerDigitRef.current = flipAnalysis.currentSpot;
             const sym = selectedSymbol;
             const tempTxnId = String(Date.now());
             const marketLabel = MARKETS.find(m => m.symbol === sym)?.label || sym;
@@ -1133,6 +1205,9 @@ const Autoflipper: React.FC = observer(() => {
                     ...prev.slice(0, 99),
                 ]);
             } finally {
+                // Reset cooldown counter: bot must wait POST_TRADE_COOLDOWN_TICKS new ticks
+                // before the analysis engine can re-evaluate and fire another trade
+                ticksSinceLastTradeRef.current = 0;
                 isTradingInProgressRef.current = false;
                 if (botStateRef.current === 'TRADING') {
                     setBotState('WAITING_SIGNAL');
@@ -1156,6 +1231,7 @@ const Autoflipper: React.FC = observer(() => {
             compTargetProfit,
             compStartCapital,
             compRiskPercent,
+            flipAnalysis,
         ]
     );
 
@@ -1163,15 +1239,24 @@ const Autoflipper: React.FC = observer(() => {
     useEffect(() => {
         if (botState !== 'WAITING_SIGNAL' && botState !== 'WAITING_TRIGGER') return;
         if (isTradingInProgressRef.current) return;
+        // Hard guard: signal must have enough data and cooldown must be clear
+        if (!flipAnalysis.hasEnoughData) return;
+        if (ticksSinceLastTradeRef.current < POST_TRADE_COOLDOWN_TICKS) return;
 
         if (flipAnalysis.activeSignal !== 'NEUTRAL') {
             if (flipAnalysis.isTriggerReady) {
                 void executeTrade(flipAnalysis.activeSignal);
             } else {
-                setBotState('WAITING_TRIGGER');
+                // Signal identified but trigger digit not hit yet — keep watching
+                if (botState !== 'WAITING_TRIGGER') {
+                    setBotState('WAITING_TRIGGER');
+                }
             }
         } else {
-            setBotState('WAITING_SIGNAL');
+            // No valid signal — ensure we're in scanning mode
+            if (botState !== 'WAITING_SIGNAL') {
+                setBotState('WAITING_SIGNAL');
+            }
         }
     }, [botState, flipAnalysis, executeTrade]);
 
