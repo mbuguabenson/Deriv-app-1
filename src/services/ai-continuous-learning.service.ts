@@ -21,7 +21,7 @@
 
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 
-export type SupportedBotName = 'ELITE_PRO' | 'OVERLORD_AI' | 'POVERTY_HUNTER' | 'AUTO_EO';
+export type SupportedBotName = 'ELITE_PRO' | 'OVERLORD_AI' | 'POVERTY_HUNTER' | 'AUTO_EO' | 'AUTOFLIPPER';
 
 export interface MarkovTransitionStats {
     fromDigit: number;
@@ -152,6 +152,17 @@ class AiContinuousLearningEngine {
             netProfit: 0,
             primaryLearningDomain: 'Parity Markov Transitions',
             learnedQScore: 0.64,
+        },
+        AUTOFLIPPER: {
+            botName: 'AUTOFLIPPER',
+            displayName: 'Autoflipper Edge AI',
+            totalTrades: 0,
+            wins: 0,
+            losses: 0,
+            winRate: 0,
+            netProfit: 0,
+            primaryLearningDomain: 'Markov Auto-Switching Edge',
+            learnedQScore: 0.67,
         },
     };
 
@@ -373,8 +384,11 @@ class AiContinuousLearningEngine {
      * This provides the safest prediction barrier for DIFFERS contracts.
      */
     public getOptimalDiffersDigit(currentDigit: number): { digit: number; probability: number; rationale: string } {
-        if (currentDigit < 0 || currentDigit > 9) return { digit: 4, probability: 0.1, rationale: 'Baseline fallback' };
-        const row = this.getMarkovMatrix()[currentDigit];
+        if (typeof currentDigit !== 'number' || isNaN(currentDigit) || currentDigit < 0 || currentDigit > 9) {
+            return { digit: 4, probability: 0.1, rationale: 'Baseline fallback' };
+        }
+        const markov = this.getMarkovMatrix();
+        const row = (markov && Array.isArray(markov[currentDigit])) ? markov[currentDigit] : [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
         let minProb = 999;
         let lowestDigit = 0;
 
@@ -399,7 +413,7 @@ class AiContinuousLearningEngine {
      */
     public getParityPrediction(currentDigit: number): { recommendation: 'EVEN' | 'ODD'; confidence: number; evenProb: number; oddProb: number } {
         const matrix = this.getParityMatrix();
-        const isCurrentEven = currentDigit % 2 === 0;
+        const isCurrentEven = typeof currentDigit === 'number' && !isNaN(currentDigit) ? currentDigit % 2 === 0 : true;
 
         const evenProb = isCurrentEven ? matrix.evenToEven : matrix.oddToEven;
         const oddProb = isCurrentEven ? matrix.evenToOdd : matrix.oddToOdd;
@@ -420,10 +434,11 @@ class AiContinuousLearningEngine {
      * Determines whether Under 6 or Over 3 has higher conditional transition probability.
      */
     public getOverUnderPrediction(currentDigit: number): { recommendation: 'UNDER_6' | 'OVER_3'; confidence: number; underProb: number; overProb: number } {
-        if (currentDigit < 0 || currentDigit > 9) {
+        if (typeof currentDigit !== 'number' || isNaN(currentDigit) || currentDigit < 0 || currentDigit > 9) {
             return { recommendation: 'UNDER_6', confidence: 60, underProb: 60, overProb: 60 };
         }
-        const row = this.getMarkovMatrix()[currentDigit];
+        const markov = this.getMarkovMatrix();
+        const row = (markov && Array.isArray(markov[currentDigit])) ? markov[currentDigit] : [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
         // Under 6 = digits 0, 1, 2, 3, 4, 5
         const underSum = row.slice(0, 6).reduce((s, p) => s + p, 0);
         // Over 3 = digits 4, 5, 6, 7, 8, 9
@@ -614,12 +629,14 @@ class AiContinuousLearningEngine {
         this.totalTicksIngested = 0;
         this.learningEpochs = 0;
         (Object.keys(this.botContributions) as SupportedBotName[]).forEach(k => {
-            this.botContributions[k].totalTrades = 0;
-            this.botContributions[k].wins = 0;
-            this.botContributions[k].losses = 0;
-            this.botContributions[k].winRate = 0;
-            this.botContributions[k].netProfit = 0;
-            this.botContributions[k].learnedQScore = 0.5;
+            if (this.botContributions[k]) {
+                this.botContributions[k].totalTrades = 0;
+                this.botContributions[k].wins = 0;
+                this.botContributions[k].losses = 0;
+                this.botContributions[k].winRate = 0;
+                this.botContributions[k].netProfit = 0;
+                this.botContributions[k].learnedQScore = 0.5;
+            }
         });
         this.persistState();
         this.notifySubscribers();

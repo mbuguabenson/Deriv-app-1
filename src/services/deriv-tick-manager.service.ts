@@ -144,13 +144,17 @@ class DerivTickManager {
                     record.subscriptionId = data.subscription.id;
                 }
 
-                record.listeners.forEach(handler => {
-                    try {
-                        handler(data as any);
-                    } catch (handlerErr) {
-                        console.error(`[DerivTickManager] Exception in listener for ${sym}:`, handlerErr);
-                    }
-                });
+                if (record.listeners) {
+                    record.listeners.forEach(handler => {
+                        try {
+                            if (typeof handler === 'function') {
+                                handler(data as any);
+                            }
+                        } catch (handlerErr) {
+                            console.error(`[DerivTickManager] Exception in listener for ${sym}:`, handlerErr);
+                        }
+                    });
+                }
             }
         }
     }
@@ -313,15 +317,17 @@ class DerivTickManager {
     /**
      * Re-subscribe all active symbols after a socket reconnect or auth change
      */
-    public resubscribeAll(reason: string) {
+    public resubscribeAll(_reason?: string) {
         this.bindSocketMessageObserver();
 
-        this.streams.forEach((record, symbol) => {
-            if (record.listeners.size > 0) {
-                record.isSubscribedInDeriv = false;
-                this.enqueueDerivSubscription(symbol);
-            }
-        });
+        if (this.streams) {
+            this.streams.forEach((record, symbol) => {
+                if (record && record.listeners && record.listeners.size > 0) {
+                    record.isSubscribedInDeriv = false;
+                    this.enqueueDerivSubscription(symbol);
+                }
+            });
+        }
     }
 
     /**
@@ -332,14 +338,16 @@ class DerivTickManager {
         this.bindSocketMessageObserver();
         const now = Date.now();
 
-        this.streams.forEach((record, symbol) => {
-            if (record.listeners.size > 0) {
-                const elapsed = now - record.lastTickEpoch;
-                if (elapsed > 4500) {
-                    this.enqueueDerivSubscription(symbol);
+        if (this.streams) {
+            this.streams.forEach((record, symbol) => {
+                if (record && record.listeners && record.listeners.size > 0) {
+                    const elapsed = now - (record.lastTickEpoch || 0);
+                    if (elapsed > 4500) {
+                        this.enqueueDerivSubscription(symbol);
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     /**

@@ -187,16 +187,18 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
             const rawStored = localStorage.getItem('client.accounts') || localStorage.getItem('clientAccounts');
             if (rawStored) {
                 const parsed = JSON.parse(rawStored);
-                Object.keys(parsed).forEach(id => {
-                    const acc = parsed[id];
-                    accountsMap[id] = {
-                        loginid: id,
-                        currency: acc?.currency || accountsMap[id]?.currency || 'USD',
-                        balance: acc?.balance ?? accountsMap[id]?.balance ?? 0,
-                        is_virtual: isDemoAccount(id) ? 1 : 0,
-                        token: acc?.token,
-                    };
-                });
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    Object.keys(parsed).forEach(id => {
+                        const acc = parsed[id];
+                        accountsMap[id] = {
+                            loginid: id,
+                            currency: acc?.currency || accountsMap[id]?.currency || 'USD',
+                            balance: acc?.balance ?? accountsMap[id]?.balance ?? 0,
+                            is_virtual: isDemoAccount(id) ? 1 : 0,
+                            token: acc?.token,
+                        };
+                    });
+                }
             }
         } catch {
             // Ignore parse errors from stale localStorage cache
@@ -209,7 +211,7 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                 const parsedDetails = JSON.parse(rawDetails);
                 if (Array.isArray(parsedDetails)) {
                     parsedDetails.forEach((a: any) => {
-                        const id = a.loginid || a.account_id;
+                        const id = a?.loginid || a?.account_id;
                         if (id) {
                             accountsMap[id] = {
                                 ...accountsMap[id],
@@ -227,7 +229,7 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
         }
 
         // 5. Merge from tokens list
-        const tokensList = getAccountsList();
+        const tokensList = getAccountsList() || {};
         Object.keys(tokensList).forEach(id => {
             if (!accountsMap[id]) {
                 accountsMap[id] = {

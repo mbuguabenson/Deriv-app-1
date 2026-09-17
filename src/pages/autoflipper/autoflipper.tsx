@@ -12,6 +12,8 @@ import { aiContinuousLearningService } from '@/services/ai-continuous-learning.s
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
     Activity,
+    Calendar,
+    Clock,
     Flame,
     Gauge,
     Layers,
@@ -23,6 +25,7 @@ import {
     Square,
     TrendingDown,
     TrendingUp,
+    Zap,
 } from 'lucide-react';
 import './autoflipper.scss';
 
@@ -41,6 +44,7 @@ export interface MarketDigitState {
 
 export interface CompoundingStage {
     stage: number;
+    timeLabel: string;
     targetBalance: number;
     recommendedStake: number;
     stageProfit: number;
@@ -61,6 +65,8 @@ export interface TradeLogItem {
 }
 
 type AutoRunState = 'IDLE' | 'SCANNING' | 'WAITING_SIGNAL' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
+type DurationUnitType = 'HOURS' | 'DAYS' | 'MINUTES';
+type TradeDurationUnitType = 't' | 's' | 'm';
 
 const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
     symbol: m.symbol,
@@ -111,7 +117,7 @@ const playSoundCue = (type: 'win' | 'loss' | 'signal') => {
     }
 };
 
-// ─── SVG Spline Line Chart (50 Ticks Trajectory) ───────────────────────────────
+// ─── Modern Bezier Line + Area Spline Chart ────────────────────────────────────
 
 const getBezierPath = (points: { x: number; y: number }[]) => {
     if (points.length < 2) return '';
@@ -128,34 +134,43 @@ const getBezierPath = (points: { x: number; y: number }[]) => {
     return d;
 };
 
+const getAreaPath = (points: { x: number; y: number }[], H: number) => {
+    if (points.length < 2) return '';
+    const linePath = getBezierPath(points);
+    const lastPoint = points[points.length - 1];
+    const firstPoint = points[0];
+    return `${linePath} L ${lastPoint.x.toFixed(1)},${H} L ${firstPoint.x.toFixed(1)},${H} Z`;
+};
+
 const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
     const slice = digits.slice(-CHART_TICKS);
     if (slice.length < 2) {
         return (
-            <div className='ep-chart-empty'>
-                <span className='ep-chart-empty__icon'>📊</span>
-                Waiting for tick stream...
+            <div className='af-chart-empty'>
+                <div className='af-chart-empty__spinner' />
+                <span>Connecting live tick trajectory stream...</span>
             </div>
         );
     }
 
-    const W = Math.max(760, slice.length * 15.5);
-    const H = 140;
+    const W = Math.max(780, slice.length * 16);
+    const H = 150;
     const padTop = 26;
-    const padBot = 18;
+    const padBot = 20;
     const usableH = H - padTop - padBot;
-    const stepX = (W - 20) / (slice.length - 1);
+    const stepX = (W - 24) / (slice.length - 1);
 
     const points = slice.map((d, i) => ({
-        x: 10 + i * stepX,
+        x: 12 + i * stepX,
         y: padTop + usableH - (d / 9) * usableH,
         d,
     }));
 
     const pathD = getBezierPath(points);
+    const areaD = getAreaPath(points, H);
 
     return (
-        <div className='ep-chart-inner-scroll'>
+        <div className='af-chart-inner-scroll'>
             <svg
                 width='100%'
                 height={H}
@@ -165,41 +180,72 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
             >
                 <defs>
                     <linearGradient id='afLineGrad' x1='0%' y1='0%' x2='100%' y2='0%'>
-                        <stop offset='0%' stopColor='#00d2ff' stopOpacity='0.8' />
-                        <stop offset='50%' stopColor='#38bdf8' stopOpacity='1' />
-                        <stop offset='100%' stopColor='#f5c542' stopOpacity='0.9' />
+                        <stop offset='0%' stopColor='#00f0ff' stopOpacity='0.9' />
+                        <stop offset='50%' stopColor='#a855f7' stopOpacity='1' />
+                        <stop offset='100%' stopColor='#ffb020' stopOpacity='0.95' />
+                    </linearGradient>
+                    <linearGradient id='afAreaGrad' x1='0%' y1='0%' x2='0%' y2='100%'>
+                        <stop offset='0%' stopColor='#00f0ff' stopOpacity='0.22' />
+                        <stop offset='60%' stopColor='#a855f7' stopOpacity='0.08' />
+                        <stop offset='100%' stopColor='transparent' stopOpacity='0' />
                     </linearGradient>
                     <filter id='afGlow' x='-20%' y='-20%' width='140%' height='140%'>
-                        <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#00d2ff' floodOpacity='0.6' />
+                        <feDropShadow dx='0' dy='2' stdDeviation='4' floodColor='#00f0ff' floodOpacity='0.65' />
+                    </filter>
+                    <filter id='afSpotGlow' x='-40%' y='-40%' width='180%' height='180%'>
+                        <feDropShadow dx='0' dy='0' stdDeviation='6' floodColor='#ffffff' floodOpacity='0.9' />
                     </filter>
                 </defs>
+
+                {/* Subtle Barrier Zones */}
+                {/* Zone Under 6 (0–5): Bottom 60% */}
+                <rect
+                    x='0'
+                    y={padTop + usableH - (5 / 9) * usableH}
+                    width={W}
+                    height={(5 / 9) * usableH + padBot}
+                    fill='rgba(16, 185, 129, 0.035)'
+                />
+                {/* Zone Over 3 (4–9): Top 60% */}
+                <rect
+                    x='0'
+                    y={0}
+                    width={W}
+                    height={padTop + usableH - (4 / 9) * usableH}
+                    fill='rgba(245, 158, 11, 0.035)'
+                />
 
                 {/* Horizontal reference grid lines */}
                 {[0, 3, 6, 9].map(level => {
                     const y = padTop + usableH - (level / 9) * usableH;
+                    const isKeyBarrier = level === 3 || level === 6;
                     return (
-                        <g key={level} className='ep-chart-grid-line'>
+                        <g key={level} className='af-chart-grid-line'>
                             <line
                                 x1='0'
                                 y1={y}
                                 x2={W}
                                 y2={y}
-                                stroke='rgba(255, 255, 255, 0.08)'
-                                strokeWidth='1'
-                                strokeDasharray={level === 3 || level === 6 ? '3 3' : undefined}
+                                stroke={isKeyBarrier ? 'rgba(0, 240, 255, 0.22)' : 'rgba(255, 255, 255, 0.07)'}
+                                strokeWidth={isKeyBarrier ? '1.2' : '1'}
+                                strokeDasharray={isKeyBarrier ? '4 4' : undefined}
                             />
                             <text
-                                x='4'
-                                y={y - 3}
-                                fill='rgba(255, 255, 255, 0.35)'
-                                fontSize='9'
+                                x='6'
+                                y={y - 4}
+                                fill={isKeyBarrier ? '#00f0ff' : 'rgba(255, 255, 255, 0.35)'}
+                                fontSize='10'
+                                fontWeight={isKeyBarrier ? 700 : 400}
                                 fontFamily='monospace'
                             >
-                                {level}
+                                {level} {level === 6 ? '• (UNDER 6 TARGET)' : level === 3 ? '• (OVER 3 TARGET)' : ''}
                             </text>
                         </g>
                     );
                 })}
+
+                {/* Area fill */}
+                {areaD && <path d={areaD} fill='url(#afAreaGrad)' />}
 
                 {/* Main Bezier Line path */}
                 {pathD && (
@@ -207,7 +253,7 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                         d={pathD}
                         fill='none'
                         stroke='url(#afLineGrad)'
-                        strokeWidth={2.4}
+                        strokeWidth={2.8}
                         strokeLinejoin='round'
                         strokeLinecap='round'
                         filter='url(#afGlow)'
@@ -219,30 +265,34 @@ const DigitLineChart: React.FC<{ digits: number[] }> = ({ digits }) => {
                     const isLatest = i === points.length - 1;
                     const isUnder = p.d <= 4;
                     return (
-                        <g key={i} className={`ep-chart-point ${isLatest ? 'ep-chart-point--latest' : ''}`}>
+                        <g key={i} className={`af-chart-point ${isLatest ? 'af-chart-point--latest' : ''}`}>
+                            {isLatest && (
+                                <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={14}
+                                    fill='rgba(0, 240, 255, 0.25)'
+                                    className='af-chart-point__pulse-ring'
+                                />
+                            )}
                             <rect
-                                x={p.x - 3}
-                                y={p.y - 3}
-                                width={6}
-                                height={6}
-                                rx={1.5}
-                                fill={
-                                    isLatest
-                                        ? '#ffffff'
-                                        : isUnder
-                                          ? '#10b981'
-                                          : '#f59e0b'
-                                }
-                                stroke={isLatest ? '#ffffff' : '#00d2ff'}
-                                strokeWidth={1.5}
+                                x={p.x - (isLatest ? 4 : 3)}
+                                y={p.y - (isLatest ? 4 : 3)}
+                                width={isLatest ? 8 : 6}
+                                height={isLatest ? 8 : 6}
+                                rx={isLatest ? 2 : 1.5}
+                                fill={isLatest ? '#ffffff' : isUnder ? '#10b981' : '#f59e0b'}
+                                stroke={isLatest ? '#00f0ff' : '#0e1726'}
+                                strokeWidth={isLatest ? 2 : 1}
+                                filter={isLatest ? 'url(#afSpotGlow)' : undefined}
                             />
                             <text
                                 x={p.x}
-                                y={p.y - 8}
+                                y={p.y - (isLatest ? 10 : 8)}
                                 textAnchor='middle'
                                 fill={isLatest ? '#ffffff' : isUnder ? '#10b981' : '#f59e0b'}
-                                fontSize={isLatest ? 12 : 11}
-                                fontWeight={800}
+                                fontSize={isLatest ? 13 : 11}
+                                fontWeight={isLatest ? 900 : 700}
                                 fontFamily='system-ui, -apple-system, sans-serif'
                             >
                                 {p.d}
@@ -276,7 +326,7 @@ const Autoflipper: React.FC = observer(() => {
 
     // Active market state
     const [selectedSymbol, setSelectedSymbol] = useState<string>('1HZ10V');
-    const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(true);
+    const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(false);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState<boolean>(true);
     const [showWideView, setShowWideView] = useState<boolean>(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -288,12 +338,18 @@ const Autoflipper: React.FC = observer(() => {
     const [martingale, setMartingale] = useState<string>('2.6');
     const [takeProfit, setTakeProfit] = useState<string>('20.00');
     const [stopLoss, setStopLoss] = useState<string>('50.00');
-    const [tickDuration, setTickDuration] = useState<string>('1');
+    
+    // Trade Duration Inputs (User customizable)
+    const [tradeDurationUnit, setTradeDurationUnit] = useState<TradeDurationUnitType>('t');
+    const [tradeDurationValue, setTradeDurationValue] = useState<string>('1');
 
-    // Compounding Plan Engine
-    const [compTimeframe, setCompTimeframe] = useState<string>('24 Hours');
+    // Compounding Plan Engine (Fully Customizable Duration & Figure Inputs)
+    const [compDurationUnit, setCompDurationUnit] = useState<DurationUnitType>('HOURS');
+    const [compDurationValue, setCompDurationValue] = useState<string>('24');
     const [compStartCapital, setCompStartCapital] = useState<string>('100.00');
     const [compTargetProfit, setCompTargetProfit] = useState<string>('250.00');
+    const [compRiskPercent, setCompRiskPercent] = useState<string>('2.0');
+    const [compNumStages, setCompNumStages] = useState<string>('8');
     const [compStages, setCompStages] = useState<CompoundingStage[]>([]);
 
     // Session Statistics
@@ -352,53 +408,53 @@ const Autoflipper: React.FC = observer(() => {
         });
 
         // Initialize default compounding stages
-        generateCompoundingPlan('100.00', '250.00');
+        generateCompoundingPlan();
     }, []);
 
     // ── WebSocket Multiplexed Streaming ────────────────────────────────────────
 
     useEffect(() => {
-        const activeSubs = subscriptionsRef.current;
+        let isCancelled = false;
         const symbolsToStream = scanAllMarkets ? MARKETS.map(m => m.symbol) : [selectedSymbol];
 
-        const subscribeSymbol = async (sym: string) => {
-            try {
-                const marketCfg = MARKETS.find(m => m.symbol === sym);
-                const pip = marketCfg?.pip || 2;
+        const startStreaming = async () => {
+            for (const sym of symbolsToStream) {
+                if (isCancelled || !isMountedRef.current) break;
+                if (!subscriptionsRef.current.has(sym)) {
+                    const marketCfg = MARKETS.find(m => m.symbol === sym);
+                    const pip = marketCfg?.pip || 2;
 
-                if (activeSubs.has(sym)) return;
-
-                const sub = subscribeTicks(sym, (tickRes: Record<string, unknown>) => {
-                    if (!isMountedRef.current) return;
-                    const tickData = tickRes?.tick as { quote?: number | string; symbol?: string } | undefined;
-                    if (tickData?.symbol === sym && tickData?.quote !== undefined) {
-                        const quote = Number(tickData.quote);
-                        const lastD = extractLastDigit(quote, pip);
-                        aiContinuousLearningService.ingestMarketTick(sym, lastD);
-                        const item = marketsDataRef.current.get(sym);
-                        if (item) {
-                            item.currentPrice = quote.toFixed(pip);
-                            item.lastDigit = lastD;
-                            item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
-                            item.tickCount = (item.tickCount || 0) + 1;
-                            item.lastTickTime = Date.now();
-                            throttleRender();
+                    const sub = subscribeTicks(sym, (tickRes: Record<string, unknown>) => {
+                        if (!isMountedRef.current) return;
+                        const tickData = tickRes?.tick as { quote?: number | string; symbol?: string } | undefined;
+                        if (tickData?.symbol === sym && tickData?.quote !== undefined) {
+                            const quote = Number(tickData.quote);
+                            const lastD = extractLastDigit(quote, pip);
+                            aiContinuousLearningService.ingestMarketTick(sym, lastD);
+                            const item = marketsDataRef.current.get(sym);
+                            if (item) {
+                                item.currentPrice = quote.toFixed(pip);
+                                item.lastDigit = lastD;
+                                item.digits = [...item.digits, lastD].slice(-MAX_TICKS_STORED);
+                                item.tickCount = (item.tickCount || 0) + 1;
+                                item.lastTickTime = Date.now();
+                                throttleRender();
+                            }
                         }
-                    }
-                });
+                    });
 
-                activeSubs.set(sym, sub);
-            } catch (err) {
-                console.error(`AUTOFLIPPER: Error subscribing to ${sym}:`, err);
+                    subscriptionsRef.current.set(sym, sub);
+                    if (scanAllMarkets && symbolsToStream.length > 1) {
+                        await new Promise(r => setTimeout(r, 60));
+                    }
+                }
             }
         };
 
-        symbolsToStream.forEach(sym => {
-            void subscribeSymbol(sym);
-        });
+        void startStreaming();
 
         return () => {
-            // Keep active streams
+            isCancelled = true;
         };
     }, [scanAllMarkets, selectedSymbol, throttleRender]);
 
@@ -494,13 +550,13 @@ const Autoflipper: React.FC = observer(() => {
         if (under04Pct >= 55 && isUnder04Increasing && under05 > over49 && last10Under >= 7) {
             activeSignal = 'UNDER'; // Will trade Under 6
             isTriggerReady = currentSpot === highestUnderDigit;
-            signalReason = `Under dominance (${under04Pct}%), 7/10 recent ticks under, waiting for [${highestUnderDigit}] trigger.`;
+            signalReason = `Under dominance (${under04Pct}%), 7/10 recent ticks under. Waiting for [${highestUnderDigit}] trigger.`;
         } else if (over59Pct >= 55 && isOver59Increasing && over49 > under05 && last10Over >= 7) {
             activeSignal = 'OVER'; // Will trade Over 3
             isTriggerReady = currentSpot === highestOverDigit;
-            signalReason = `Over dominance (${over59Pct}%), 7/10 recent ticks over, waiting for [${highestOverDigit}] trigger.`;
+            signalReason = `Over dominance (${over59Pct}%), 7/10 recent ticks over. Waiting for [${highestOverDigit}] trigger.`;
         } else {
-            signalReason = 'Market consolidating. Waiting for clear 55%+ trend and 7/10 flip momentum.';
+            signalReason = 'Market consolidating. Waiting for clear 55%+ regime trend and 7/10 momentum alignment.';
         }
 
         return {
@@ -522,6 +578,7 @@ const Autoflipper: React.FC = observer(() => {
             highestOverDigitPct,
             last10Under,
             last10Over,
+            last10,
             currentSpot,
             activeSignal,
             isTriggerReady,
@@ -549,25 +606,49 @@ const Autoflipper: React.FC = observer(() => {
         return bestSym;
     }, [renderTrigger, selectedSymbol]);
 
-    // ── Compounding Plan Engine Generator ──
+    // ── Dynamic Compounding Plan Generator ──
 
-    const generateCompoundingPlan = (startCapStr?: string, targetProfStr?: string) => {
-        const startCapital = Number(startCapStr || compStartCapital) || 100;
-        const targetProf = Number(targetProfStr || compTargetProfit) || 250;
+    const generateCompoundingPlan = (
+        customStartCap?: string,
+        customTargetProf?: string,
+        customDurVal?: string,
+        customDurUnit?: DurationUnitType,
+        customRiskPct?: string,
+        customStagesCount?: string
+    ) => {
+        const startCapital = Number(customStartCap ?? compStartCapital) || 100;
+        const targetProf = Number(customTargetProf ?? compTargetProfit) || 250;
+        const durVal = Number(customDurVal ?? compDurationValue) || 24;
+        const durUnit = customDurUnit ?? compDurationUnit;
+        const riskPct = Number(customRiskPct ?? compRiskPercent) || 2.0;
+        const numStages = Math.max(2, Math.min(30, Number(customStagesCount ?? compNumStages) || 8));
 
         const stages: CompoundingStage[] = [];
-        const numStages = 8;
         const stepProfit = targetProf / numStages;
 
         let runningBal = startCapital;
         for (let i = 1; i <= numStages; i++) {
             const stageProfit = stepProfit;
             runningBal += stageProfit;
-            const recStake = Math.max(0.35, Math.round(runningBal * 0.02 * 100) / 100);
+            const recStake = Math.max(0.35, Math.round(runningBal * (riskPct / 100) * 100) / 100);
             const cumProfit = runningBal - startCapital;
+
+            // Generate intelligent time label
+            let timeLabel = '';
+            if (durUnit === 'HOURS') {
+                const hourMarker = (i * (durVal / numStages)).toFixed(1);
+                timeLabel = `Hour ${hourMarker}h`;
+            } else if (durUnit === 'DAYS') {
+                const dayMarker = (i * (durVal / numStages)).toFixed(1);
+                timeLabel = `Day ${dayMarker}d`;
+            } else {
+                const minMarker = Math.round(i * (durVal / numStages));
+                timeLabel = `${minMarker} min`;
+            }
 
             stages.push({
                 stage: i,
+                timeLabel,
                 targetBalance: Math.round(runningBal * 100) / 100,
                 recommendedStake: recStake,
                 stageProfit: Math.round(stageProfit * 100) / 100,
@@ -578,6 +659,29 @@ const Autoflipper: React.FC = observer(() => {
 
         setCompStages(stages);
     };
+
+    // Calculate hourly/daily velocity required
+    const planVelocityMetrics = useMemo(() => {
+        const targetProf = Number(compTargetProfit) || 250;
+        const durVal = Number(compDurationValue) || 24;
+        let totalHours = 24;
+        if (compDurationUnit === 'DAYS') {
+            totalHours = Math.max(1, durVal * 24);
+        } else if (compDurationUnit === 'MINUTES') {
+            totalHours = Math.max(0.1, durVal / 60);
+        } else {
+            totalHours = Math.max(0.5, durVal);
+        }
+
+        const hourlyReq = targetProf / totalHours;
+        const dailyReq = hourlyReq * 24;
+
+        return {
+            totalHours,
+            hourlyReq: hourlyReq.toFixed(2),
+            dailyReq: dailyReq.toFixed(2),
+        };
+    }, [compTargetProfit, compDurationValue, compDurationUnit]);
 
     // Update compounding stage statuses when session profit changes
     useEffect(() => {
@@ -595,6 +699,13 @@ const Autoflipper: React.FC = observer(() => {
         setCompStages(updated);
     }, [sessionProfit, compStages]);
 
+    // Quick Duration Presets Handler
+    const applyDurationPreset = (value: string, unit: DurationUnitType) => {
+        setCompDurationValue(value);
+        setCompDurationUnit(unit);
+        generateCompoundingPlan(compStartCapital, compTargetProfit, value, unit, compRiskPercent, compNumStages);
+    };
+
     // ── Trade Execution Logic ──────────────────────────────────────────────────
 
     const executeTrade = useCallback(
@@ -611,7 +722,7 @@ const Autoflipper: React.FC = observer(() => {
             playSoundCue('signal');
 
             try {
-                const duration = parseInt(tickDuration, 10) || 1;
+                const duration = parseInt(tradeDurationValue, 10) || 1;
                 const buyResult = await buyContractForUi({
                     parameters: {
                         amount: stakeToUse,
@@ -619,7 +730,7 @@ const Autoflipper: React.FC = observer(() => {
                         contract_type: contractType,
                         currency,
                         duration,
-                        duration_unit: 't',
+                        duration_unit: tradeDurationUnit,
                         symbol: sym,
                         barrier: String(barrier),
                     },
@@ -742,7 +853,8 @@ const Autoflipper: React.FC = observer(() => {
             currentStake,
             selectedSymbol,
             currency,
-            tickDuration,
+            tradeDurationValue,
+            tradeDurationUnit,
             initialStake,
             takeProfit,
             martingale,
@@ -807,14 +919,12 @@ const Autoflipper: React.FC = observer(() => {
             <div className='autoflipper__header'>
                 <div className='autoflipper__header-title-box'>
                     <div className='af-icon-badge'>
-                        <Flame size={26} />
+                        <Flame size={28} />
                     </div>
                     <div className='af-title-text'>
                         <div className='title-row'>
-                            <h1>AUTOFLIPPER</h1>
-                            <span
-                                className={`af-status-chip af-status-chip--${botState.toLowerCase()}`}
-                            >
+                            <h1>AUTOFLIPPER PRO</h1>
+                            <span className={`af-status-chip af-status-chip--${botState.toLowerCase()}`}>
                                 {botState === 'TRADING' && '🚀 EXECUTING TRADE'}
                                 {botState === 'WAITING_TRIGGER' && '⚡ TRIGGER READY'}
                                 {botState === 'WAITING_SIGNAL' && '⏳ SCANNING REGIME'}
@@ -822,7 +932,7 @@ const Autoflipper: React.FC = observer(() => {
                                 {botState === 'IDLE' && '● ENGINE READY'}
                             </span>
                         </div>
-                        <span>Regime-Flipping Over 3 / Under 6 Engine with Multi-Tier Compounding Strategy</span>
+                        <span>Regime-Flipping Over 3 / Under 6 Neural Engine with Time-Compounding Automation</span>
                     </div>
                 </div>
 
@@ -874,7 +984,7 @@ const Autoflipper: React.FC = observer(() => {
             {/* ── 2. Market Selector & Options Ribbon ── */}
             <div className='autoflipper__market-bar'>
                 <div className='af-select-group'>
-                    <label>Active Market:</label>
+                    <label>Active Synthetic Market:</label>
                     <select
                         value={selectedSymbol}
                         onChange={e => setSelectedSymbol(e.target.value)}
@@ -891,7 +1001,7 @@ const Autoflipper: React.FC = observer(() => {
                         <span>PRICE: {currentMarket.currentPrice}</span>
                     </div>
 
-                    <div className='badge-digit-glow' title='Current Last Digit'>
+                    <div className='badge-digit-glow' title='Current Spot Last Digit'>
                         {currentMarket.lastDigit}
                     </div>
                 </div>
@@ -902,7 +1012,7 @@ const Autoflipper: React.FC = observer(() => {
                         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                         title='Toggle market list sidebar'
                     >
-                        📋 {sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+                        📋 {sidebarCollapsed ? 'Show Markets' : 'Hide Markets'}
                     </button>
 
                     <button
@@ -917,13 +1027,13 @@ const Autoflipper: React.FC = observer(() => {
                         className={`af-toggle-button ${showWideView ? 'af-toggle-button--active' : ''}`}
                         onClick={() => setShowWideView(!showWideView)}
                     >
-                        📊 {showWideView ? 'Collapse Grid' : 'Wide Market Matrix'}
+                        📊 {showWideView ? 'Collapse Matrix' : 'Wide Market Matrix'}
                     </button>
 
                     <button
                         className={`af-toggle-button ${autoSwitchMarkets ? 'af-toggle-button--active' : ''}`}
                         onClick={() => setAutoSwitchMarkets(!autoSwitchMarkets)}
-                        title='Automatically switch to best performing market after runs'
+                        title='Automatically switch to highest bias market between runs'
                     >
                         🔄 Auto-Switch ({autoSwitchMarkets ? 'ON' : 'OFF'})
                     </button>
@@ -985,8 +1095,8 @@ const Autoflipper: React.FC = observer(() => {
                 {!sidebarCollapsed && (
                     <div className='autoflipper__sidebar'>
                         <div className='autoflipper__sidebar-header'>
-                            <h3>DERIVED MARKETS</h3>
-                            <span className='badge'>LIVE SCAN</span>
+                            <h3>SYNTHETIC ASSETS</h3>
+                            <span className='badge'>LIVE FEED</span>
                         </div>
                         <div className='autoflipper__sidebar-list'>
                             {MARKETS.map(m => {
@@ -1047,7 +1157,7 @@ const Autoflipper: React.FC = observer(() => {
                                 <div
                                     className={`af-last-digit-big af-last-digit-big--${currentMarket.lastDigit <= 4 ? 'under' : 'over'}`}
                                 >
-                                    <span className='digit-label'>LAST DIGIT</span>
+                                    <span className='digit-label'>LAST SPOT</span>
                                     <span className='digit-val'>{currentMarket.lastDigit}</span>
                                     <span className='digit-sub'>
                                         {currentMarket.lastDigit <= 4 ? 'Under (0–4)' : 'Over (5–9)'}
@@ -1058,7 +1168,7 @@ const Autoflipper: React.FC = observer(() => {
                             <div className='af-chart-legend'>
                                 <div className='legend-item'>
                                     <span className='dot dot--curve' />
-                                    <span>50-Ticks Spline</span>
+                                    <span>50-Ticks Spline Area</span>
                                 </div>
                                 <div className='legend-item'>
                                     <span className='dot dot--under' />
@@ -1075,7 +1185,7 @@ const Autoflipper: React.FC = observer(() => {
                             </div>
                         </div>
 
-                        <div className='ep-chart-wrap'>
+                        <div className='af-chart-wrap'>
                             <DigitLineChart digits={currentMarket.digits} />
                         </div>
                     </div>
@@ -1158,9 +1268,13 @@ const Autoflipper: React.FC = observer(() => {
 
                             <div className='trend-footer'>
                                 <span>10-Tick Immediate Bias:</span>
-                                <span style={{ fontWeight: 800, color: flipAnalysis.last10Under >= 7 ? '#10b981' : flipAnalysis.last10Over >= 7 ? '#f59e0b' : '#94a3b8' }}>
-                                    {flipAnalysis.last10Under} Under / {flipAnalysis.last10Over} Over
-                                </span>
+                                <div className='af-tick-pills-row'>
+                                    {flipAnalysis.last10.map((d, i) => (
+                                        <span key={i} className={`mini-digit-badge ${d <= 4 ? 'under' : 'over'}`}>
+                                            {d}
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1169,7 +1283,7 @@ const Autoflipper: React.FC = observer(() => {
                     <div className='autoflipper__entry-hud'>
                         <div className='hud-header'>
                             <h3>
-                                <Sparkles size={16} /> Highest Frequency Entry Triggers (Glowing Radar)
+                                <Sparkles size={16} /> Dominant Frequency Entry Radar (Glowing Triggers)
                             </h3>
                             <div className='live-pulse-badge'>
                                 <span className='dot-pulse' />
@@ -1181,8 +1295,8 @@ const Autoflipper: React.FC = observer(() => {
                             {/* Under Target Entry Card */}
                             <div className={`glowing-digit-card glowing-digit-card--under ${flipAnalysis.activeSignal === 'UNDER' ? 'is-active-trigger' : ''}`}>
                                 <div className='info-col'>
-                                    <span className='tag'>Dominant Under Entry Digit (0-5)</span>
-                                    <span className='title'>Trade Under 6 Target</span>
+                                    <span className='tag'>Dominant Under Trigger (0-5)</span>
+                                    <span className='title'>Target: Trade Under 6</span>
                                     <span className='sub'>Occurred {flipAnalysis.highestUnderDigitPct}% in recent stream</span>
                                 </div>
                                 <div className='digit-orb' title={`Highest Under Digit: ${flipAnalysis.highestUnderDigit}`}>
@@ -1193,8 +1307,8 @@ const Autoflipper: React.FC = observer(() => {
                             {/* Over Target Entry Card */}
                             <div className={`glowing-digit-card glowing-digit-card--over ${flipAnalysis.activeSignal === 'OVER' ? 'is-active-trigger' : ''}`}>
                                 <div className='info-col'>
-                                    <span className='tag'>Dominant Over Entry Digit (4-9)</span>
-                                    <span className='title'>Trade Over 3 Target</span>
+                                    <span className='tag'>Dominant Over Trigger (4-9)</span>
+                                    <span className='title'>Target: Trade Over 3</span>
                                     <span className='sub'>Occurred {flipAnalysis.highestOverDigitPct}% in recent stream</span>
                                 </div>
                                 <div className='digit-orb' title={`Highest Over Digit: ${flipAnalysis.highestOverDigit}`}>
@@ -1204,85 +1318,203 @@ const Autoflipper: React.FC = observer(() => {
                         </div>
                     </div>
 
-                    {/* Compounding Trade Engine Matrix */}
+                    {/* ── 5. Advanced Compounding & Duration Engine Matrix ── */}
                     <div className='autoflipper__compounding-card'>
                         <div className='comp-header'>
                             <div className='title-wrap'>
                                 <h3>
-                                    <Layers size={18} /> Automated Compounding Multi-Tier Schedule
+                                    <Layers size={18} /> Time-Target Compounding Schedule Generator
                                 </h3>
-                                <span>24-Hour Continuous Plan Generator &amp; Milestone Tracker</span>
+                                <span>Customizable Duration (Hours / Days), Figure Inputs &amp; Stage Milestone Progress</span>
                             </div>
                             <span className='risk-notice'>
-                                🛡️ Conservative 2% Account Risk per Stage
+                                🛡️ Smart {compRiskPercent}% Risk Scaling per Stage
                             </span>
                         </div>
 
+                        {/* Duration Unit Selector Tabs & Presets */}
+                        <div className='comp-duration-selector-row'>
+                            <div className='unit-switch-group'>
+                                <span className='label'>Duration Time Unit:</span>
+                                <div className='btn-switch-group'>
+                                    <button
+                                        className={`btn-unit ${compDurationUnit === 'HOURS' ? 'btn-unit--active' : ''}`}
+                                        onClick={() => {
+                                            setCompDurationUnit('HOURS');
+                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'HOURS', compRiskPercent, compNumStages);
+                                        }}
+                                        type='button'
+                                    >
+                                        <Clock size={14} /> Hours
+                                    </button>
+                                    <button
+                                        className={`btn-unit ${compDurationUnit === 'DAYS' ? 'btn-unit--active' : ''}`}
+                                        onClick={() => {
+                                            setCompDurationUnit('DAYS');
+                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'DAYS', compRiskPercent, compNumStages);
+                                        }}
+                                        type='button'
+                                    >
+                                        <Calendar size={14} /> Days
+                                    </button>
+                                    <button
+                                        className={`btn-unit ${compDurationUnit === 'MINUTES' ? 'btn-unit--active' : ''}`}
+                                        onClick={() => {
+                                            setCompDurationUnit('MINUTES');
+                                            generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, 'MINUTES', compRiskPercent, compNumStages);
+                                        }}
+                                        type='button'
+                                    >
+                                        <Zap size={14} /> Minutes
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className='presets-wrap'>
+                                <span className='presets-label'>Quick Time Presets:</span>
+                                <div className='preset-chips'>
+                                    <button type='button' onClick={() => applyDurationPreset('12', 'HOURS')}>12h</button>
+                                    <button type='button' onClick={() => applyDurationPreset('24', 'HOURS')}>24h (1 Day)</button>
+                                    <button type='button' onClick={() => applyDurationPreset('48', 'HOURS')}>48h (2 Days)</button>
+                                    <button type='button' onClick={() => applyDurationPreset('3', 'DAYS')}>3 Days</button>
+                                    <button type='button' onClick={() => applyDurationPreset('7', 'DAYS')}>7 Days (1 Wk)</button>
+                                    <button type='button' onClick={() => applyDurationPreset('14', 'DAYS')}>14 Days</button>
+                                    <button type='button' onClick={() => applyDurationPreset('30', 'DAYS')}>30 Days (1 Mo)</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Interactive Input Figures Form */}
                         <div className='comp-inputs-row'>
                             <div className='input-group'>
-                                <label>Duration</label>
-                                <select
-                                    value={compTimeframe}
-                                    onChange={e => setCompTimeframe(e.target.value)}
-                                >
-                                    <option value='12 Hours'>12 Hours</option>
-                                    <option value='24 Hours'>24 Hours (Full Run)</option>
-                                    <option value='3 Days'>3 Days</option>
-                                    <option value='7 Days'>7 Days</option>
-                                </select>
+                                <label>
+                                    Duration ({compDurationUnit})
+                                </label>
+                                <input
+                                    type='number'
+                                    min='1'
+                                    step='1'
+                                    value={compDurationValue}
+                                    onChange={e => setCompDurationValue(e.target.value)}
+                                    placeholder={`e.g. 24 ${compDurationUnit.toLowerCase()}`}
+                                />
                             </div>
+
                             <div className='input-group'>
                                 <label>Starting Capital ({currency})</label>
                                 <input
                                     type='number'
+                                    min='5'
                                     step='10'
                                     value={compStartCapital}
                                     onChange={e => setCompStartCapital(e.target.value)}
+                                    placeholder='100.00'
                                 />
                             </div>
+
                             <div className='input-group'>
                                 <label>Target Profit ({currency})</label>
                                 <input
                                     type='number'
+                                    min='10'
                                     step='10'
                                     value={compTargetProfit}
                                     onChange={e => setCompTargetProfit(e.target.value)}
+                                    placeholder='250.00'
                                 />
                             </div>
+
+                            <div className='input-group'>
+                                <label>Risk % Per Trade</label>
+                                <input
+                                    type='number'
+                                    min='0.5'
+                                    max='10'
+                                    step='0.5'
+                                    value={compRiskPercent}
+                                    onChange={e => setCompRiskPercent(e.target.value)}
+                                    placeholder='2.0'
+                                />
+                            </div>
+
+                            <div className='input-group'>
+                                <label>Target Stages</label>
+                                <select
+                                    value={compNumStages}
+                                    onChange={e => setCompNumStages(e.target.value)}
+                                >
+                                    <option value='4'>4 Stages</option>
+                                    <option value='6'>6 Stages</option>
+                                    <option value='8'>8 Stages (Standard)</option>
+                                    <option value='10'>10 Stages</option>
+                                    <option value='12'>12 Stages</option>
+                                    <option value='16'>16 Stages</option>
+                                    <option value='24'>24 Stages</option>
+                                </select>
+                            </div>
+
                             <button
                                 className='btn-generate'
                                 onClick={() => generateCompoundingPlan()}
                                 type='button'
                             >
-                                <RefreshCw size={14} /> Generate Plan
+                                <RefreshCw size={14} /> Calculate Schedule
                             </button>
                         </div>
 
+                        {/* Plan Velocity Summary Cards */}
+                        <div className='comp-metrics-summary-bar'>
+                            <div className='metric-stat-box'>
+                                <span className='label'>Total Timeframe</span>
+                                <span className='val'>{compDurationValue} {compDurationUnit.toLowerCase()}</span>
+                            </div>
+                            <div className='metric-stat-box'>
+                                <span className='label'>Hourly Target Rate</span>
+                                <span className='val'>+${planVelocityMetrics.hourlyReq} / hr</span>
+                            </div>
+                            <div className='metric-stat-box'>
+                                <span className='label'>Daily Target Rate</span>
+                                <span className='val'>+${planVelocityMetrics.dailyReq} / day</span>
+                            </div>
+                            <div className='metric-stat-box'>
+                                <span className='label'>Total Target Balance</span>
+                                <span className='val' style={{ color: '#00f0ff' }}>
+                                    ${(Number(compStartCapital) + Number(compTargetProfit)).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Compounding Stages Schedule Table */}
                         <div className='comp-table-wrap'>
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Stage</th>
-                                        <th>Target Balance</th>
-                                        <th>2% Safe Stake</th>
-                                        <th>Stage Target</th>
-                                        <th>Cumulative P/L</th>
+                                        <th>Milestone</th>
+                                        <th>Target Timeline</th>
+                                        <th>Account Balance</th>
+                                        <th>{compRiskPercent}% Safe Stake</th>
+                                        <th>Stage Profit</th>
+                                        <th>Cumulative Profit</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {compStages.map(st => (
                                         <tr key={st.stage} className={`stage-${st.status.toLowerCase()}`}>
-                                            <td>Stage #{st.stage}</td>
-                                            <td>${st.targetBalance.toFixed(2)}</td>
-                                            <td>${st.recommendedStake.toFixed(2)}</td>
-                                            <td>+${st.stageProfit.toFixed(2)}</td>
-                                            <td>+${st.cumulativeProfit.toFixed(2)}</td>
+                                            <td className='stage-name'>Stage #{st.stage}</td>
+                                            <td className='stage-time'>
+                                                <Clock size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                                                {st.timeLabel}
+                                            </td>
+                                            <td className='stage-bal'>${st.targetBalance.toFixed(2)}</td>
+                                            <td className='stage-stake'>${st.recommendedStake.toFixed(2)}</td>
+                                            <td className='stage-profit'>+${st.stageProfit.toFixed(2)}</td>
+                                            <td className='stage-cum'>+${st.cumulativeProfit.toFixed(2)}</td>
                                             <td>
                                                 <span className={`badge-stage-status ${st.status.toLowerCase()}`}>
-                                                    {st.status === 'DONE' && '✓ DONE'}
-                                                    {st.status === 'ACTIVE' && '⚡ ACTIVE'}
-                                                    {st.status === 'PENDING' && '⏳ PENDING'}
+                                                    {st.status === 'DONE' && '✓ COMPLETED'}
+                                                    {st.status === 'ACTIVE' && '⚡ IN PROGRESS'}
+                                                    {st.status === 'PENDING' && '⏳ SCHEDULED'}
                                                 </span>
                                             </td>
                                         </tr>
@@ -1339,17 +1571,31 @@ const Autoflipper: React.FC = observer(() => {
                                         disabled={botState !== 'IDLE'}
                                     />
                                 </div>
+                                
+                                {/* Custom Trade Duration Figure & Unit */}
                                 <div className='af-input-group'>
-                                    <label>Tick Duration</label>
-                                    <select
-                                        value={tickDuration}
-                                        onChange={e => setTickDuration(e.target.value)}
-                                        disabled={botState !== 'IDLE'}
-                                    >
-                                        <option value='1'>1 Tick (Fast Execution)</option>
-                                        <option value='2'>2 Ticks</option>
-                                    </select>
+                                    <label>Trade Duration</label>
+                                    <div className='af-duration-input-composite'>
+                                        <input
+                                            type='number'
+                                            min='1'
+                                            step='1'
+                                            value={tradeDurationValue}
+                                            onChange={e => setTradeDurationValue(e.target.value)}
+                                            disabled={botState !== 'IDLE'}
+                                        />
+                                        <select
+                                            value={tradeDurationUnit}
+                                            onChange={e => setTradeDurationUnit(e.target.value as TradeDurationUnitType)}
+                                            disabled={botState !== 'IDLE'}
+                                        >
+                                            <option value='t'>Ticks</option>
+                                            <option value='s'>Seconds</option>
+                                            <option value='m'>Minutes</option>
+                                        </select>
+                                    </div>
                                 </div>
+
                                 <div className='af-input-group'>
                                     <label>Strategy Mode</label>
                                     <select value='auto' disabled>
@@ -1382,7 +1628,7 @@ const Autoflipper: React.FC = observer(() => {
                         <div className='autoflipper__logs-card'>
                             <div className='af-logs-header'>
                                 <h3>
-                                    <Activity size={16} /> Live Trade Execution Journal
+                                    <Activity size={16} /> Live Execution Journal
                                 </h3>
                                 {tradeLog.length > 0 && (
                                     <button className='af-clear-btn' onClick={handleClearLogs}>
@@ -1394,7 +1640,7 @@ const Autoflipper: React.FC = observer(() => {
                             <div className='af-logs-list'>
                                 {tradeLog.length === 0 ? (
                                     <div className='af-logs-empty'>
-                                        Engine idle. Start Autoflipper to begin live hunting.
+                                        Engine idle. Start Autoflipper to begin live regime-flip trading.
                                     </div>
                                 ) : (
                                     tradeLog.map(item => (

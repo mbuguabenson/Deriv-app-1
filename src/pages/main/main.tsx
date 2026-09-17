@@ -687,14 +687,18 @@ const AppWrapper = observer(() => {
 
     const activeTabsList = useMemo(() => {
         const list = [...allTabDescriptors];
-        const configs = siteConfig.tabConfig || [];
+        const configs = siteConfig?.tabConfig || [];
         const orderMap = new Map<string, number>();
         const enabledMap = new Map<string, boolean>();
 
-        configs.forEach(c => {
-            orderMap.set(c.key, c.order);
-            enabledMap.set(c.key, c.enabled);
-        });
+        if (Array.isArray(configs)) {
+            configs.forEach(c => {
+                if (c && c.key) {
+                    orderMap.set(c.key, c.order);
+                    enabledMap.set(c.key, c.enabled);
+                }
+            });
+        }
 
         return list
             .filter(tab => enabledMap.get(tab.key) !== false)

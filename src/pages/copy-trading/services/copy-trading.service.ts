@@ -351,7 +351,7 @@ class CopyTradingEngine {
         const activeLoginids = new Set(activeAccounts.map(a => a.loginid));
 
         // Clean up any sockets for accounts that were removed or paused
-        for (const [loginid, conn] of this.socketPool.entries()) {
+        for (const [loginid] of this.socketPool.entries()) {
             if (!activeLoginids.has(loginid)) {
                 this.closeConnection(loginid);
             }
@@ -373,9 +373,10 @@ class CopyTradingEngine {
             return;
         }
 
-        const isNewApi =
+        const isNewApi = Boolean(
             (account.token && (account.token.startsWith('pat_') || account.token.startsWith('PAT_') || account.token.startsWith('ey'))) ||
-            (account.loginid && (account.loginid.startsWith('DOT') || account.loginid.startsWith('dot')));
+            (account.loginid && (account.loginid.startsWith('DOT') || account.loginid.startsWith('dot')))
+        );
 
         const appId = account.app_id || '1089';
 
@@ -553,7 +554,7 @@ class CopyTradingEngine {
     }
 
     private rejectAllPendingRequests(conn: CopierSocketConnection, reason: string): void {
-        for (const [reqId, pending] of conn.pendingRequests.entries()) {
+        for (const pending of conn.pendingRequests.values()) {
             clearTimeout(pending.timeout);
             pending.reject(new Error(reason));
         }
