@@ -237,7 +237,7 @@ const PovertyHunter: React.FC = observer(() => {
     const [stopLoss, setStopLoss] = useState<string>('25.00');
     const [tickDuration, setTickDuration] = useState<string>('1');
     const [autoRecoveryMode, setAutoRecoveryMode] = useState<boolean>(true);
-    const [recoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
+    const [recoveryType, setRecoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
 
     // ── Bot Running State ──
     const [botState, setBotState] = useState<AutoRunState>('IDLE');
@@ -246,7 +246,8 @@ const PovertyHunter: React.FC = observer(() => {
     const [lossesCount, setLossesCount] = useState<number>(0);
     const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
-    const [, setAccumulatedLoss] = useState<number>(0);
+    const [lossToRecover, setLossToRecover] = useState<number>(0);
+    const [recoveryProfitEarned, setRecoveryProfitEarned] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'tp' | 'sl' | null }>({
         isOpen: false,
@@ -262,6 +263,8 @@ const PovertyHunter: React.FC = observer(() => {
     const consecutiveRunsRef = useRef<number>(0);
     const currentStakeRef = useRef<number>(0.5);
     const isInRecoveryRef = useRef<boolean>(false);
+    const lossToRecoverRef = useRef<number>(0);
+    const recoveryProfitEarnedRef = useRef<number>(0);
     const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => {
@@ -720,12 +723,43 @@ const PovertyHunter: React.FC = observer(() => {
                     setSessionProfit(nextP);
 
                     if (isInRecoveryRef.current) {
-                        setIsInRecovery(false);
-                        isInRecoveryRef.current = false;
-                        setAccumulatedLoss(0);
-                        const baseStk = parseFloat(initialStake) || 0.5;
-                        currentStakeRef.current = baseStk;
-                        setCurrentStake(baseStk);
+                        const newEarned = Math.round((recoveryProfitEarnedRef.current + profitVal) * 100) / 100;
+                        recoveryProfitEarnedRef.current = newEarned;
+                        setRecoveryProfitEarned(newEarned);
+
+                        // Only revert back to Differs after loss is 100% recovered
+                        if (newEarned >= lossToRecoverRef.current) {
+                            addLogEntry(
+                                market,
+                                'RECOVERY',
+                                `RECOVERY COMPLETE 🏆 (+${newEarned.toFixed(2)} ${currency} recovered) — Reverting to Differs`,
+                                barrier,
+                                currentStakeRef.current,
+                                'WIN',
+                                profitVal
+                            );
+                            setIsInRecovery(false);
+                            isInRecoveryRef.current = false;
+                            lossToRecoverRef.current = 0;
+                            setLossToRecover(0);
+                            recoveryProfitEarnedRef.current = 0;
+                            setRecoveryProfitEarned(0);
+                            const baseStk = parseFloat(initialStake) || 0.5;
+                            currentStakeRef.current = baseStk;
+                            setCurrentStake(baseStk);
+                        } else {
+                            const remaining = Math.round((lossToRecoverRef.current - newEarned) * 100) / 100;
+                            addLogEntry(
+                                market,
+                                contractType === 'DIGITOVER' ? 'RECOVERY_OVER' : 'RECOVERY_UNDER',
+                                `RECOVERY WIN (+$${profitVal.toFixed(2)} | $${remaining.toFixed(2)} remaining to full recovery)`,
+                                barrier,
+                                currentStakeRef.current,
+                                'WIN',
+                                profitVal
+                            );
+                            // Keep current recovery stake to continue Over/Under recovery until target reached
+                        }
                     } else {
                         const baseStk = parseFloat(initialStake) || 0.5;
                         currentStakeRef.current = baseStk;
@@ -739,13 +773,16 @@ const PovertyHunter: React.FC = observer(() => {
                     setSessionProfit(nextP);
 
                     if (autoRecoveryMode) {
+                        const lossAmount = Math.abs(profitVal);
+                        lossToRecoverRef.current = Math.round((lossToRecoverRef.current + lossAmount) * 100) / 100;
+                        setLossToRecover(lossToRecoverRef.current);
                         setIsInRecovery(true);
                         isInRecoveryRef.current = true;
+
                         const martMult = parseFloat(martingale) || 2.6;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
                         currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
-                        setAccumulatedLoss(prev => prev + Math.abs(profitVal));
                     } else {
                         const martMult = parseFloat(martingale) || 2.0;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
@@ -996,7 +1033,10 @@ const PovertyHunter: React.FC = observer(() => {
         setLossesCount(0);
         isInRecoveryRef.current = false;
         setIsInRecovery(false);
-        setAccumulatedLoss(0);
+        lossToRecoverRef.current = 0;
+        setLossToRecover(0);
+        recoveryProfitEarnedRef.current = 0;
+        setRecoveryProfitEarned(0);
         setWaitingForAppear(true);
         setConfirmationTicksRemaining(2);
         lastProcessedTicksRef.current.clear();
@@ -1010,6 +1050,10 @@ const PovertyHunter: React.FC = observer(() => {
         executionLockRef.current = false;
         setIsInRecovery(false);
         isInRecoveryRef.current = false;
+        lossToRecoverRef.current = 0;
+        setLossToRecover(0);
+        recoveryProfitEarnedRef.current = 0;
+        setRecoveryProfitEarned(0);
     }, [setBotStateSync]);
 
     const handlePauseBot = useCallback(() => {
@@ -1390,11 +1434,11 @@ const PovertyHunter: React.FC = observer(() => {
                         <div className='ph-meter-header'>
                             <div className='ph-meter-title-wrap'>
                                 <h3>
-                                    {isInRecovery ? '⚡ RECOVERY PROTOCOL ACTIVE' : '🎯 DIFFERS VERIFICATION MATRIX'}
+                                    {isInRecovery ? '⚡ RECOVERY PROTOCOL ACTIVE (OVER/UNDER)' : '🎯 DIFFERS VERIFICATION MATRIX'}
                                 </h3>
                                 <span className='sub'>
                                     {isInRecovery
-                                        ? 'Under 8 / Over 1 Adaptive Martingale Stabilization'
+                                        ? `Over/Under Recovery: $${recoveryProfitEarned.toFixed(2)} / $${lossToRecover.toFixed(2)} ${currency} Recovered`
                                         : `Watching Target Digit [${differTargetDigit}] — Confirmation Status`}
                                 </span>
                             </div>
@@ -1402,13 +1446,17 @@ const PovertyHunter: React.FC = observer(() => {
                             <div className='ph-counter-badge'>
                                 <span className='count-label'>
                                     {isInRecovery
-                                        ? 'MODE'
+                                        ? 'RECOVERY PROGRESS'
                                         : waitingForAppear
                                           ? 'AWAITING CANDIDATE'
                                           : 'COUNTDOWN CONFIRMATION'}
                                 </span>
                                 <span className='count-num'>
-                                    {isInRecovery ? 'OVER/UNDER' : waitingForAppear ? 'WAIT' : `${confirmationTicksRemaining} TICKS`}
+                                    {isInRecovery
+                                        ? `${Math.min(100, Math.round((recoveryProfitEarned / (lossToRecover || 1)) * 100))}%`
+                                        : waitingForAppear
+                                          ? 'WAIT'
+                                          : `${confirmationTicksRemaining} TICKS`}
                                 </span>
                             </div>
                         </div>
@@ -1419,7 +1467,7 @@ const PovertyHunter: React.FC = observer(() => {
                                     className={`ph-progress-bar-fill ${isInRecovery ? 'ph-progress-bar-fill--recovery' : ''}`}
                                     style={{
                                         width: isInRecovery
-                                            ? '100%'
+                                            ? `${Math.min(100, Math.max(5, Math.round((recoveryProfitEarned / (lossToRecover || 1)) * 100)))}%`
                                             : waitingForAppear
                                               ? '25%'
                                               : confirmationTicksRemaining === 2
@@ -1432,7 +1480,7 @@ const PovertyHunter: React.FC = observer(() => {
                             </div>
                             <span className='ph-progress-tip'>
                                 {isInRecovery
-                                    ? '🔥 Placing Over/Under contracts with martingale multiplier until loss is recovered.'
+                                    ? `🔥 Placing Over/Under contracts until loss is 100% recovered ($${recoveryProfitEarned.toFixed(2)} / $${lossToRecover.toFixed(2)} ${currency}). Reverting to Differs automatically upon recovery.`
                                     : waitingForAppear
                                       ? `Waiting for Least Appearing Digit [${differTargetDigit}] to trigger in live stream...`
                                       : `Digit [${differTargetDigit}] appeared! Verifying ${confirmationTicksRemaining} clean ticks before purchase...`}
@@ -1512,6 +1560,21 @@ const PovertyHunter: React.FC = observer(() => {
                                         <option value='false'>Disabled (Differs Only)</option>
                                     </select>
                                 </div>
+
+                                {autoRecoveryMode && (
+                                    <div className='ph-input-group'>
+                                        <label>Recovery Strategy</label>
+                                        <select
+                                            value={recoveryType}
+                                            onChange={e => setRecoveryType(e.target.value as any)}
+                                            disabled={botState !== 'IDLE'}
+                                        >
+                                            <option value='OVER_1_UNDER_8'>Over 1 / Under 8 (~90% Win)</option>
+                                            <option value='OVER_2_UNDER_7'>Over 2 / Under 7 (~80% Win)</option>
+                                            <option value='OVER_3_UNDER_6'>Over 3 / Under 6 (~70% Win)</option>
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Action Control Buttons */}
