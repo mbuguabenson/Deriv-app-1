@@ -16,7 +16,7 @@
     color: #e2e8f0;
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
     padding: clamp(0.8rem, 2vw, 1.6rem);
-    padding-bottom: 3rem;
+    padding-bottom: 3.5rem;
     box-sizing: border-box;
     gap: clamp(1rem, 2vw, 1.6rem);
 
@@ -80,7 +80,7 @@
                 gap: 0.2rem;
 
                 h1 {
-                    font-size: clamp(1.6rem, 2.8vw, 2.2rem);
+                    font-size: clamp(1.4rem, 2.5vw, 2rem);
                     font-weight: 900;
                     margin: 0;
                     background: linear-gradient(90deg, #f5c542, #ff8c42, #f43f5e);
@@ -92,15 +92,15 @@
                 }
 
                 span {
-                    font-size: clamp(0.95rem, 1.4vw, 1.15rem);
+                    font-size: 0.82rem;
                     color: #94a3b8;
                     font-weight: 500;
                 }
 
                 .ph-status-chip {
-                    font-size: 0.85rem;
+                    font-size: 0.75rem;
                     font-weight: 800;
-                    padding: 0.25rem 0.75rem;
+                    padding: 0.2rem 0.65rem;
                     border-radius: 999px;
                     letter-spacing: 0.5px;
                     text-transform: uppercase;
@@ -136,18 +136,10 @@
         }
 
         &-actions {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            display: flex;
             align-items: center;
-            gap: 0.8rem;
-            width: 100%;
-            max-width: 600px;
-
-            @media (min-width: 1100px) {
-                display: flex;
-                width: auto;
-                max-width: none;
-            }
+            gap: 0.75rem;
+            flex-wrap: wrap;
         }
     }
 
@@ -159,8 +151,8 @@
         background: rgba(15, 23, 42, 0.75);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
-        padding: 0.7rem 1.2rem;
-        min-width: 105px;
+        padding: 0.5rem 0.9rem;
+        min-width: 95px;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
         transition: all 0.2s ease;
 
@@ -170,16 +162,16 @@
         }
 
         &__label {
-            font-size: 0.85rem;
+            font-size: 0.68rem;
             color: #94a3b8;
             text-transform: uppercase;
             font-weight: 700;
-            letter-spacing: 0.6px;
-            margin-bottom: 0.2rem;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.15rem;
         }
 
         &__val {
-            font-size: clamp(1.2rem, 2vw, 1.55rem);
+            font-size: 1.05rem;
             font-weight: 800;
             color: #f8fafc;
             font-family: 'JetBrains Mono', monospace;
@@ -206,10 +198,10 @@
         background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(6, 182, 212, 0.2));
         border: 1px solid rgba(139, 92, 246, 0.5);
         color: #c084fc;
-        padding: 0.75rem 1.2rem;
+        padding: 0.65rem 1.1rem;
         border-radius: 12px;
         font-weight: 800;
-        font-size: 0.88rem;
+        font-size: 0.85rem;
         cursor: pointer;
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow: 0 4px 15px rgba(139, 92, 246, 0.2);
@@ -243,17 +235,17 @@
         backdrop-filter: blur(14px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 14px;
-        padding: 0.9rem 1.4rem;
+        padding: 0.75rem 1.25rem;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 
         .ph-select-group {
             display: flex;
             align-items: center;
-            gap: 0.8rem;
+            gap: 0.75rem;
             flex-wrap: wrap;
 
             label {
-                font-size: 1.15rem;
+                font-size: 0.85rem;
                 font-weight: 700;
                 color: #cbd5e1;
             }
@@ -262,9 +254,9 @@
                 background: rgba(30, 41, 59, 0.9);
                 color: #f8fafc;
                 border: 1.5px solid rgba(245, 197, 66, 0.4);
-                padding: 0.65rem 1.3rem;
+                padding: 0.5rem 1rem;
                 border-radius: 10px;
-                font-size: 1.25rem;
+                font-size: 0.88rem;
                 font-weight: 700;
                 outline: none;
                 cursor: pointer;
@@ -286,13 +278,13 @@
         .ph-toggle-button {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.12);
             color: #cbd5e1;
-            padding: 0.6rem 1.1rem;
+            padding: 0.45rem 0.9rem;
             border-radius: 10px;
-            font-size: 1.1rem;
+            font-size: 0.8rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -315,12 +307,12 @@
     // ── 3. Expandable Wide View Matrix ──
     &__wide-view {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
         gap: 1rem;
         background: rgba(15, 23, 42, 0.95);
         border: 1px solid rgba(245, 197, 66, 0.35);
         border-radius: 16px;
-        padding: 1.4rem;
+        padding: 1.25rem;
         animation: fadeInDown 0.3s ease-out;
         box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
 
@@ -328,7 +320,7 @@
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 12px;
-            padding: 1.1rem;
+            padding: 0.85rem;
             cursor: pointer;
             transition: all 0.2s ease;
 
@@ -344,24 +336,25 @@
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 0.6rem;
+                margin-bottom: 0.5rem;
 
                 .name {
                     font-weight: 800;
-                    font-size: 1.25rem;
+                    font-size: 0.92rem;
                     color: #f8fafc;
                 }
 
                 .digit-badge {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 8px;
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 6px;
                     color: #0f172a;
                     font-weight: 900;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 1.25rem;
+                    font-size: 0.88rem;
+                    font-family: 'JetBrains Mono', monospace;
 
                     &--under {
                         background: #10b981;
@@ -375,65 +368,73 @@
             }
 
             &__price {
-                font-size: 1.3rem;
+                font-size: 0.78rem;
                 font-weight: 700;
                 color: #94a3b8;
-                font-family: monospace;
-                margin-bottom: 0.6rem;
+                font-family: 'JetBrains Mono', monospace;
+                margin-bottom: 0.5rem;
             }
 
             &__stats-row {
                 display: flex;
                 justify-content: space-between;
-                font-size: 1.1rem;
+                font-size: 0.72rem;
                 font-weight: 600;
                 color: #cbd5e1;
                 border-top: 1px solid rgba(255, 255, 255, 0.08);
-                padding-top: 0.7rem;
+                padding-top: 0.5rem;
             }
         }
     }
 
     // ── 4. Main Body: Responsive Grid (Sidebar + Workspace) ──
     &__body {
-        display: grid;
-        grid-template-columns: 290px 1fr;
-        gap: clamp(1rem, 2vw, 1.6rem);
+        display: flex;
+        gap: 1.25rem;
+        align-items: flex-start;
         width: 100%;
-        transition: grid-template-columns 0.3s ease;
 
-        @media (max-width: 1100px) {
-            grid-template-columns: 1fr;
+        @media (max-width: 1024px) {
+            flex-direction: column;
         }
 
         &--collapsed {
-            grid-template-columns: 1fr;
+            .poverty-hunter__sidebar {
+                display: none;
+            }
         }
     }
 
     // Left Ribbon / Markets Sidebar
     &__sidebar {
+        width: 280px;
+        min-width: 280px;
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem;
         background: rgba(18, 27, 44, 0.65);
         backdrop-filter: blur(14px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 16px;
-        padding: 1.2rem;
-        max-height: calc(100vh - 280px);
+        padding: 1rem;
+        max-height: 720px;
         overflow-y: auto;
+
+        @media (max-width: 1024px) {
+            width: 100%;
+            min-width: 100%;
+        }
 
         &-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding-bottom: 0.8rem;
+            padding-bottom: 0.6rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 
             h3 {
                 margin: 0;
-                font-size: 1.25rem;
+                font-size: 0.85rem;
                 font-weight: 800;
                 color: #f5c542;
                 letter-spacing: 0.5px;
@@ -444,8 +445,8 @@
                 color: #f5c542;
                 border: 1px solid rgba(245, 197, 66, 0.3);
                 border-radius: 6px;
-                padding: 0.2rem 0.6rem;
-                font-size: 0.95rem;
+                padding: 0.15rem 0.5rem;
+                font-size: 0.7rem;
                 font-weight: 800;
             }
         }
@@ -453,7 +454,7 @@
         &-list {
             display: flex;
             flex-direction: column;
-            gap: 0.8rem;
+            gap: 0.5rem;
         }
 
         .ph-market-card {
@@ -462,14 +463,14 @@
             background: rgba(30, 41, 59, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.75rem;
             cursor: pointer;
             transition: all 0.2s ease;
 
             &:hover {
                 background: rgba(40, 53, 75, 0.85);
                 border-color: rgba(245, 197, 66, 0.4);
-                transform: translateX(4px);
+                transform: translateX(3px);
             }
 
             &--active {
@@ -485,20 +486,21 @@
 
                 .symbol-name {
                     font-weight: 800;
-                    font-size: 1.25rem;
+                    font-size: 0.88rem;
                     color: #f8fafc;
                 }
 
                 .digit-pill {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 8px;
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 6px;
                     color: #0f172a;
                     font-weight: 900;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 1.25rem;
+                    font-size: 0.82rem;
+                    font-family: 'JetBrains Mono', monospace;
 
                     &--under {
                         background: #10b981;
@@ -515,20 +517,20 @@
                 display: flex;
                 align-items: baseline;
                 justify-content: space-between;
-                margin-top: 0.5rem;
+                margin-top: 0.35rem;
 
                 .price {
-                    font-size: 1.25rem;
+                    font-size: 0.75rem;
                     font-weight: 700;
                     color: #cbd5e1;
-                    font-family: monospace;
+                    font-family: 'JetBrains Mono', monospace;
                 }
 
                 .bias {
-                    font-size: 1rem;
+                    font-size: 0.7rem;
                     font-weight: 800;
-                    padding: 0.2rem 0.55rem;
-                    border-radius: 6px;
+                    padding: 0.15rem 0.45rem;
+                    border-radius: 4px;
 
                     &--under {
                         background: rgba(16, 185, 129, 0.18);
@@ -548,10 +550,10 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                margin-top: 0.6rem;
-                padding-top: 0.6rem;
+                margin-top: 0.4rem;
+                padding-top: 0.4rem;
                 border-top: 1px solid rgba(255, 255, 255, 0.06);
-                font-size: 1rem;
+                font-size: 0.72rem;
                 color: #94a3b8;
                 font-weight: 600;
 
@@ -565,10 +567,12 @@
 
     // ── 5. Main Workspace Content Deck ──
     &__workspace {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        gap: clamp(1rem, 2vw, 1.6rem);
+        gap: 1.25rem;
         min-width: 0; // Prevent flex overflow
+        width: 100%;
     }
 
     // Top Live Analytics Banner (Price, Last Digit Orb, Live Spline Chart)
@@ -577,23 +581,23 @@
         backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 18px;
-        padding: clamp(1rem, 2vw, 1.6rem);
+        padding: clamp(1rem, 2vw, 1.5rem);
         box-shadow: 0 10px 36px rgba(0, 0, 0, 0.35);
         display: flex;
         flex-direction: column;
-        gap: 1.2rem;
+        gap: 1rem;
 
         .ph-chart-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 1.2rem;
+            gap: 1rem;
 
             .ph-price-badge-group {
                 display: flex;
                 align-items: center;
-                gap: clamp(1rem, 2vw, 2rem);
+                gap: 1.5rem;
                 flex-wrap: wrap;
 
                 .ph-current-price-box {
@@ -601,7 +605,7 @@
                     flex-direction: column;
 
                     .label {
-                        font-size: 0.95rem;
+                        font-size: 0.75rem;
                         color: #94a3b8;
                         text-transform: uppercase;
                         font-weight: 700;
@@ -611,10 +615,10 @@
                     .price-row {
                         display: flex;
                         align-items: center;
-                        gap: 0.8rem;
+                        gap: 0.6rem;
 
                         .price {
-                            font-size: clamp(2rem, 3.5vw, 2.7rem);
+                            font-size: clamp(1.6rem, 2.5vw, 2.2rem);
                             font-weight: 900;
                             color: #f8fafc;
                             font-family: 'JetBrains Mono', monospace;
@@ -623,8 +627,8 @@
                         }
 
                         .live-dot {
-                            width: 12px;
-                            height: 12px;
+                            width: 10px;
+                            height: 10px;
                             border-radius: 50%;
                             background: #10b981;
                             box-shadow: 0 0 12px #10b981;
@@ -639,35 +643,35 @@
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    border-radius: 16px;
-                    padding: 0.6rem 1.6rem;
-                    min-width: 110px;
+                    border-radius: 14px;
+                    padding: 0.5rem 1.2rem;
+                    min-width: 95px;
                     transition: all 0.3s ease;
 
                     .digit-label {
-                        font-size: 0.85rem;
+                        font-size: 0.68rem;
                         font-weight: 800;
                         text-transform: uppercase;
-                        letter-spacing: 0.6px;
+                        letter-spacing: 0.5px;
                     }
 
                     .digit-val {
-                        font-size: clamp(2.8rem, 4vw, 3.6rem);
+                        font-size: clamp(2rem, 3vw, 2.8rem);
                         font-weight: 900;
                         line-height: 1;
                         font-family: 'JetBrains Mono', monospace;
                     }
 
                     .digit-sub {
-                        font-size: 0.85rem;
+                        font-size: 0.68rem;
                         font-weight: 700;
-                        margin-top: 0.2rem;
+                        margin-top: 0.15rem;
                     }
 
                     &--under {
                         background: radial-gradient(circle, rgba(16, 185, 129, 0.25), rgba(15, 23, 42, 0.8));
                         border: 2px solid #10b981;
-                        box-shadow: 0 0 28px rgba(16, 185, 129, 0.35);
+                        box-shadow: 0 0 24px rgba(16, 185, 129, 0.35);
 
                         .digit-label,
                         .digit-sub {
@@ -682,7 +686,7 @@
                     &--over {
                         background: radial-gradient(circle, rgba(96, 165, 250, 0.25), rgba(15, 23, 42, 0.8));
                         border: 2px solid #60a5fa;
-                        box-shadow: 0 0 28px rgba(96, 165, 250, 0.35);
+                        box-shadow: 0 0 24px rgba(96, 165, 250, 0.35);
 
                         .digit-label,
                         .digit-sub {
@@ -699,8 +703,8 @@
             .ph-chart-legend {
                 display: flex;
                 align-items: center;
-                gap: 1.2rem;
-                font-size: 1.05rem;
+                gap: 1rem;
+                font-size: 0.78rem;
                 font-weight: 600;
                 color: #cbd5e1;
                 flex-wrap: wrap;
@@ -708,32 +712,32 @@
                 .legend-item {
                     display: flex;
                     align-items: center;
-                    gap: 0.5rem;
+                    gap: 0.4rem;
 
                     .dot {
-                        width: 10px;
-                        height: 10px;
+                        width: 8px;
+                        height: 8px;
                         border-radius: 50%;
 
                         &--curve {
-                            background: #f5c542;
+                            background: #a855f7;
                         }
                         &--under {
                             background: #10b981;
                         }
                         &--over {
-                            background: #60a5fa;
+                            background: #f59e0b;
                         }
                         &--curr {
-                            background: #f5c542;
-                            box-shadow: 0 0 10px #f5c542;
+                            background: #ffffff;
+                            box-shadow: 0 0 10px #ffffff;
                         }
                     }
                 }
             }
         }
 
-        // Live Digit Trajectory Spline Chart (Elite Pro Style)
+        // Live Digit Trajectory Spline Chart
         .ep-chart-wrap {
             position: relative;
             width: 100%;
@@ -784,15 +788,12 @@
     &__digits-grid {
         display: grid;
         grid-template-columns: repeat(10, 1fr);
-        gap: clamp(0.5rem, 1vw, 0.9rem);
+        gap: 0.6rem;
 
         @media (max-width: 1200px) {
             grid-template-columns: repeat(5, 1fr);
         }
         @media (max-width: 600px) {
-            grid-template-columns: repeat(5, 1fr);
-        }
-        @media (max-width: 420px) {
             grid-template-columns: repeat(2, 1fr);
         }
 
@@ -803,27 +804,27 @@
             background: rgba(22, 33, 56, 0.75);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
-            padding: 1rem 0.6rem;
+            padding: 0.85rem 0.5rem;
             position: relative;
             transition: all 0.2s ease;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 
             &:hover {
-                transform: translateY(-3px);
+                transform: translateY(-2px);
                 border-color: rgba(245, 197, 66, 0.4);
             }
 
             // Excluded Edge Digits (0, 1, 8, 9)
             &--excluded {
-                opacity: 0.35;
+                opacity: 0.4;
                 border-style: dashed;
                 background: rgba(15, 23, 42, 0.4);
 
                 .ph-excluded-badge {
-                    font-size: 0.8rem;
+                    font-size: 0.65rem;
                     color: #ef4444;
                     font-weight: 800;
-                    margin-top: 0.3rem;
+                    margin-top: 0.2rem;
                 }
             }
 
@@ -832,25 +833,26 @@
                 border: 2px solid #10b981;
                 background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(20, 30, 50, 0.85));
                 box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
-                transform: scale(1.04);
+                transform: scale(1.02);
             }
 
             .digit-num {
-                font-size: 2rem;
+                font-size: 1.5rem;
                 font-weight: 900;
                 color: #f8fafc;
                 font-family: 'JetBrains Mono', monospace;
             }
 
             .digit-pct {
-                font-size: 1.25rem;
+                font-size: 0.95rem;
                 font-weight: 800;
                 color: #f5c542;
-                margin-top: 0.2rem;
+                margin-top: 0.15rem;
+                font-family: 'JetBrains Mono', monospace;
             }
 
             .digit-count {
-                font-size: 0.95rem;
+                font-size: 0.7rem;
                 color: #94a3b8;
                 font-weight: 600;
             }
@@ -860,7 +862,7 @@
                 height: 4px;
                 background: rgba(255, 255, 255, 0.1);
                 border-radius: 2px;
-                margin-top: 0.6rem;
+                margin-top: 0.4rem;
                 overflow: hidden;
 
                 .fill {
@@ -871,9 +873,9 @@
             }
 
             .rank-tag {
-                font-size: 0.9rem;
+                font-size: 0.68rem;
                 font-weight: 800;
-                margin-top: 0.4rem;
+                margin-top: 0.3rem;
                 color: #cbd5e1;
 
                 &--most {
@@ -892,437 +894,192 @@
         }
     }
 
-    // ── 7. Rankings Strip & Excluded Notice ──
-    &__ranks-strip {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 1rem;
-        background: rgba(18, 27, 44, 0.7);
+    // ── 7. Strategy Status & Trigger Progress Meter ──
+    &__meter-card {
+        background: rgba(20, 30, 50, 0.75);
+        backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 14px;
-        padding: 1rem 1.4rem;
+        border-radius: 18px;
+        padding: 1.25rem 1.5rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
 
-        .ph-rank-item {
+        .ph-meter-header {
             display: flex;
             align-items: center;
-            gap: 0.8rem;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
 
-            .rank-pill {
-                font-size: 0.95rem;
-                font-weight: 800;
-                padding: 0.3rem 0.8rem;
-                border-radius: 8px;
-                text-transform: uppercase;
+            .ph-meter-title-wrap {
+                display: flex;
+                flex-direction: column;
+                gap: 0.2rem;
 
-                &--most {
-                    background: rgba(244, 63, 94, 0.2);
-                    color: #f43f5e;
-                    border: 1px solid #f43f5e;
+                h3 {
+                    margin: 0;
+                    font-size: 1.05rem;
+                    font-weight: 800;
+                    color: #f8fafc;
+                    letter-spacing: 0.3px;
                 }
-                &--second {
-                    background: rgba(245, 158, 11, 0.2);
-                    color: #f59e0b;
-                    border: 1px solid #f59e0b;
-                }
-                &--least {
-                    background: rgba(56, 189, 248, 0.2);
-                    color: #38bdf8;
-                    border: 1px solid #38bdf8;
+
+                .sub {
+                    font-size: 0.78rem;
+                    color: #94a3b8;
+                    font-weight: 500;
                 }
             }
 
-            .rank-digit {
-                font-size: 1.8rem;
-                font-weight: 900;
-                color: #fff;
-                font-family: 'JetBrains Mono', monospace;
+            .ph-counter-badge {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+
+                .count-label {
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    color: #94a3b8;
+                    letter-spacing: 0.5px;
+                }
+
+                .count-num {
+                    font-size: 1.15rem;
+                    font-weight: 900;
+                    color: #f5c542;
+                    font-family: 'JetBrains Mono', monospace;
+                }
             }
         }
 
-        .ph-excluded-notice {
+        .ph-progress-container {
             display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            font-size: 1.1rem;
-            color: #94a3b8;
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            border-radius: 8px;
-            padding: 0.5rem 1rem;
+            flex-direction: column;
+            gap: 0.4rem;
 
-            strong {
-                color: #ef4444;
+            .ph-progress-bar-bg {
+                width: 100%;
+                height: 10px;
+                border-radius: 5px;
+                background: rgba(255, 255, 255, 0.08);
+                overflow: hidden;
+
+                .ph-progress-bar-fill {
+                    height: 100%;
+                    border-radius: 5px;
+                    background: linear-gradient(90deg, #10b981, #f5c542);
+                    transition: width 0.3s ease;
+
+                    &--recovery {
+                        background: linear-gradient(90deg, #f43f5e, #f59e0b);
+                    }
+                }
+            }
+
+            .ph-progress-tip {
+                font-size: 0.78rem;
+                color: #cbd5e1;
+                font-weight: 500;
             }
         }
     }
 
-    // ── 8. Dual Strategy Matrix (Differs & Over/Under) ──
-    &__strategy-grid {
+    // ── 8. Bottom Grid (Parameters + Trade Logs) ──
+    &__bottom-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: clamp(1rem, 2vw, 1.6rem);
+        gap: 1.25rem;
 
         @media (max-width: 950px) {
             grid-template-columns: 1fr;
         }
     }
 
-    .ph-card-box {
+    &__params-card {
         background: rgba(20, 30, 50, 0.75);
         backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 18px;
-        padding: clamp(1.2rem, 2vw, 1.6rem);
+        padding: 1.25rem 1.5rem;
         display: flex;
         flex-direction: column;
-        gap: 1.2rem;
+        gap: 1rem;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 
-        &__header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            padding-bottom: 1rem;
-
-            h3 {
-                margin: 0;
-                font-size: clamp(1.3rem, 2vw, 1.55rem);
-                font-weight: 900;
-                color: #f8fafc;
-                display: flex;
-                align-items: center;
-                gap: 0.8rem;
-            }
-
-            .badge {
-                font-size: 1.05rem;
-                font-weight: 800;
-                padding: 0.35rem 0.85rem;
-                border-radius: 8px;
-
-                &--differs {
-                    background: rgba(245, 197, 66, 0.2);
-                    color: #f5c542;
-                    border: 1px solid #f5c542;
-                }
-                &--recovery {
-                    background: rgba(16, 185, 129, 0.2);
-                    color: #10b981;
-                    border: 1px solid #10b981;
-                }
-            }
-        }
-    }
-
-    // Differs Engine Inner Content
-    .ph-differ-details {
-        display: flex;
-        flex-direction: column;
-        gap: 1.2rem;
-
-        .ph-pick-banner {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(245, 197, 66, 0.12));
-            border: 1.5px solid #10b981;
-            border-radius: 14px;
-            padding: 1.2rem 1.6rem;
-
-            .label-group {
-                display: flex;
-                flex-direction: column;
-                gap: 0.2rem;
-
-                .subtitle {
-                    font-size: 0.95rem;
-                    color: #94a3b8;
-                    font-weight: 700;
-                }
-
-                .title {
-                    font-size: 1.55rem;
-                    font-weight: 900;
-                    color: #10b981;
-                    letter-spacing: -0.3px;
-                }
-            }
-
-            .digit-circle {
-                width: 54px;
-                height: 54px;
-                border-radius: 50%;
-                background: #10b981;
-                color: #0f172a;
-                font-size: 2.6rem;
-                font-weight: 900;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 0 24px rgba(16, 185, 129, 0.65);
-                font-family: 'JetBrains Mono', monospace;
-            }
+        h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 800;
+            color: #f8fafc;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 0.6rem;
         }
 
-        .ph-conditions-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.6rem;
-
-            .condition-row {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                background: rgba(15, 23, 42, 0.6);
-                border-radius: 10px;
-                padding: 0.75rem 1rem;
-                font-size: 1.15rem;
-                font-weight: 600;
-
-                .status {
-                    font-weight: 800;
-                    &--met {
-                        color: #10b981;
-                    }
-                    &--waiting {
-                        color: #f59e0b;
-                    }
-                }
-            }
-        }
-    }
-
-    // Over / Under Recovery Details
-    .ph-ou-details {
-        display: flex;
-        flex-direction: column;
-        gap: 1.2rem;
-
-        .ph-split-stat {
-            display: flex;
-            flex-direction: column;
-            gap: 0.6rem;
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 12px;
-            padding: 1rem;
-
-            .ph-split-header {
-                display: flex;
-                justify-content: space-between;
-                font-size: 1.15rem;
-                font-weight: 800;
-
-                .under-side {
-                    color: #10b981;
-                }
-                .over-side {
-                    color: #60a5fa;
-                }
-            }
-
-            .ph-split-bar {
-                height: 10px;
-                border-radius: 5px;
-                background: #1e293b;
-                display: flex;
-                overflow: hidden;
-
-                .under-fill {
-                    height: 100%;
-                    background: #10b981;
-                    transition: width 0.3s ease;
-                }
-
-                .over-fill {
-                    height: 100%;
-                    background: #3b82f6;
-                    transition: width 0.3s ease;
-                }
-            }
-        }
-
-        // Glowing Entry Digit Cards
-        .ph-glowing-entry-card {
+        .ph-inputs-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 0.75rem;
 
-            .entry-box {
+            .ph-input-group {
                 display: flex;
                 flex-direction: column;
-                align-items: center;
-                padding: 1.2rem;
-                border-radius: 14px;
-                text-align: center;
+                gap: 0.35rem;
 
-                &--under {
-                    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(15, 23, 42, 0.85));
-                    border: 1.5px solid #10b981;
-                    box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
-
-                    .digit-glowing {
-                        color: #10b981;
-                        text-shadow: 0 0 14px rgba(16, 185, 129, 0.8);
-                    }
-                }
-
-                &--over {
-                    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(15, 23, 42, 0.85));
-                    border: 1.5px solid #3b82f6;
-                    box-shadow: 0 0 20px rgba(59, 130, 246, 0.35);
-
-                    .digit-glowing {
-                        color: #60a5fa;
-                        text-shadow: 0 0 14px rgba(59, 130, 246, 0.8);
-                    }
-                }
-
-                .tag {
-                    font-size: 0.95rem;
-                    font-weight: 800;
-                    text-transform: uppercase;
-                    color: #cbd5e1;
-                    margin-bottom: 0.4rem;
-                }
-
-                .digit-glowing {
-                    font-size: 3rem;
-                    font-weight: 900;
-                    line-height: 1;
-                    font-family: 'JetBrains Mono', monospace;
-                }
-
-                .desc {
-                    font-size: 1.05rem;
+                label {
+                    font-size: 0.72rem;
                     font-weight: 700;
                     color: #94a3b8;
-                    margin-top: 0.4rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+
+                input,
+                select {
+                    background: #1e293b;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    padding: 0.55rem 0.75rem;
+                    color: #f8fafc;
+                    font-size: 0.88rem;
+                    font-weight: 600;
+                    outline: none;
+                    transition: all 0.2s;
+
+                    &:focus {
+                        border-color: #f5c542;
+                        box-shadow: 0 0 10px rgba(245, 197, 66, 0.25);
+                    }
+
+                    &:disabled {
+                        opacity: 0.55;
+                        cursor: not-allowed;
+                    }
                 }
             }
         }
-    }
 
-    // ── 9. Controls & Risk Management Input Deck ──
-    &__controls-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1.2rem;
-        background: rgba(20, 30, 50, 0.75);
-        backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 18px;
-        padding: clamp(1.2rem, 2vw, 1.6rem);
-
-        @media (max-width: 600px) {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        .ph-input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-
-            label {
-                font-size: 1.1rem;
-                font-weight: 700;
-                color: #cbd5e1;
-            }
-
-            input,
-            select {
-                background: rgba(30, 41, 59, 0.85);
-                color: #f8fafc;
-                border: 1.5px solid rgba(255, 255, 255, 0.12);
-                border-radius: 10px;
-                padding: 0.75rem 1rem;
-                font-size: 1.25rem;
-                font-weight: 700;
-                outline: none;
-                transition: all 0.2s ease;
-
-                &:focus {
-                    border-color: #f5c542;
-                    box-shadow: 0 0 12px rgba(245, 197, 66, 0.35);
-                }
-            }
-        }
-    }
-
-    // ── 10. Execution Buttons & Status Bar ──
-    &__actions-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 1.2rem;
-        background: rgba(15, 23, 42, 0.85);
-        backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 1.2rem 1.6rem;
-
-        .ph-status-indicator {
+        .ph-buttons-row {
             display: flex;
             align-items: center;
-            gap: 0.9rem;
-
-            .pulse-dot {
-                width: 14px;
-                height: 14px;
-                border-radius: 50%;
-
-                &--idle {
-                    background: #64748b;
-                }
-                &--running {
-                    background: #10b981;
-                    box-shadow: 0 0 14px #10b981;
-                    animation: pulseGlow 1.5s infinite;
-                }
-                &--paused {
-                    background: #f59e0b;
-                    box-shadow: 0 0 14px #f59e0b;
-                }
-            }
-
-            .status-text {
-                font-size: 1.25rem;
-                font-weight: 800;
-                color: #f8fafc;
-            }
-        }
-
-        .ph-buttons-cluster {
-            display: flex;
-            align-items: center;
-            gap: 0.9rem;
-            flex-wrap: wrap;
-            width: 100%;
-
-            @media (min-width: 800px) {
-                width: auto;
-            }
+            gap: 0.75rem;
+            margin-top: 0.5rem;
 
             .ph-btn {
-                display: inline-flex;
+                flex: 1;
+                display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 0.7rem;
-                padding: 0.9rem 1.8rem;
-                border-radius: 12px;
-                font-size: 1.25rem;
+                gap: 0.5rem;
+                padding: 0.75rem 1.2rem;
+                border-radius: 10px;
+                font-size: 0.92rem;
                 font-weight: 800;
                 border: none;
                 cursor: pointer;
                 transition: all 0.2s ease;
-                flex: 1;
-
-                @media (min-width: 800px) {
-                    flex: none;
-                }
 
                 &--start {
                     background: linear-gradient(135deg, #10b981, #059669);
@@ -1331,8 +1088,18 @@
 
                     &:hover {
                         background: linear-gradient(135deg, #059669, #047857);
-                        transform: translateY(-2px);
+                        transform: translateY(-1px);
                         box-shadow: 0 6px 24px rgba(16, 185, 129, 0.6);
+                    }
+                }
+
+                &--pause {
+                    background: rgba(51, 65, 85, 0.8);
+                    color: #f1f5f9;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+
+                    &:hover {
+                        background: rgba(71, 85, 105, 0.95);
                     }
                 }
 
@@ -1343,139 +1110,149 @@
 
                     &:hover {
                         background: linear-gradient(135deg, #dc2626, #b91c1c);
-                        transform: translateY(-2px);
-                    }
-                }
-
-                &--pause {
-                    background: linear-gradient(135deg, #f59e0b, #d97706);
-                    color: #0f172a;
-                    font-weight: 900;
-
-                    &:hover {
-                        transform: translateY(-2px);
-                    }
-                }
-
-                &--bulk {
-                    background: linear-gradient(135deg, #f5c542, #d97706);
-                    color: #0f172a;
-                    box-shadow: 0 4px 18px rgba(245, 197, 66, 0.4);
-
-                    &:hover {
-                        transform: translateY(-2px);
-                    }
-                }
-
-                &--secondary {
-                    background: rgba(51, 65, 85, 0.8);
-                    color: #e2e8f0;
-                    border: 1px solid rgba(255, 255, 255, 0.12);
-
-                    &:hover {
-                        background: rgba(71, 85, 105, 0.95);
+                        transform: translateY(-1px);
                     }
                 }
             }
         }
     }
 
-    // ── 11. Real-Time Trade Journal ──
     &__logs-card {
         background: rgba(20, 30, 50, 0.75);
         backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 18px;
-        padding: clamp(1.2rem, 2vw, 1.6rem);
+        padding: 1.25rem 1.5rem;
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.85rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 
-        .ph-log-header {
+        .ph-logs-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 0.6rem;
 
             h3 {
                 margin: 0;
-                font-size: 1.35rem;
-                font-weight: 900;
+                font-size: 1rem;
+                font-weight: 800;
                 color: #f8fafc;
             }
 
-            .clear-btn {
-                background: none;
-                border: 1px solid rgba(255, 255, 255, 0.12);
+            .ph-clear-btn {
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.15);
                 color: #94a3b8;
-                padding: 0.4rem 0.9rem;
-                border-radius: 8px;
-                font-size: 1.05rem;
+                padding: 0.2rem 0.6rem;
+                border-radius: 6px;
+                font-size: 0.75rem;
                 font-weight: 700;
                 cursor: pointer;
+                transition: all 0.2s;
 
                 &:hover {
-                    color: #fff;
+                    color: #ffffff;
                     border-color: rgba(255, 255, 255, 0.35);
                 }
             }
         }
 
-        .ph-log-table-wrap {
-            max-height: 260px;
+        .ph-logs-list {
+            max-height: 220px;
             overflow-y: auto;
-            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
 
-            table {
-                width: 100%;
-                min-width: 680px;
-                border-collapse: collapse;
-                font-size: 1.15rem;
+            &::-webkit-scrollbar {
+                width: 4px;
+            }
+            &::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+            }
 
-                th {
-                    text-align: left;
-                    padding: 0.85rem;
-                    color: #64748b;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-                    font-weight: 800;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
+            .ph-logs-empty {
+                text-align: center;
+                padding: 1.5rem;
+                color: #64748b;
+                font-size: 0.82rem;
+            }
+
+            .ph-log-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: rgba(30, 41, 59, 0.5);
+                border-radius: 8px;
+                padding: 0.45rem 0.75rem;
+                font-size: 0.78rem;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+
+                &--win {
+                    border-left: 3px solid #10b981;
+                }
+                &--loss {
+                    border-left: 3px solid #ef4444;
+                }
+                &--pending {
+                    border-left: 3px solid #eab308;
                 }
 
-                td {
-                    padding: 0.85rem;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+                .time {
+                    color: #64748b;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 0.72rem;
+                }
+
+                .market {
+                    font-weight: 700;
                     color: #cbd5e1;
+                }
+
+                .strategy {
+                    color: #94a3b8;
+                }
+
+                .contract {
+                    color: #e2e8f0;
                     font-weight: 600;
                 }
 
-                .status-badge {
-                    font-weight: 800;
-                    padding: 0.25rem 0.7rem;
-                    border-radius: 6px;
-                    font-size: 0.95rem;
+                .stake {
+                    color: #cbd5e1;
+                    font-family: 'JetBrains Mono', monospace;
+                }
 
-                    &--win {
-                        background: rgba(16, 185, 129, 0.2);
+                .profit {
+                    font-weight: 800;
+                    font-family: 'JetBrains Mono', monospace;
+
+                    &--pos {
                         color: #10b981;
-                        border: 1px solid rgba(16, 185, 129, 0.4);
                     }
-                    &--loss {
-                        background: rgba(239, 68, 68, 0.2);
+                    &--neg {
                         color: #ef4444;
-                        border: 1px solid rgba(239, 68, 68, 0.4);
                     }
-                    &--pending {
-                        background: rgba(245, 158, 11, 0.2);
-                        color: #f59e0b;
-                        border: 1px solid rgba(245, 158, 11, 0.4);
-                    }
+                }
+
+                .result {
+                    font-size: 0.68rem;
+                    font-weight: 800;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    background: rgba(255, 255, 255, 0.08);
                 }
             }
         }
     }
 }
 
-// Keyframes
+// ── Animations ────────────────────────────────────────────────────────────────
 @keyframes pulseGlow {
     0%,
     100% {
@@ -1522,18 +1299,29 @@
 // ── Mobile Responsive Adjustments ──────────────────────────────────────────
 @media (max-width: 768px) {
     .poverty-hunter {
-        padding: 0.8rem 0.6rem calc(84px + env(safe-area-inset-bottom, 16px));
+        padding: 0.75rem 0.5rem calc(84px + env(safe-area-inset-bottom, 16px));
 
         &__header {
             flex-direction: column;
             align-items: stretch;
-            gap: 1rem;
-            padding: 1rem;
+            gap: 0.75rem;
+            padding: 0.85rem;
 
-            .ph-header-controls {
+            &-actions {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
                 width: 100%;
-                justify-content: space-between;
-                flex-wrap: wrap;
+
+                .ph-metric-pill {
+                    min-width: 0;
+                    width: 100%;
+                }
+
+                .ph-ai-lab-btn {
+                    grid-column: span 2;
+                    justify-content: center;
+                }
             }
         }
     }
