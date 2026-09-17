@@ -99,7 +99,11 @@ class ChartAPI {
     getTime() {
         if (!this.time_interval) {
             this.time_interval = setInterval(() => {
-                this.api.send({ time: 1 });
+                try {
+                    this.api?.send?.({ time: 1 })?.catch?.(() => {});
+                } catch {
+                    /* ignore */
+                }
             }, 30000);
         }
     }

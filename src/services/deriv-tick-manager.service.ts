@@ -39,6 +39,10 @@ class DerivTickManager {
     private messageSubscription: { unsubscribe: () => void } | null = null;
     private isInitialized = false;
     private currentApiInstance: unknown = null;
+    private subscriptionQueue: string[] = [];
+    private isProcessingQueue = false;
+    private queueDelayMs = 120; // 120ms between subscription requests to prevent Deriv rate limits
+    private isRateLimited = false;
 
     constructor() {
         this.init();
@@ -183,7 +187,7 @@ class DerivTickManager {
 
         // If this is the first listener or stream hasn't been confirmed on Deriv
         if (record.listeners.size === 1 || !record.isSubscribedInDeriv) {
-            this.sendDerivSubscription(symbol);
+            this.enqueueDerivSubscription(symbol);
         }
 
         let unsubscribed = false;
@@ -213,10 +217,45 @@ class DerivTickManager {
     }
 
     /**
-     * Sends the subscription request to Deriv WebSocket safely,
-     * ignoring AlreadySubscribed responses.
+     * Enqueue a subscription request with automatic pacing and rate limit handling
      */
-    private async sendDerivSubscription(symbol: string) {
+    private enqueueDerivSubscription(symbol: string) {
+        if (!this.subscriptionQueue.includes(symbol)) {
+            this.subscriptionQueue.push(symbol);
+        }
+        void this.processSubscriptionQueue();
+    }
+
+    private async processSubscriptionQueue() {
+        if (this.isProcessingQueue || this.isRateLimited) return;
+        this.isProcessingQueue = true;
+
+        while (this.subscriptionQueue.length > 0) {
+            if (this.isRateLimited) break;
+
+            const symbol = this.subscriptionQueue.shift();
+            if (!symbol) continue;
+
+            const record = this.streams.get(symbol);
+            if (!record || record.listeners.size === 0 || record.isSubscribedInDeriv) {
+                continue;
+            }
+
+            await this.dispatchDerivSubscription(symbol);
+
+            if (this.subscriptionQueue.length > 0) {
+                await new Promise(res => setTimeout(res, this.queueDelayMs));
+            }
+        }
+
+        this.isProcessingQueue = false;
+    }
+
+    /**
+     * Sends the subscription request to Deriv WebSocket safely,
+     * handling AlreadySubscribed and RateLimit responses.
+     */
+    private async dispatchDerivSubscription(symbol: string) {
         const api = api_base.api;
         if (!api || typeof api.send !== 'function') return;
 
@@ -236,12 +275,23 @@ class DerivTickManager {
             }
         } catch (err: any) {
             const code = err?.error?.code || err?.code;
-            if (code === 'AlreadySubscribed' || String(err?.error?.message || err?.message || '').toLowerCase().includes('already subscribed')) {
-                // Ticks are already flowing on this connection for this symbol!
-                // Mark stream as established so we don't spam requests.
+            const msg = String(err?.error?.message || err?.message || '').toLowerCase();
+
+            if (code === 'AlreadySubscribed' || msg.includes('already subscribed')) {
+                // Ticks are already flowing on this connection for this symbol
                 record.isSubscribedInDeriv = true;
+            } else if (code === 'RateLimit' || msg.includes('rate limit')) {
+                console.warn(`[DerivTickManager] RateLimit reached on ${symbol}, backing off for 2.5s.`);
+                this.isRateLimited = true;
+                if (!this.subscriptionQueue.includes(symbol)) {
+                    this.subscriptionQueue.unshift(symbol);
+                }
+                setTimeout(() => {
+                    this.isRateLimited = false;
+                    void this.processSubscriptionQueue();
+                }, 2500);
             } else {
-                console.warn(`[DerivTickManager] Subscription notice for ${symbol}:`, err?.message || err);
+                console.info(`[DerivTickManager] Subscription notice for ${symbol}:`, err?.message || err);
             }
         }
     }
@@ -269,7 +319,7 @@ class DerivTickManager {
         this.streams.forEach((record, symbol) => {
             if (record.listeners.size > 0) {
                 record.isSubscribedInDeriv = false;
-                void this.sendDerivSubscription(symbol);
+                this.enqueueDerivSubscription(symbol);
             }
         });
     }
@@ -286,7 +336,7 @@ class DerivTickManager {
             if (record.listeners.size > 0) {
                 const elapsed = now - record.lastTickEpoch;
                 if (elapsed > 4500) {
-                    void this.sendDerivSubscription(symbol);
+                    this.enqueueDerivSubscription(symbol);
                 }
             }
         });

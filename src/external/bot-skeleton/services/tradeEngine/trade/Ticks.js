@@ -251,7 +251,11 @@ export default Engine =>
                 throw error;
             } finally {
                 // forget all proposal subscriptions so we can fetch new stats data on new call
-                await api_base?.api?.send({ forget_all: 'proposal' });
+                try {
+                    await api_base?.api?.send({ forget_all: 'proposal' });
+                } catch {
+                    /* ignore when no active proposal subscriptions exist */
+                }
                 this.is_proposal_requested_for_accumulators = false;
                 this.subscription_id_for_accumulators = null;
             }

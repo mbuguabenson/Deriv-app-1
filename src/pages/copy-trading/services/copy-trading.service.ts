@@ -409,15 +409,20 @@ class CopyTradingEngine {
 
         try {
             let wsUrl = '';
-            if (conn.isNewApi) {
+            if (conn.isNewApi && !conn.account.loginid.startsWith('DOT')) {
                 // Fetch OTP URL for New Deriv API
-                const otpUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(conn.account.token, conn.account.loginid);
-                if (!otpUrl) {
-                    console.warn(`[CopierSocketPool] Failed getting OTP URL for ${conn.loginid}, will retry.`);
-                    this.scheduleReconnect(conn);
-                    return;
+                try {
+                    const otpUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(conn.account.token, conn.account.loginid);
+                    if (otpUrl) {
+                        wsUrl = otpUrl;
+                    } else {
+                        wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
+                    }
+                } catch (otpErr) {
+                    console.warn(`[CopierSocketPool] Could not get OTP URL for ${conn.loginid}, falling back to direct connection:`, otpErr);
+                    wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
+                    conn.isNewApi = false;
                 }
-                wsUrl = otpUrl;
             } else {
                 wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
             }

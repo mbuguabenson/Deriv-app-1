@@ -15,7 +15,11 @@ export const DEFAULT_PROPOSAL_REQUEST = {
 
 export const forgetAccumulatorsProposalRequest = async instance => {
     if (instance && !instance.is_bot_running) {
-        await api_base?.api?.send({ forget_all: 'proposal' });
+        try {
+            await api_base?.api?.send({ forget_all: 'proposal' });
+        } catch {
+            /* ignore */
+        }
         instance.subscription_id_for_accumulators = null;
         instance.is_proposal_requested_for_accumulators = false;
         window.Blockly.accumulators_request = {};

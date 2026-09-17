@@ -56,8 +56,8 @@ export const safeSubscribe = (
                 onError(error);
             } else {
                 const code = (errorDetails as any)?.code;
-                if (code === 'InvalidSymbol' || code === 'InputValidationFailed') {
-                    console.info('[WebSocketHandler] Symbol notice:', (errorDetails as any)?.message || errorDetails);
+                if (code === 'InvalidSymbol' || code === 'InputValidationFailed' || code === 'RateLimit') {
+                    console.info('[WebSocketHandler] Stream notice:', (errorDetails as any)?.message || errorDetails);
                 } else {
                     console.error(
                         '[WebSocketHandler] Unhandled stream error:\n',
