@@ -6,7 +6,7 @@ import { useStore } from '@/hooks/useStore';
 import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
-import { safeSubscribe, subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
+import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
@@ -280,7 +280,7 @@ const AutoXEo: React.FC = observer(() => {
     const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(true);
     const [showWideView, setShowWideView] = useState<boolean>(false);
     const [autoSwitchMarkets, setAutoSwitchMarkets] = useState<boolean>(true);
-    const [maxRunsBeforeCheck, setMaxRunsBeforeCheck] = useState<number>(6);
+    const [maxRunsBeforeCheck] = useState<number>(6);
     const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
     // ── Strategy Configuration & Inputs ──
@@ -291,7 +291,7 @@ const AutoXEo: React.FC = observer(() => {
     const [stopLoss, setStopLoss] = useState<string>('25.00');
     const [tickDuration, setTickDuration] = useState<string>('1');
     const [autoRecoveryMode, setAutoRecoveryMode] = useState<boolean>(true);
-    const [recoveryType] = useState<'OVER_2_UNDER_8' | 'OVER_3_UNDER_6'>('OVER_2_UNDER_8');
+    const [recoveryType, setRecoveryType] = useState<'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6'>('OVER_1_UNDER_8');
     const [targetProbabilityThreshold] = useState<number>(58);
 
     // ── Bot Running State ──
@@ -301,7 +301,8 @@ const AutoXEo: React.FC = observer(() => {
     const [lossesCount, setLossesCount] = useState<number>(0);
     const [, setConsecutiveRuns] = useState<number>(0);
     const [isInRecovery, setIsInRecovery] = useState<boolean>(false);
-    const [, setAccumulatedLoss] = useState<number>(0);
+    const [lossToRecover, setLossToRecover] = useState<number>(0);
+    const [recoveryProfitEarned, setRecoveryProfitEarned] = useState<number>(0);
     const [tradeLog, setTradeLog] = useState<TradeLogItem[]>([]);
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: 'tp' | 'sl' | null }>({
         isOpen: false,
@@ -317,6 +318,8 @@ const AutoXEo: React.FC = observer(() => {
     const consecutiveRunsRef = useRef<number>(0);
     const currentStakeRef = useRef<number>(0.5);
     const isInRecoveryRef = useRef<boolean>(false);
+    const lossToRecoverRef = useRef<number>(0);
+    const recoveryProfitEarnedRef = useRef<number>(0);
     const lastProcessedTicksRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => {
@@ -846,12 +849,44 @@ const AutoXEo: React.FC = observer(() => {
                     setSessionProfit(nextP);
 
                     if (isInRecoveryRef.current) {
-                        setIsInRecovery(false);
-                        isInRecoveryRef.current = false;
-                        setAccumulatedLoss(0);
-                        const baseStk = parseFloat(initialStake) || 0.5;
-                        currentStakeRef.current = baseStk;
-                        setCurrentStake(baseStk);
+                        const newEarned = Math.round((recoveryProfitEarnedRef.current + profitVal) * 100) / 100;
+                        recoveryProfitEarnedRef.current = newEarned;
+                        setRecoveryProfitEarned(newEarned);
+
+                        if (newEarned >= lossToRecoverRef.current) {
+                            // 100% loss recovered! Revert to Even/Odd
+                            setIsInRecovery(false);
+                            isInRecoveryRef.current = false;
+                            lossToRecoverRef.current = 0;
+                            setLossToRecover(0);
+                            recoveryProfitEarnedRef.current = 0;
+                            setRecoveryProfitEarned(0);
+
+                            const baseStk = parseFloat(initialStake) || 0.5;
+                            currentStakeRef.current = baseStk;
+                            setCurrentStake(baseStk);
+
+                            addLogEntry(
+                                market,
+                                'RECOVERY',
+                                '⚡ RECOVERY COMPLETED (100% Recovered)',
+                                barrier,
+                                baseStk,
+                                'WIN',
+                                profitVal
+                            );
+                        } else {
+                            const remaining = Math.max(0, Math.round((lossToRecoverRef.current - newEarned) * 100) / 100);
+                            addLogEntry(
+                                market,
+                                contractType === 'DIGITOVER' ? 'RECOVERY_OVER' : 'RECOVERY_UNDER',
+                                `RECOVERY WIN (+$${profitVal.toFixed(2)} | $${remaining.toFixed(2)} remaining to full recovery)`,
+                                barrier,
+                                currentStakeRef.current,
+                                'WIN',
+                                profitVal
+                            );
+                        }
                     } else {
                         const baseStk = parseFloat(initialStake) || 0.5;
                         currentStakeRef.current = baseStk;
@@ -866,13 +901,16 @@ const AutoXEo: React.FC = observer(() => {
                     setSessionProfit(nextP);
 
                     if (autoRecoveryMode) {
+                        const lossAmount = Math.abs(profitVal);
+                        lossToRecoverRef.current = Math.round((lossToRecoverRef.current + lossAmount) * 100) / 100;
+                        setLossToRecover(lossToRecoverRef.current);
                         setIsInRecovery(true);
                         isInRecoveryRef.current = true;
+
                         const martMult = parseFloat(martingale) || 2.6;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
                         currentStakeRef.current = nextStake;
                         setCurrentStake(nextStake);
-                        setAccumulatedLoss(prev => prev + Math.abs(profitVal));
                     } else {
                         const martMult = parseFloat(martingale) || 2.0;
                         const nextStake = Math.round(stake * martMult * 100) / 100;
@@ -980,14 +1018,14 @@ const AutoXEo: React.FC = observer(() => {
                     const isUnderFavored = under05 >= over49;
 
                     const barrier = isUnderFavored
-                        ? (recoveryType === 'OVER_2_UNDER_8' ? 8 : 6)
-                        : (recoveryType === 'OVER_2_UNDER_8' ? 2 : 3);
+                        ? (recoveryType === 'OVER_1_UNDER_8' ? 8 : recoveryType === 'OVER_2_UNDER_7' ? 7 : 6)
+                        : (recoveryType === 'OVER_1_UNDER_8' ? 1 : recoveryType === 'OVER_2_UNDER_7' ? 2 : 3);
                     const contractType = isUnderFavored ? 'DIGITUNDER' : 'DIGITOVER';
                     const strategyType = isUnderFavored ? 'RECOVERY_UNDER' : 'RECOVERY_OVER';
 
                     const isTrigger = isUnderFavored
-                        ? lastDigit <= (barrier === 8 ? 6 : 4)
-                        : lastDigit >= (barrier === 2 ? 3 : 5);
+                        ? (lastDigit <= (barrier === 8 ? 6 : barrier === 7 ? 5 : 4) || under05 >= 25)
+                        : (lastDigit >= (barrier === 1 ? 3 : barrier === 2 ? 4 : 5) || over49 >= 25);
 
                     if (isTrigger) {
                         setBotStateSync('TRADING');
@@ -997,7 +1035,7 @@ const AutoXEo: React.FC = observer(() => {
                         } catch (e) {
                             console.error('Auto X Recovery trade error:', e);
                         }
-                        if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                        if ((botStateRef.current as AutoRunState) !== 'IDLE' && (botStateRef.current as AutoRunState) !== 'PAUSED') {
                             setBotStateSync('SCANNING');
                         }
                         await new Promise(r => setTimeout(r, 500));
@@ -1045,7 +1083,7 @@ const AutoXEo: React.FC = observer(() => {
                     } catch (e) {
                         console.error('Auto X Even trade error:', e);
                     }
-                    if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                    if ((botStateRef.current as AutoRunState) !== 'IDLE' && (botStateRef.current as AutoRunState) !== 'PAUSED') {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
@@ -1057,7 +1095,7 @@ const AutoXEo: React.FC = observer(() => {
                     } catch (e) {
                         console.error('Auto X Odd trade error:', e);
                     }
-                    if (botStateRef.current !== 'IDLE' && botStateRef.current !== 'PAUSED') {
+                    if ((botStateRef.current as AutoRunState) !== 'IDLE' && (botStateRef.current as AutoRunState) !== 'PAUSED') {
                         setBotStateSync('SCANNING');
                     }
                     await new Promise(r => setTimeout(r, 500));
@@ -1119,7 +1157,10 @@ const AutoXEo: React.FC = observer(() => {
         setConsecutiveRuns(0);
         isInRecoveryRef.current = false;
         setIsInRecovery(false);
-        setAccumulatedLoss(0);
+        lossToRecoverRef.current = 0;
+        setLossToRecover(0);
+        recoveryProfitEarnedRef.current = 0;
+        setRecoveryProfitEarned(0);
         lastProcessedTicksRef.current.clear();
         setBotStateSync('SCANNING');
         void startAutoTradingLoop();
@@ -1137,6 +1178,12 @@ const AutoXEo: React.FC = observer(() => {
         setBotStateSync('IDLE');
         autoAbortRef.current?.abort();
         executionLockRef.current = false;
+        setIsInRecovery(false);
+        isInRecoveryRef.current = false;
+        lossToRecoverRef.current = 0;
+        setLossToRecover(0);
+        recoveryProfitEarnedRef.current = 0;
+        setRecoveryProfitEarned(0);
     }, [setBotStateSync]);
 
     // TopBar controller integration
@@ -1305,6 +1352,48 @@ const AutoXEo: React.FC = observer(() => {
                         <span>Auto-Switch Market</span>
                     </label>
 
+                    <label className={`toggle-chip toggle-chip--recovery ${autoRecoveryMode ? 'active' : ''}`}>
+                        <input
+                            type='checkbox'
+                            checked={autoRecoveryMode}
+                            onChange={e => setAutoRecoveryMode(e.target.checked)}
+                            disabled={botState !== 'IDLE'}
+                        />
+                        <span>⚡ Recovery Mode</span>
+                    </label>
+
+                    {autoRecoveryMode && (
+                        <div className='recovery-quick-pills'>
+                            <button
+                                type='button'
+                                className={`rec-btn-pill ${recoveryType === 'OVER_1_UNDER_8' ? 'active' : ''}`}
+                                onClick={() => setRecoveryType('OVER_1_UNDER_8')}
+                                disabled={botState !== 'IDLE'}
+                                title='Over 1 / Under 8 (~90% Win Rate)'
+                            >
+                                Over 1 / Under 8
+                            </button>
+                            <button
+                                type='button'
+                                className={`rec-btn-pill ${recoveryType === 'OVER_2_UNDER_7' ? 'active' : ''}`}
+                                onClick={() => setRecoveryType('OVER_2_UNDER_7')}
+                                disabled={botState !== 'IDLE'}
+                                title='Over 2 / Under 7 (~80% Win Rate)'
+                            >
+                                Over 2 / Under 7
+                            </button>
+                            <button
+                                type='button'
+                                className={`rec-btn-pill ${recoveryType === 'OVER_3_UNDER_6' ? 'active' : ''}`}
+                                onClick={() => setRecoveryType('OVER_3_UNDER_6')}
+                                disabled={botState !== 'IDLE'}
+                                title='Over 3 / Under 6 (~70% Win Rate)'
+                            >
+                                Over 3 / Under 6
+                            </button>
+                        </div>
+                    )}
+
                     <button className='btn-view-toggle' onClick={() => setShowWideView(prev => !prev)}>
                         <Grid size={15} />
                         {showWideView ? 'Hide Grid View' : 'Wide Market Stats'}
@@ -1434,6 +1523,36 @@ const AutoXEo: React.FC = observer(() => {
 
                 {/* Right Workspace */}
                 <div className='auto-x-eo__workspace'>
+                    {/* Recovery Matrix Banner (Active during Over/Under Recovery) */}
+                    {isInRecovery && (
+                        <div className='auto-x-eo__recovery-banner'>
+                            <div className='recovery-banner-top'>
+                                <div className='recovery-badge'>
+                                    <span className='pulse-icon'>⚡</span>
+                                    <span className='title'>RECOVERY PROTOCOL ACTIVE (OVER/UNDER)</span>
+                                </div>
+                                <div className='recovery-metrics'>
+                                    <span className='metric-label'>RECOVERY PROGRESS:</span>
+                                    <span className='metric-val'>
+                                        ${recoveryProfitEarned.toFixed(2)} / ${lossToRecover.toFixed(2)} {currency} (
+                                        {Math.min(100, Math.round((recoveryProfitEarned / (lossToRecover || 1)) * 100))}%)
+                                    </span>
+                                </div>
+                            </div>
+                            <div className='recovery-progress-bar-bg'>
+                                <div
+                                    className='recovery-progress-bar-fill'
+                                    style={{
+                                        width: `${Math.min(100, Math.max(5, Math.round((recoveryProfitEarned / (lossToRecover || 1)) * 100)))}%`,
+                                    }}
+                                />
+                            </div>
+                            <div className='recovery-tip'>
+                                🔥 Placing {recoveryType === 'OVER_1_UNDER_8' ? 'Over 1 / Under 8' : recoveryType === 'OVER_2_UNDER_7' ? 'Over 2 / Under 7' : 'Over 3 / Under 6'} contracts until loss is 100% recovered (${recoveryProfitEarned.toFixed(2)} / ${lossToRecover.toFixed(2)} {currency}). Reverting to Even/Odd automatically upon recovery.
+                            </div>
+                        </div>
+                    )}
+
                     {/* Live 50 Ticks Trajectory Spline Chart */}
                     <div className='auto-x-eo__chart-card ep-chart-card'>
                         <div className='chart-header'>
@@ -1595,6 +1714,31 @@ const AutoXEo: React.FC = observer(() => {
                                         <option value='2'>2 Ticks</option>
                                     </select>
                                 </div>
+                                <div className='input-field'>
+                                    <label>Auto-Recovery</label>
+                                    <select
+                                        value={autoRecoveryMode ? 'true' : 'false'}
+                                        onChange={e => setAutoRecoveryMode(e.target.value === 'true')}
+                                        disabled={botState !== 'IDLE'}
+                                    >
+                                        <option value='true'>Enabled (Over/Under)</option>
+                                        <option value='false'>Disabled (Even/Odd Only)</option>
+                                    </select>
+                                </div>
+                                {autoRecoveryMode && (
+                                    <div className='input-field'>
+                                        <label>Recovery Strategy</label>
+                                        <select
+                                            value={recoveryType}
+                                            onChange={e => setRecoveryType(e.target.value as any)}
+                                            disabled={botState !== 'IDLE'}
+                                        >
+                                            <option value='OVER_1_UNDER_8'>Over 1 / Under 8 (~90% Win)</option>
+                                            <option value='OVER_2_UNDER_7'>Over 2 / Under 7 (~80% Win)</option>
+                                            <option value='OVER_3_UNDER_6'>Over 3 / Under 6 (~70% Win)</option>
+                                        </select>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

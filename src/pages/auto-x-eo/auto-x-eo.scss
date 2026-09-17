@@ -367,6 +367,58 @@
                 }
             }
 
+            .toggle-chip--recovery {
+                &.active {
+                    background: rgba(245, 197, 66, 0.15);
+                    border-color: rgba(245, 197, 66, 0.5);
+                    color: #f5c542;
+                    box-shadow: 0 0 12px rgba(245, 197, 66, 0.2);
+
+                    input[type='checkbox'] {
+                        accent-color: #f5c542;
+                    }
+                }
+            }
+
+            .recovery-quick-pills {
+                display: flex;
+                align-items: center;
+                gap: 0.35rem;
+                background: rgba(15, 23, 42, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 8px;
+                padding: 2px 4px;
+
+                .rec-btn-pill {
+                    background: transparent;
+                    border: 1px solid transparent;
+                    border-radius: 6px;
+                    color: #94a3b8;
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    padding: 0.3rem 0.6rem;
+                    cursor: pointer;
+                    transition: all 0.2s;
+
+                    &:hover:not(:disabled) {
+                        color: #f8fafc;
+                        background: rgba(255, 255, 255, 0.05);
+                    }
+
+                    &.active {
+                        background: linear-gradient(135deg, rgba(245, 197, 66, 0.25), rgba(234, 179, 8, 0.35));
+                        border-color: rgba(245, 197, 66, 0.6);
+                        color: #f5c542;
+                        box-shadow: 0 0 10px rgba(245, 197, 66, 0.3);
+                    }
+
+                    &:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+                }
+            }
+
             .btn-view-toggle {
                 display: flex;
                 align-items: center;
@@ -742,6 +794,86 @@
         gap: 1.25rem;
         width: 100%;
         min-width: 0;
+
+        .auto-x-eo__recovery-banner {
+            background: linear-gradient(135deg, rgba(245, 197, 66, 0.12), rgba(234, 88, 12, 0.12));
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(245, 197, 66, 0.4);
+            border-radius: 1rem;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 0 25px rgba(245, 197, 66, 0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            animation: fadeIn 0.3s ease-out;
+
+            .recovery-banner-top {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+
+                .recovery-badge {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+
+                    .pulse-icon {
+                        font-size: 1.1rem;
+                    }
+
+                    .title {
+                        font-size: 0.88rem;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        color: #f5c542;
+                        text-shadow: 0 0 10px rgba(245, 197, 66, 0.4);
+                    }
+                }
+
+                .recovery-metrics {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    font-size: 0.82rem;
+
+                    .metric-label {
+                        color: #94a3b8;
+                        font-weight: 600;
+                    }
+
+                    .metric-val {
+                        color: #10b981;
+                        font-weight: 800;
+                        font-family: 'JetBrains Mono', monospace;
+                    }
+                }
+            }
+
+            .recovery-progress-bar-bg {
+                width: 100%;
+                height: 8px;
+                background: rgba(15, 23, 42, 0.8);
+                border-radius: 4px;
+                overflow: hidden;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+
+                .recovery-progress-bar-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, #f5c542, #10b981);
+                    border-radius: 4px;
+                    transition: width 0.4s ease;
+                    box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+                }
+            }
+
+            .recovery-tip {
+                font-size: 0.78rem;
+                color: #cbd5e1;
+                line-height: 1.4;
+            }
+        }
     }
 
     // ── Chart Card (50 Ticks Wave Spline) ───────────────────────────────────────
