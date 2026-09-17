@@ -75,7 +75,7 @@ export interface TransactionRecord {
 export interface JournalLogItem {
     id: string;
     time: string;
-    type: 'TRADE' | 'STAGE_UNLOCK' | 'GOAL_COMPLETE' | 'SIGNAL' | 'SYSTEM' | 'ERROR';
+    type: 'TRADE' | 'STAGE_UNLOCK' | 'STAKE_SCALE' | 'GOAL_COMPLETE' | 'SIGNAL' | 'SYSTEM' | 'ERROR';
     title: string;
     description: string;
     level?: 'info' | 'success' | 'warning' | 'error';
@@ -433,6 +433,17 @@ const Autoflipper: React.FC = observer(() => {
         marketScrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
     };
 
+    // ── Live Compounded Capital & Dynamic Risk-Based Stake ─────────────────────
+    const currentCompoundedCapital = useMemo(() => {
+        const startCap = Number(compStartCapital) || 100;
+        return Math.max(5, Math.round((startCap + Math.max(0, sessionProfit)) * 100) / 100);
+    }, [compStartCapital, sessionProfit]);
+
+    const dynamicCompoundedStake = useMemo(() => {
+        const riskPct = Number(compRiskPercent) || 2.0;
+        return Math.max(0.35, Math.round(currentCompoundedCapital * (riskPct / 100) * 100) / 100);
+    }, [currentCompoundedCapital, compRiskPercent]);
+
     // Initialize market storage
     useEffect(() => {
         isMountedRef.current = true;
@@ -701,10 +712,10 @@ const Autoflipper: React.FC = observer(() => {
 
         if (isCompoundingLinked || forceSyncWithEngine) {
             setTakeProfit(targetProf.toFixed(2));
-            const baseStake = stages[0]?.recommendedStake || 1.0;
-            setInitialStake(baseStake.toFixed(2));
+            const calculatedBase = Math.max(0.35, Math.round(startCapital * (riskPct / 100) * 100) / 100);
+            setInitialStake(calculatedBase.toFixed(2));
             if (botStateRef.current === 'IDLE') {
-                setCurrentStake(baseStake);
+                setCurrentStake(calculatedBase);
             }
         }
     };
@@ -759,13 +770,13 @@ const Autoflipper: React.FC = observer(() => {
                 stage: 1,
                 timeLabel: '1h',
                 targetBalance: Number(compStartCapital) || 100,
-                recommendedStake: Number(initialStake) || 1.0,
+                recommendedStake: dynamicCompoundedStake,
                 stageProfit: 30,
                 cumulativeProfit: 30,
                 status: 'ACTIVE' as const,
             }
         );
-    }, [stagesWithStatus, activeStageIndex, compStartCapital, initialStake]);
+    }, [stagesWithStatus, activeStageIndex, compStartCapital, dynamicCompoundedStake]);
 
     // Stage progress calculation
     const activeStageStartProfit = activeStageIndex > 0 ? (stagesWithStatus[activeStageIndex - 1]?.cumulativeProfit ?? 0) : 0;
@@ -781,7 +792,7 @@ const Autoflipper: React.FC = observer(() => {
         setIsCompoundingLinked(true);
         const targetProf = Number(compTargetProfit) || 250;
         setTakeProfit(targetProf.toFixed(2));
-        const baseStake = activeStage.recommendedStake || compStages[0]?.recommendedStake || Number(initialStake) || 1.0;
+        const baseStake = dynamicCompoundedStake;
         setInitialStake(baseStake.toFixed(2));
         if (botState === 'IDLE') {
             setCurrentStake(baseStake);
@@ -792,7 +803,7 @@ const Autoflipper: React.FC = observer(() => {
                 time: new Date().toLocaleTimeString(),
                 type: 'SYSTEM',
                 title: 'Compounding Parameters Synchronized',
-                description: `Linked Base Stake: $${baseStake.toFixed(2)} | Target Goal: +$${targetProf.toFixed(2)} (${compStages.length} Stages)`,
+                description: `Linked Base Stake: $${baseStake.toFixed(2)} (${compRiskPercent}% of $${currentCompoundedCapital.toFixed(2)}) | Target Goal: +$${targetProf.toFixed(2)}`,
                 level: 'info',
             },
             ...prev,
@@ -804,6 +815,12 @@ const Autoflipper: React.FC = observer(() => {
         setCompDurationValue(value);
         setCompDurationUnit(unit);
         generateCompoundingPlan(compStartCapital, compTargetProfit, value, unit, compRiskPercent, compNumStages);
+    };
+
+    // Quick Risk Percent Updater
+    const handleUpdateRiskPercent = (newRisk: string) => {
+        setCompRiskPercent(newRisk);
+        generateCompoundingPlan(compStartCapital, compTargetProfit, compDurationValue, compDurationUnit, newRisk, compNumStages, true);
     };
 
     // ── Trade Execution Logic ──────────────────────────────────────────────────
@@ -973,46 +990,71 @@ const Autoflipper: React.FC = observer(() => {
                     setSessionProfit(p => {
                         const newP = p + profit;
 
-                        if (isCompoundingLinked && compStages.length > 0) {
+                        if (isCompoundingLinked) {
                             const targetGoal = Number(compTargetProfit) || 250;
-                            const prevStageIdx = compStages.findIndex(st => p < st.cumulativeProfit);
-                            const newStageIdx = compStages.findIndex(st => newP < st.cumulativeProfit);
+                            const startCap = Number(compStartCapital) || 100;
+                            const riskPct = Number(compRiskPercent) || 2.0;
 
-                            if (newP >= targetGoal) {
-                                // Compounding Plan Complete!
-                                setMilestone({ isOpen: true, type: 'tp' });
-                                setBotState('IDLE');
+                            // ── Live Compounding Stake Scaling Calculation ──
+                            // As profit accumulates, the new compounded balance increases,
+                            // scaling the next base stake dynamically with the chosen risk %.
+                            const newCapital = Math.max(5, startCap + Math.max(0, newP));
+                            const nextCompoundedBase = Math.max(0.35, Math.round(newCapital * (riskPct / 100) * 100) / 100);
+
+                            setCurrentStake(nextCompoundedBase);
+                            setInitialStake(nextCompoundedBase.toFixed(2));
+
+                            if (nextCompoundedBase > stakeToUse) {
                                 setJournalLogs(prevLogs => [
                                     {
                                         id: String(Date.now() + 1),
                                         time: new Date().toLocaleTimeString(),
-                                        type: 'GOAL_COMPLETE',
-                                        title: '🏆 Compounding Target Reached!',
-                                        description: `Full goal of +$${targetGoal.toFixed(2)} completed across all ${compStages.length} stages!`,
+                                        type: 'STAKE_SCALE',
+                                        title: `📈 Compounded Stake Escalated`,
+                                        description: `Base stake scaled to $${nextCompoundedBase.toFixed(2)} based on ${riskPct}% risk on $${newCapital.toFixed(2)} total balance.`,
                                         level: 'success',
-                                        badge: 'VICTORY',
+                                        badge: `STAKE $${nextCompoundedBase.toFixed(2)}`,
                                     },
                                     ...prevLogs.slice(0, 99),
                                 ]);
-                            } else if (newStageIdx > prevStageIdx && newStageIdx !== -1) {
-                                // Stepped up to next compounding stage
-                                const nextStageObj = compStages[newStageIdx];
-                                setCurrentStake(nextStageObj.recommendedStake);
-                                setJournalLogs(prevLogs => [
-                                    {
-                                        id: String(Date.now() + 1),
-                                        time: new Date().toLocaleTimeString(),
-                                        type: 'STAGE_UNLOCK',
-                                        title: `🚀 STAGE #${nextStageObj.stage} UNLOCKED`,
-                                        description: `Milestone profit +$${nextStageObj.cumulativeProfit.toFixed(2)} reached! Base stake adjusted to $${nextStageObj.recommendedStake.toFixed(2)}.`,
-                                        level: 'success',
-                                        badge: `STAGE #${nextStageObj.stage}`,
-                                    },
-                                    ...prevLogs.slice(0, 99),
-                                ]);
-                            } else {
-                                const currentBase = (compStages[newStageIdx === -1 ? compStages.length - 1 : newStageIdx] || activeStage).recommendedStake;
-                                setCurrentStake(currentBase);
+                            }
+
+                            if (compStages.length > 0) {
+                                const prevStageIdx = compStages.findIndex(st => p < st.cumulativeProfit);
+                                const newStageIdx = compStages.findIndex(st => newP < st.cumulativeProfit);
+
+                                if (newP >= targetGoal) {
+                                    // Compounding Plan Complete!
+                                    setMilestone({ isOpen: true, type: 'tp' });
+                                    setBotState('IDLE');
+                                    setJournalLogs(prevLogs => [
+                                        {
+                                            id: String(Date.now() + 2),
+                                            time: new Date().toLocaleTimeString(),
+                                            type: 'GOAL_COMPLETE',
+                                            title: '🏆 Compounding Target Reached!',
+                                            description: `Full goal of +$${targetGoal.toFixed(2)} completed across all ${compStages.length} stages!`,
+                                            level: 'success',
+                                            badge: 'VICTORY',
+                                        },
+                                        ...prevLogs.slice(0, 99),
+                                    ]);
+                                } else if (newStageIdx > prevStageIdx && newStageIdx !== -1) {
+                                    // Stepped up to next compounding stage milestone
+                                    const nextStageObj = compStages[newStageIdx];
+                                    setJournalLogs(prevLogs => [
+                                        {
+                                            id: String(Date.now() + 3),
+                                            time: new Date().toLocaleTimeString(),
+                                            type: 'STAGE_UNLOCK',
+                                            title: `🚀 STAGE #${nextStageObj.stage} UNLOCKED`,
+                                            description: `Milestone profit +$${nextStageObj.cumulativeProfit.toFixed(2)} reached! Target balance: $${nextStageObj.targetBalance.toFixed(2)}.`,
+                                            level: 'success',
+                                            badge: `STAGE #${nextStageObj.stage}`,
+                                        },
+                                        ...prevLogs.slice(0, 99),
+                                    ]);
+                                }
                             }
                         } else {
                             setCurrentStake(Number(initialStake) || 1);
@@ -1060,7 +1102,7 @@ const Autoflipper: React.FC = observer(() => {
                     setSelectedSymbol(bestMarketCandidate);
                     setJournalLogs(prev => [
                         {
-                            id: String(Date.now() + 2),
+                            id: String(Date.now() + 4),
                             time: new Date().toLocaleTimeString(),
                             type: 'SYSTEM',
                             title: 'Auto-Switch Market Activated',
@@ -1112,7 +1154,8 @@ const Autoflipper: React.FC = observer(() => {
             isCompoundingLinked,
             compStages,
             compTargetProfit,
-            activeStage,
+            compStartCapital,
+            compRiskPercent,
         ]
     );
 
@@ -1141,10 +1184,9 @@ const Autoflipper: React.FC = observer(() => {
             return;
         }
         consecutiveLossesRef.current = 0;
-        const baseStake = isCompoundingLinked
-            ? (activeStage.recommendedStake || Number(initialStake) || 1.0)
-            : (Number(initialStake) || 1.0);
+        const baseStake = isCompoundingLinked ? dynamicCompoundedStake : (Number(initialStake) || 1.0);
         setCurrentStake(baseStake);
+        setInitialStake(baseStake.toFixed(2));
         setBotState('WAITING_SIGNAL');
         playSoundCue('signal');
 
@@ -1154,7 +1196,7 @@ const Autoflipper: React.FC = observer(() => {
                 time: new Date().toLocaleTimeString(),
                 type: 'SYSTEM',
                 title: 'Autoflipper Engine Activated',
-                description: `Started with Base Stake $${baseStake.toFixed(2)}. Monitoring ${selectedSymbol} for regime flip triggers.`,
+                description: `Started with Base Stake $${baseStake.toFixed(2)} (${compRiskPercent}% risk on $${currentCompoundedCapital.toFixed(2)} Bal). Monitoring ${selectedSymbol} for regime flip triggers.`,
                 level: 'info',
             },
             ...prev,
@@ -1262,7 +1304,7 @@ const Autoflipper: React.FC = observer(() => {
                             <span style={{ color: '#ef4444' }}>{lossesCount}L</span>
                         </span>
                     </div>
-                    <div className='af-metric-pill'>
+                    <div className='af-metric-pill' title='Current active stake (dynamically calculated from risk and compounding)'>
                         <span className='af-metric-pill__label'>Active Stake</span>
                         <span className='af-metric-pill__val af-metric-pill__val--gold'>
                             {currentStake.toFixed(2)} {currency}
@@ -1623,7 +1665,7 @@ const Autoflipper: React.FC = observer(() => {
                             max='10'
                             step='0.5'
                             value={compRiskPercent}
-                            onChange={e => setCompRiskPercent(e.target.value)}
+                            onChange={e => handleUpdateRiskPercent(e.target.value)}
                             placeholder='2.0'
                         />
                     </div>
@@ -1674,7 +1716,7 @@ const Autoflipper: React.FC = observer(() => {
                             </span>
                         </div>
                         <div className='gauge-right'>
-                            <span>Base Stake: <strong>${activeStage.recommendedStake.toFixed(2)}</strong></span>
+                            <span>Base Stake: <strong>${dynamicCompoundedStake.toFixed(2)}</strong></span>
                             <span className='gauge-pct'>{stageProgressPct}%</span>
                         </div>
                     </div>
@@ -1687,7 +1729,7 @@ const Autoflipper: React.FC = observer(() => {
                     <div className='gauge-sub'>
                         <span>Progress: <strong>${stageCurrentProgress.toFixed(2)} / ${activeStage.stageProfit.toFixed(2)}</strong></span>
                         <span className='link-state-indicator'>
-                            {isCompoundingLinked ? '🔗 Trade Engine Linked & Auto-Escalating' : '⚠️ Manual Stake Mode'}
+                            {isCompoundingLinked ? `🔗 Compounding Active (Base $${dynamicCompoundedStake.toFixed(2)} on $${currentCompoundedCapital.toFixed(2)} Bal)` : '⚠️ Manual Stake Mode'}
                         </span>
                     </div>
                 </div>
@@ -1771,30 +1813,73 @@ const Autoflipper: React.FC = observer(() => {
                         <span className='dot' />
                         <span>
                             {isCompoundingLinked
-                                ? `Linked with Stage #${activeStage.stage} (Base Stake: $${activeStage.recommendedStake.toFixed(2)}, Goal: +$${(Number(compTargetProfit) || 250).toFixed(2)})`
-                                : 'Manual Stake Mode: Driven by input fields below'}
+                                ? `Dynamic Compounding Active: Base Stake is $${dynamicCompoundedStake.toFixed(2)} (${compRiskPercent}% of $${currentCompoundedCapital.toFixed(2)} Balance) & scales up with every win`
+                                : 'Manual Stake Mode: Fixed stake without automated compounding'}
                         </span>
                         <button
                             className='btn-switch-link'
                             type='button'
                             onClick={() => setIsCompoundingLinked(!isCompoundingLinked)}
                         >
-                            {isCompoundingLinked ? 'Manual Mode' : 'Link Plan'}
+                            {isCompoundingLinked ? 'Switch to Manual' : 'Link Compounding'}
                         </button>
                     </div>
 
                     <div className='af-inputs-grid'>
+                        {/* Risk % per trade control */}
                         <div className='af-input-group'>
-                            <label>Initial Stake ({currency}) {isCompoundingLinked && '• [Plan Stake]'}</label>
+                            <label>Risk % per Trade</label>
+                            <div className='af-risk-input-composite'>
+                                <input
+                                    type='number'
+                                    min='0.5'
+                                    max='15'
+                                    step='0.5'
+                                    value={compRiskPercent}
+                                    onChange={e => handleUpdateRiskPercent(e.target.value)}
+                                    disabled={botState !== 'IDLE'}
+                                />
+                                <div className='af-risk-quick-pills'>
+                                    {['1', '2', '3', '5'].map(r => (
+                                        <button
+                                            key={r}
+                                            type='button'
+                                            className={`risk-pill ${compRiskPercent === r ? 'risk-pill--active' : ''}`}
+                                            onClick={() => handleUpdateRiskPercent(r)}
+                                            disabled={botState !== 'IDLE'}
+                                        >
+                                            {r}%
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Base Stake Field */}
+                        <div className='af-input-group'>
+                            <label>
+                                Base Stake ({currency}) {isCompoundingLinked && `• [${compRiskPercent}% Risk]`}
+                            </label>
                             <input
                                 type='number'
-                                step='0.1'
+                                step='0.05'
                                 min='0.35'
-                                value={initialStake}
-                                onChange={e => setInitialStake(e.target.value)}
-                                disabled={botState !== 'IDLE'}
+                                value={isCompoundingLinked ? dynamicCompoundedStake.toFixed(2) : initialStake}
+                                onChange={e => {
+                                    setInitialStake(e.target.value);
+                                    if (!isCompoundingLinked) {
+                                        setCurrentStake(Number(e.target.value) || 1.0);
+                                    }
+                                }}
+                                disabled={isCompoundingLinked || botState !== 'IDLE'}
                             />
+                            {isCompoundingLinked && (
+                                <span className='af-stake-comp-hint'>
+                                    📈 Scales dynamically: ${dynamicCompoundedStake.toFixed(2)} on ${currentCompoundedCapital.toFixed(2)} Bal
+                                </span>
+                            )}
                         </div>
+
                         <div className='af-input-group'>
                             <label>Martingale Multiplier</label>
                             <input
@@ -1805,6 +1890,7 @@ const Autoflipper: React.FC = observer(() => {
                                 disabled={botState !== 'IDLE'}
                             />
                         </div>
+
                         <div className='af-input-group'>
                             <label>Take Profit ({currency}) {isCompoundingLinked && '• [Plan Goal]'}</label>
                             <input
@@ -1814,6 +1900,7 @@ const Autoflipper: React.FC = observer(() => {
                                 disabled={botState !== 'IDLE'}
                             />
                         </div>
+
                         <div className='af-input-group'>
                             <label>Stop Loss ({currency})</label>
                             <input
@@ -1846,13 +1933,6 @@ const Autoflipper: React.FC = observer(() => {
                                     <option value='m'>Minutes</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <div className='af-input-group'>
-                            <label>Strategy Mode</label>
-                            <select value='auto' disabled>
-                                <option value='auto'>Under 6 / Over 3 (Auto-Pilot)</option>
-                            </select>
                         </div>
                     </div>
 

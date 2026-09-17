@@ -1489,6 +1489,56 @@
                     }
                 }
 
+                .af-risk-input-composite {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+
+                    input {
+                        width: 100%;
+                    }
+
+                    .af-risk-quick-pills {
+                        display: flex;
+                        gap: 0.2rem;
+
+                        .risk-pill {
+                            flex: 1;
+                            background: rgba(255, 255, 255, 0.05);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            color: #94a3b8;
+                            font-size: 0.62rem;
+                            font-weight: 800;
+                            padding: 0.12rem 0.25rem;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                            text-align: center;
+
+                            &:hover {
+                                background: rgba(0, 240, 255, 0.2);
+                                border-color: #00f0ff;
+                                color: #00f0ff;
+                            }
+
+                            &--active {
+                                background: rgba(0, 240, 255, 0.25);
+                                border-color: #00f0ff;
+                                color: #00f0ff;
+                                box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+                            }
+                        }
+                    }
+                }
+
+                .af-stake-comp-hint {
+                    font-size: 0.58rem;
+                    color: #10b981;
+                    font-weight: 700;
+                    margin-top: 0.1rem;
+                    line-height: 1.2;
+                }
+
                 .af-duration-input-composite {
                     display: flex;
                     gap: 0.25rem;
