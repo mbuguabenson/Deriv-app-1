@@ -87,15 +87,12 @@ export default class MarketkillerStore {
     @observable accessor matches_settings = {
         check_ticks: 15,
         predictions: [] as number[],
-        slot_strategies: [] as TStrategyType[],
-        default_strategy: 'DIGITDIFF' as TStrategyType,
         is_running: false,
         is_auto: true,
         stake: 0.35,
         duration: 1,
         simultaneous_trades: 1,
-        bulk_trades_count: 1,
-        enabled_conditions: [true, true, true, true, false, false, false, false],
+        enabled_conditions: [true, true, true, true, false, false],
         c4_op: '>=',
         c4_val: 12,
         c4_ticks: 15,
@@ -105,14 +102,6 @@ export default class MarketkillerStore {
         max_predictions: 6,
         martingale_enabled: true,
         martingale_multiplier: 0.5,
-        // Specific market prediction & condition controls
-        specific_differs_prediction: 0,
-        differs_target_mode: 'least' as 'least' | 'most' | '2nd_least' | 'custom',
-        over_barrier: 1,
-        under_barrier: 8,
-        even_odd_min_bias: 52,
-        over_under_min_bias: 52,
-        differs_max_freq: 10,
     };
 
     @observable accessor matches_ranks = {
@@ -606,57 +595,50 @@ export default class MarketkillerStore {
         if (most === null || second === null || least === null) return;
 
         const enabled = this.matches_settings.enabled_conditions;
-        const defaultStrat = this.matches_settings.default_strategy || 'DIGITDIFF';
-        const percentages = this.stats_engine.getPercentages();
-        const powers = this.recent_powers;
-        const len = powers.length;
+
+        // Use sorted digits by count for Auto-Discovery
         const sortedDigits = [...this.digit_stats].sort((a, b) => b.count - a.count).map(s => s.digit);
-        const leastDigits = [...this.digit_stats].sort((a, b) => a.count - b.count).map(s => s.digit);
-        const activeSlotsCount = this.matches_settings.simultaneous_trades || 1;
-        const bulkCount = this.matches_settings.bulk_trades_count || 1;
 
-        const tradesToExecute: Array<{ type: TStrategyType; symbol: string; barrier?: number; stake: number }> = [];
+        // Strictly map to simultaneous_trades, using 0 as fallback for unedited manual slots
+        const final_targets: number[] = this.matches_settings.is_auto
+            ? sortedDigits.slice(0, this.matches_settings.simultaneous_trades || 1)
+            : Array.from({ length: this.matches_settings.simultaneous_trades || 1 }).map(
+                  (_, i) => this.matches_settings.predictions[i] ?? 0
+              );
 
-        // Check common digit conditions (Rules 2, 3, 4, 5, 8)
-        const checkDigitRules = (digit: number, isDiffers = false) => {
+        const shouldTradeDigit = (digit: number) => {
             const stat = this.digit_stats.find(s => s.digit === digit);
             if (!stat) return false;
 
-            // Rule 2: Power Acceleration
+            const powers = this.recent_powers;
+            const len = powers.length;
+
+            // Rule 2: Start if digit starts increasing in power
             if (enabled[1]) {
                 if (len < 2) return false;
                 const lastPower = powers[len - 1][digit];
                 const prevPower = powers[len - 2][digit];
-                if (isDiffers) {
-                    // For differs, target power should not be surging upwards
-                    if (lastPower > prevPower && lastPower > 15) return false;
-                } else {
-                    if (lastPower <= prevPower) return false;
-                }
+                if (lastPower <= prevPower) return false;
             }
 
-            // Rule 3: Dual Velocity (two consecutive increases)
+            // Rule 3: Start if digit increases simultaneously twice (consecutive)
             if (enabled[2]) {
                 if (len < 3) return false;
                 const p1 = powers[len - 3][digit];
                 const p2 = powers[len - 2][digit];
                 const p3 = powers[len - 1][digit];
-                if (!isDiffers && !(p3 > p2 && p2 > p1)) return false;
+                if (!(p3 > p2 && p2 > p1)) return false;
             }
 
-            // Rule 4: Sequential Stability (Last 5 digits)
+            // Rule 4: If last 5 digits are Top 3
             if (enabled[3]) {
                 const last5 = this.ticks.slice(-5);
-                if (isDiffers) {
-                    // For differs, target digit should not have appeared in last 3 ticks
-                    if (last5.slice(-3).includes(digit)) return false;
-                } else {
-                    const top3 = [most, second, least];
-                    if (!last5.every(d => top3.includes(d))) return false;
-                }
+                const top3 = [most, second, least];
+                const allInTop3 = last5.every(d => top3.includes(d));
+                if (!allInTop3) return false;
             }
 
-            // Rule 5: Probability Threshold
+            // Probability Gate (C4 logic)
             if (enabled[4]) {
                 const { c4_op: op, c4_val: val } = this.matches_settings;
                 const power = stat.percentage;
@@ -667,124 +649,22 @@ export default class MarketkillerStore {
                 if (op === '<=' && power > val) return false;
             }
 
-            // Rule 8: Differs Safety Gate (Frequency <= differs_max_freq)
-            if (isDiffers && enabled[7]) {
-                if (stat.percentage > (this.matches_settings.differs_max_freq || 10)) return false;
-            }
-
             return true;
         };
 
-        for (let slotIdx = 0; slotIdx < activeSlotsCount; slotIdx++) {
-            const slotStrat = this.matches_settings.slot_strategies[slotIdx] || defaultStrat;
+        const valid_targets = final_targets.filter(shouldTradeDigit);
 
-            if (slotStrat === 'DIGITEVEN' || slotStrat === 'DIGITODD') {
-                const isEven = slotStrat === 'DIGITEVEN';
-                const pct = isEven ? percentages.even : percentages.odd;
+        if (valid_targets.length > 0) {
+            // Execute ALL valid targets in a single concurrent burst
+            const trades = valid_targets.map(digit => ({
+                type: 'DIGITMATCH',
+                symbol: this.symbol,
+                barrier: digit,
+                stake: this.calculateMatchesStake(),
+            }));
 
-                // Gate 6: Even/Odd Bias Gate
-                if (enabled[5] && pct < (this.matches_settings.even_odd_min_bias || 52)) {
-                    continue;
-                }
-
-                for (let b = 0; b < bulkCount; b++) {
-                    tradesToExecute.push({
-                        type: slotStrat,
-                        symbol: this.symbol,
-                        stake: this.calculateMatchesStake(),
-                    });
-                }
-            } else if (slotStrat === 'DIGITOVER') {
-                const barrier = this.matches_settings.is_auto
-                    ? (this.matches_settings.over_barrier ?? 1)
-                    : (this.matches_settings.predictions[slotIdx] ?? this.matches_settings.over_barrier ?? 1);
-
-                // Gate 7: Over/Under Momentum Gate
-                if (enabled[6] && percentages.over < (this.matches_settings.over_under_min_bias || 50)) {
-                    continue;
-                }
-
-                for (let b = 0; b < bulkCount; b++) {
-                    tradesToExecute.push({
-                        type: 'DIGITOVER',
-                        symbol: this.symbol,
-                        barrier,
-                        stake: this.calculateMatchesStake(),
-                    });
-                }
-            } else if (slotStrat === 'DIGITUNDER') {
-                const barrier = this.matches_settings.is_auto
-                    ? (this.matches_settings.under_barrier ?? 8)
-                    : (this.matches_settings.predictions[slotIdx] ?? this.matches_settings.under_barrier ?? 8);
-
-                // Gate 7: Over/Under Momentum Gate
-                if (enabled[6] && percentages.under < (this.matches_settings.over_under_min_bias || 50)) {
-                    continue;
-                }
-
-                for (let b = 0; b < bulkCount; b++) {
-                    tradesToExecute.push({
-                        type: 'DIGITUNDER',
-                        symbol: this.symbol,
-                        barrier,
-                        stake: this.calculateMatchesStake(),
-                    });
-                }
-            } else if (slotStrat === 'DIGITDIFF') {
-                let targetDigit: number;
-                if (this.matches_settings.is_auto) {
-                    if (this.matches_settings.differs_target_mode === 'custom') {
-                        targetDigit = this.matches_settings.specific_differs_prediction ?? leastDigits[slotIdx] ?? 0;
-                    } else if (this.matches_settings.differs_target_mode === 'most') {
-                        targetDigit = sortedDigits[slotIdx] ?? 0;
-                    } else if (this.matches_settings.differs_target_mode === '2nd_least') {
-                        targetDigit = leastDigits[1] ?? leastDigits[0] ?? 0;
-                    } else {
-                        targetDigit = leastDigits[slotIdx] ?? 0;
-                    }
-                } else {
-                    targetDigit = this.matches_settings.predictions[slotIdx] ?? (leastDigits[slotIdx] ?? 0);
-                }
-
-                if (!checkDigitRules(targetDigit, true)) {
-                    continue;
-                }
-
-                for (let b = 0; b < bulkCount; b++) {
-                    tradesToExecute.push({
-                        type: 'DIGITDIFF',
-                        symbol: this.symbol,
-                        barrier: targetDigit,
-                        stake: this.calculateMatchesStake(),
-                    });
-                }
-            } else {
-                // DIGITMATCH
-                let targetDigit: number;
-                if (this.matches_settings.is_auto) {
-                    targetDigit = sortedDigits[slotIdx] ?? 0;
-                } else {
-                    targetDigit = this.matches_settings.predictions[slotIdx] ?? (sortedDigits[slotIdx] ?? 0);
-                }
-
-                if (!checkDigitRules(targetDigit, false)) {
-                    continue;
-                }
-
-                for (let b = 0; b < bulkCount; b++) {
-                    tradesToExecute.push({
-                        type: 'DIGITMATCH',
-                        symbol: this.symbol,
-                        barrier: targetDigit,
-                        stake: this.calculateMatchesStake(),
-                    });
-                }
-            }
-        }
-
-        if (tradesToExecute.length > 0) {
-            console.log(`[Marketkiller] Auto-Execution triggered ${tradesToExecute.length} trades.`);
-            this.executeConcurrentTrades(tradesToExecute);
+            console.log(`[Marketkiller] Placing ${trades.length} simultaneous trades for digits:`, valid_targets);
+            this.executeConcurrentTrades(trades);
 
             runInAction(() => {
                 this.signal_detected = true;
@@ -970,80 +850,36 @@ export default class MarketkillerStore {
 
     @action
     public executeOneShot = async () => {
-        const bulkCount = this.matches_settings.bulk_trades_count || 1;
         const sortedDigits = [...this.digit_stats].sort((a, b) => b.count - a.count).map(s => s.digit);
-        const leastDigits = [...this.digit_stats].sort((a, b) => a.count - b.count).map(s => s.digit);
 
-        const activeSlotsCount = this.matches_settings.simultaneous_trades || 1;
-        const trades: any[] = [];
+        // Ensure we fetch EXACTLY the number of active slots chosen by the user. Unedited slots will default to '0'.
+        const targets: number[] = this.matches_settings.is_auto
+            ? sortedDigits.slice(0, this.matches_settings.simultaneous_trades || 1)
+            : Array.from({ length: this.matches_settings.simultaneous_trades || 1 }).map(
+                  (_, i) => this.matches_settings.predictions[i] ?? 0
+              );
 
-        for (let i = 0; i < activeSlotsCount; i++) {
-            const slotStrat = this.matches_settings.slot_strategies[i] || this.matches_settings.default_strategy || 'DIGITDIFF';
+        if (targets.length === 0) return;
 
-            let targetDigit: number | undefined;
-            if (this.matches_settings.is_auto) {
-                if (slotStrat === 'DIGITDIFF') {
-                    if (this.matches_settings.differs_target_mode === 'custom') {
-                        targetDigit = this.matches_settings.specific_differs_prediction ?? leastDigits[i] ?? 0;
-                    } else if (this.matches_settings.differs_target_mode === 'most') {
-                        targetDigit = sortedDigits[i] ?? 0;
-                    } else if (this.matches_settings.differs_target_mode === '2nd_least') {
-                        targetDigit = leastDigits[1] ?? leastDigits[0] ?? 0;
-                    } else {
-                        targetDigit = leastDigits[i] ?? 0;
-                    }
-                } else if (slotStrat === 'DIGITOVER') {
-                    targetDigit = this.matches_settings.over_barrier ?? 1;
-                } else if (slotStrat === 'DIGITUNDER') {
-                    targetDigit = this.matches_settings.under_barrier ?? 8;
-                } else {
-                    targetDigit = sortedDigits[i] ?? 0;
-                }
-            } else {
-                if (slotStrat === 'DIGITOVER') {
-                    targetDigit = this.matches_settings.predictions[i] ?? (this.matches_settings.over_barrier ?? 1);
-                } else if (slotStrat === 'DIGITUNDER') {
-                    targetDigit = this.matches_settings.predictions[i] ?? (this.matches_settings.under_barrier ?? 8);
-                } else {
-                    targetDigit = this.matches_settings.predictions[i] ?? 0;
-                }
-            }
-
-            const barrier = (slotStrat === 'DIGITEVEN' || slotStrat === 'DIGITODD') ? undefined : targetDigit;
-
-            for (let b = 0; b < bulkCount; b++) {
-                trades.push({
-                    type: slotStrat,
-                    symbol: this.symbol,
-                    barrier,
-                    stake: this.matches_settings.stake,
-                });
-            }
-        }
-
-        if (trades.length > 0) {
-            await this.executeConcurrentTrades(trades);
-        }
-    };
-
-    @action
-    public executeSingleManualTrade = async (
-        target: number | string,
-        strategyType?: TStrategyType,
-        customBulkCount?: number
-    ) => {
-        const strat = strategyType || this.matches_settings.default_strategy || 'DIGITMATCH';
-        const count = customBulkCount || this.matches_settings.bulk_trades_count || 1;
-        const stake = this.matches_settings.stake;
-        const barrier = (strat === 'DIGITEVEN' || strat === 'DIGITODD') ? undefined : Number(target);
-
-        const trades = Array(count).fill(null).map(() => ({
-            type: strat,
+        const trades = targets.map(digit => ({
+            type: 'DIGITMATCH',
             symbol: this.symbol,
-            barrier,
-            stake,
+            barrier: digit,
+            stake: this.matches_settings.stake,
         }));
 
         await this.executeConcurrentTrades(trades);
+    };
+
+    @action
+    public executeSingleManualTrade = async (digit: number) => {
+        const trade = {
+            type: 'DIGITMATCH',
+            symbol: this.symbol,
+            barrier: digit,
+            stake: this.matches_settings.stake,
+        };
+
+        await this.executeConcurrentTrades([trade]);
     };
 }

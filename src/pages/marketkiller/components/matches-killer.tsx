@@ -78,7 +78,6 @@ const MatchesKiller = observer(() => {
     } = marketkiller;
 
     const last15 = useMemo(() => ticks.slice(-15).reverse(), [ticks]);
-    const percentages = marketkiller.stats_engine.getPercentages();
 
     const toggleCondition = (index: number) => {
         const next = [...matches_settings.enabled_conditions];
@@ -89,14 +88,11 @@ const MatchesKiller = observer(() => {
     };
 
     const conditions = [
-        { id: 1, key: '1. TOP-3 / LEAST RANKING', desc: 'Auto-select dominant digit (Matches) or coldest digit (Differs)' },
-        { id: 2, key: '2. POWER ACCELERATION', desc: 'Momentum trend verification for selected strategy' },
-        { id: 3, key: '3. DUAL VELOCITY', desc: 'Consecutive velocity surge confirmation before entry' },
-        { id: 4, key: '4. SEQUENTIAL STABILITY', desc: 'Last 5 ticks conform to stability threshold' },
-        { id: 5, key: '5. PROBABILITY THRESHOLD', desc: 'Digit frequency must satisfy N% condition' },
-        { id: 6, key: '6. EVEN/ODD BIAS GATE', desc: `Trigger Even/Odd when market bias >= ${matches_settings.even_odd_min_bias || 52}%` },
-        { id: 7, key: '7. OVER/UNDER MOMENTUM', desc: `Trigger Over/Under when cluster >= ${matches_settings.over_under_min_bias || 50}%` },
-        { id: 8, key: '8. DIFFERS SAFETY GATE', desc: `Trigger Differs only when target digit frequency <= ${matches_settings.differs_max_freq || 10}%` },
+        { id: 1, key: '1. TOP-3 RANKING', desc: 'Use Most, 2nd, and Least digits' },
+        { id: 2, key: '2. POWER ACCELERATION', desc: 'Prediction power must be increasing' },
+        { id: 3, key: '3. DUAL VELOCITY', desc: 'Increase simultaneously twice' },
+        { id: 4, key: '4. SEQUENTIAL STABILITY', desc: 'Last 5 digits must be Top-3' },
+        { id: 5, key: '5. PROBABILITY THRESHOLD', desc: 'Prediction power must be above N%' },
     ];
 
     return (
@@ -253,342 +249,20 @@ const MatchesKiller = observer(() => {
                             </button>
                         </div>
 
-                        {/* Strategy Selector Condition Bar */}
-                        <div className='strategy-picker-box'>
-                            <div className='strategy-picker-header'>
-                                <label className='uppercase tracking-widest font-bold'>+ STRATEGY CONDITION</label>
-                                <span className='strategy-badge font-bold'>
-                                    {matches_settings.default_strategy === 'DIGITMATCH' && 'MATCHES'}
-                                    {matches_settings.default_strategy === 'DIGITDIFF' && 'DIFFERS'}
-                                    {matches_settings.default_strategy === 'DIGITEVEN' && 'EVEN'}
-                                    {matches_settings.default_strategy === 'DIGITODD' && 'ODD'}
-                                    {matches_settings.default_strategy === 'DIGITOVER' && 'OVER'}
-                                    {matches_settings.default_strategy === 'DIGITUNDER' && 'UNDER'}
-                                </span>
-                            </div>
-                            <div className='strategy-buttons-grid six-buttons'>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITDIFF' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITDIFF';
-                                        })
-                                    }
-                                >
-                                    ⚡ DIFFERS
-                                </button>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITMATCH' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITMATCH';
-                                        })
-                                    }
-                                >
-                                    🎯 MATCHES
-                                </button>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITEVEN' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITEVEN';
-                                        })
-                                    }
-                                >
-                                    ⚖️ EVEN
-                                </button>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITODD' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITODD';
-                                        })
-                                    }
-                                >
-                                    ⚖️ ODD
-                                </button>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITOVER' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITOVER';
-                                        })
-                                    }
-                                >
-                                    📈 OVER
-                                </button>
-                                <button
-                                    type='button'
-                                    className={classNames('strat-btn', { active: matches_settings.default_strategy === 'DIGITUNDER' })}
-                                    onClick={() =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.default_strategy = 'DIGITUNDER';
-                                        })
-                                    }
-                                >
-                                    📉 UNDER
-                                </button>
-                            </div>
-
-                            {/* Contextual Strategy Prediction & Parameter Controls */}
-                            {matches_settings.default_strategy === 'DIGITDIFF' && (
-                                <div className='strategy-context-panel'>
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>Target Mode</label>
-                                        <div className='mode-chips'>
-                                            {[
-                                                { id: 'least', label: '❄️ Coldest (Least)' },
-                                                { id: 'most', label: '🔥 Hottest (Most)' },
-                                                { id: '2nd_least', label: '🥈 2nd Least' },
-                                                { id: 'custom', label: '🎯 Specific Digit' },
-                                            ].map(m => (
-                                                <button
-                                                    key={m.id}
-                                                    type='button'
-                                                    className={classNames('mode-chip', {
-                                                        active: matches_settings.differs_target_mode === m.id,
-                                                    })}
-                                                    onClick={() =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.differs_target_mode = m.id as any;
-                                                        })
-                                                    }
-                                                >
-                                                    {m.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>Specific Prediction Digit</label>
-                                        <div className='digit-chips-grid'>
-                                            {Array.from({ length: 10 }, (_, d) => {
-                                                const stat = digit_stats.find(s => s.digit === d);
-                                                const isSelected =
-                                                    matches_settings.differs_target_mode === 'custom'
-                                                        ? matches_settings.specific_differs_prediction === d
-                                                        : (matches_settings.differs_target_mode === 'least' && d === matches_ranks.least) ||
-                                                          (matches_settings.differs_target_mode === 'most' && d === matches_ranks.most) ||
-                                                          (matches_settings.differs_target_mode === '2nd_least' && d === matches_ranks.second);
-
-                                                return (
-                                                    <button
-                                                        key={d}
-                                                        type='button'
-                                                        className={classNames('digit-chip', { active: isSelected })}
-                                                        onClick={() =>
-                                                            runInAction(() => {
-                                                                marketkiller.matches_settings.differs_target_mode = 'custom';
-                                                                marketkiller.matches_settings.specific_differs_prediction = d;
-                                                                // Apply to active manual slots
-                                                                const count = marketkiller.matches_settings.simultaneous_trades || 1;
-                                                                marketkiller.matches_settings.predictions = Array(count).fill(d);
-                                                            })
-                                                        }
-                                                    >
-                                                        <span className='d-num font-black'>{d}</span>
-                                                        <span className='d-pct'>{stat ? `${stat.percentage}%` : '0%'}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {matches_settings.default_strategy === 'DIGITMATCH' && (
-                                <div className='strategy-context-panel'>
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>Specific Prediction Digit</label>
-                                        <div className='digit-chips-grid'>
-                                            {Array.from({ length: 10 }, (_, d) => {
-                                                const stat = digit_stats.find(s => s.digit === d);
-                                                const isSelected = d === matches_ranks.most || (matches_settings.predictions[0] ?? 0) === d;
-
-                                                return (
-                                                    <button
-                                                        key={d}
-                                                        type='button'
-                                                        className={classNames('digit-chip', { active: isSelected })}
-                                                        onClick={() =>
-                                                            runInAction(() => {
-                                                                const count = marketkiller.matches_settings.simultaneous_trades || 1;
-                                                                marketkiller.matches_settings.predictions = Array(count).fill(d);
-                                                            })
-                                                        }
-                                                    >
-                                                        <span className='d-num font-black'>{d}</span>
-                                                        <span className='d-pct'>{stat ? `${stat.percentage}%` : '0%'}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {(matches_settings.default_strategy === 'DIGITEVEN' || matches_settings.default_strategy === 'DIGITODD') && (
-                                <div className='strategy-context-panel'>
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>Even/Odd Frequency Live</label>
-                                        <div className='bias-display-row'>
-                                            <div
-                                                className={classNames('bias-card', {
-                                                    active: matches_settings.default_strategy === 'DIGITEVEN',
-                                                })}
-                                                onClick={() =>
-                                                    runInAction(() => {
-                                                        marketkiller.matches_settings.default_strategy = 'DIGITEVEN';
-                                                    })
-                                                }
-                                            >
-                                                <span className='b-label font-bold'>EVEN BIAS</span>
-                                                <span className='b-val font-black'>{percentages.even}%</span>
-                                            </div>
-                                            <div
-                                                className={classNames('bias-card', {
-                                                    active: matches_settings.default_strategy === 'DIGITODD',
-                                                })}
-                                                onClick={() =>
-                                                    runInAction(() => {
-                                                        marketkiller.matches_settings.default_strategy = 'DIGITODD';
-                                                    })
-                                                }
-                                            >
-                                                <span className='b-label font-bold'>ODD BIAS</span>
-                                                <span className='b-val font-black'>{percentages.odd}%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {matches_settings.default_strategy === 'DIGITOVER' && (
-                                <div className='strategy-context-panel'>
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>
-                                            Select Barrier (OVER &gt; N) — Cluster: {percentages.over}%
-                                        </label>
-                                        <div className='barrier-chips-row'>
-                                            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(barr => (
-                                                <button
-                                                    key={barr}
-                                                    type='button'
-                                                    className={classNames('barrier-chip', {
-                                                        active: (matches_settings.over_barrier ?? 1) === barr,
-                                                    })}
-                                                    onClick={() =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.over_barrier = barr;
-                                                            const count = marketkiller.matches_settings.simultaneous_trades || 1;
-                                                            marketkiller.matches_settings.predictions = Array(count).fill(barr);
-                                                        })
-                                                    }
-                                                >
-                                                    &gt; {barr}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {matches_settings.default_strategy === 'DIGITUNDER' && (
-                                <div className='strategy-context-panel'>
-                                    <div className='context-panel-row'>
-                                        <label className='uppercase tracking-widest font-bold'>
-                                            Select Barrier (UNDER &lt; N) — Cluster: {percentages.under}%
-                                        </label>
-                                        <div className='barrier-chips-row'>
-                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(barr => (
-                                                <button
-                                                    key={barr}
-                                                    type='button'
-                                                    className={classNames('barrier-chip', {
-                                                        active: (matches_settings.under_barrier ?? 8) === barr,
-                                                    })}
-                                                    onClick={() =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.under_barrier = barr;
-                                                            const count = marketkiller.matches_settings.simultaneous_trades || 1;
-                                                            marketkiller.matches_settings.predictions = Array(count).fill(barr);
-                                                        })
-                                                    }
-                                                >
-                                                    &lt; {barr}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Dual Target & Bulk Trades Row */}
-                        <div className='targets-and-bulk-row'>
-                            <div className='target-input-col'>
-                                <label className='uppercase tracking-widest font-bold'>Active Slots (Max 10)</label>
-                                <input
-                                    type='number'
-                                    min='1'
-                                    max='10'
-                                    className='font-black'
-                                    value={matches_settings.simultaneous_trades}
-                                    onChange={e =>
-                                        runInAction(() => {
-                                            marketkiller.matches_settings.simultaneous_trades = Math.max(
-                                                1,
-                                                Math.min(10, parseInt(e.target.value) || 1)
-                                            );
-                                        })
-                                    }
-                                />
-                            </div>
-
-                            <div className='target-input-col'>
-                                <label className='uppercase tracking-widest font-bold'>Bulk Trades at Once</label>
-                                <div className='bulk-stepper-wrap'>
-                                    <input
-                                        type='number'
-                                        min='1'
-                                        max='10'
-                                        className='font-black'
-                                        value={matches_settings.bulk_trades_count || 1}
-                                        onChange={e =>
-                                            runInAction(() => {
-                                                marketkiller.matches_settings.bulk_trades_count = Math.max(
-                                                    1,
-                                                    Math.min(10, parseInt(e.target.value) || 1)
-                                                );
-                                            })
-                                        }
-                                    />
-                                    <div className='quick-bulk-chips'>
-                                        {[1, 2, 3, 5, 10].map(cnt => (
-                                            <button
-                                                key={cnt}
-                                                type='button'
-                                                className={classNames('bulk-chip', {
-                                                    active: (matches_settings.bulk_trades_count || 1) === cnt,
-                                                })}
-                                                onClick={() =>
-                                                    runInAction(() => {
-                                                        marketkiller.matches_settings.bulk_trades_count = cnt;
-                                                    })
-                                                }
-                                            >
-                                                {cnt}x
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
+                        <div className='target-input'>
+                            <label className='uppercase tracking-widest font-bold'>Active Targets (Max 10)</label>
+                            <input
+                                type='number'
+                                min='1'
+                                max='10'
+                                className='font-black'
+                                value={matches_settings.simultaneous_trades}
+                                onChange={e =>
+                                    runInAction(() => {
+                                        marketkiller.matches_settings.simultaneous_trades = parseInt(e.target.value);
+                                    })
+                                }
+                            />
                         </div>
 
                         <div className='slots-grid'>
@@ -596,90 +270,40 @@ const MatchesKiller = observer(() => {
                                 const sortedDigits = [...digit_stats]
                                     .sort((a, b) => b.count - a.count)
                                     .map(s => s.digit);
-                                const leastDigits = [...digit_stats]
-                                    .sort((a, b) => a.count - b.count)
-                                    .map(s => s.digit);
-
-                                const slotStrategy =
-                                    matches_settings.slot_strategies[idx] ||
-                                    matches_settings.default_strategy ||
-                                    'DIGITMATCH';
-
-                                let autoDigit = sortedDigits[idx] ?? 0;
-                                if (slotStrategy === 'DIGITDIFF') {
-                                    autoDigit = leastDigits[idx] ?? 0;
-                                } else if (slotStrategy === 'DIGITOVER') {
-                                    autoDigit = 1;
-                                } else if (slotStrategy === 'DIGITUNDER') {
-                                    autoDigit = 8;
-                                }
-
+                                const autoDigit = sortedDigits[idx] ?? 0;
                                 const displayValue = matches_settings.is_auto
                                     ? autoDigit
-                                    : (matches_settings.predictions[idx] ?? autoDigit);
-
-                                const isEvenOdd = slotStrategy === 'DIGITEVEN' || slotStrategy === 'DIGITODD';
+                                    : (matches_settings.predictions[idx] ?? 0);
 
                                 return (
                                     <div key={idx} className='slot-card'>
-                                        <div className='slot-card-top'>
-                                            <label className='uppercase tracking-widest font-bold'>Slot {idx + 1}</label>
-                                            <select
-                                                className='slot-strategy-dropdown'
-                                                value={slotStrategy}
-                                                disabled={matches_settings.is_auto}
-                                                onChange={e => {
-                                                    const next = [...matches_settings.slot_strategies];
-                                                    next[idx] = e.target.value as any;
-                                                    runInAction(() => {
-                                                        marketkiller.matches_settings.slot_strategies = next;
-                                                    });
-                                                }}
-                                            >
-                                                <option value='DIGITDIFF'>DIFFERS</option>
-                                                <option value='DIGITMATCH'>MATCHES</option>
-                                                <option value='DIGITEVEN'>EVEN</option>
-                                                <option value='DIGITODD'>ODD</option>
-                                                <option value='DIGITOVER'>OVER</option>
-                                                <option value='DIGITUNDER'>UNDER</option>
-                                            </select>
-                                        </div>
-
-                                        {isEvenOdd ? (
-                                            <div className='slot-even-odd-badge font-black'>
-                                                {slotStrategy === 'DIGITEVEN' ? 'EVEN' : 'ODD'}
-                                            </div>
-                                        ) : (
-                                            <input
-                                                type='number'
-                                                min='0'
-                                                max='9'
-                                                className='font-black'
-                                                disabled={matches_settings.is_auto}
-                                                value={displayValue}
-                                                onChange={e => {
-                                                    const val = parseInt(e.target.value);
-                                                    const next = [...matches_settings.predictions];
-                                                    next[idx] = isNaN(val) ? 0 : val;
-                                                    runInAction(() => {
-                                                        marketkiller.matches_settings.predictions = next;
-                                                    });
-                                                }}
-                                            />
-                                        )}
-
+                                        <label className='uppercase tracking-widest font-bold'>Slot {idx + 1}</label>
+                                        <input
+                                            type='number'
+                                            min='0'
+                                            max='9'
+                                            className='font-black'
+                                            disabled={matches_settings.is_auto}
+                                            value={displayValue}
+                                            onChange={e => {
+                                                const val = parseInt(e.target.value);
+                                                const next = [...matches_settings.predictions];
+                                                next[idx] = isNaN(val) ? 0 : val;
+                                                runInAction(() => {
+                                                    marketkiller.matches_settings.predictions = next;
+                                                });
+                                            }}
+                                        />
                                         {!matches_settings.is_auto && (
                                             <button
                                                 className='strike-btn uppercase tracking-widest font-black'
                                                 onClick={() =>
                                                     marketkiller.executeSingleManualTrade(
-                                                        displayValue,
-                                                        slotStrategy,
-                                                        matches_settings.bulk_trades_count || 1
+                                                        matches_settings.predictions[idx]
                                                     )
                                                 }
                                             >
-                                                Strike ({matches_settings.bulk_trades_count || 1}x)
+                                                Strike
                                             </button>
                                         )}
                                     </div>
@@ -691,9 +315,21 @@ const MatchesKiller = observer(() => {
                         {!matches_settings.is_auto && (
                             <button
                                 onClick={() => marketkiller.executeOneShot()}
-                                className='strike-multiburst-btn uppercase tracking-widest font-black'
+                                style={{
+                                    width: '100%',
+                                    marginTop: '1rem',
+                                    padding: '0.75rem',
+                                    borderRadius: '0.75rem',
+                                    border: 'none',
+                                    background: 'linear-gradient(to right, #10b981, #059669)',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
+                                    transition: 'all 0.2s',
+                                }}
+                                className='uppercase tracking-widest font-black hover:opacity-90'
                             >
-                                ⚡ STRIKE MULTI-BURST ({matches_settings.simultaneous_trades} SLOTS × {matches_settings.bulk_trades_count || 1}x BULK = {(matches_settings.simultaneous_trades || 1) * (matches_settings.bulk_trades_count || 1)} TRADES)
+                                STRIKE MULTI-BURST ({matches_settings.simultaneous_trades})
                             </button>
                         )}
                     </div>
@@ -745,115 +381,10 @@ const MatchesKiller = observer(() => {
                                                     min='1'
                                                     max='100'
                                                     value={matches_settings.c4_val}
-                                                    onClick={e => e.stopPropagation()}
+                                                    onClick={e => e.stopPropagation()} // Prevent toggling the gate when editing input
                                                     onChange={e =>
                                                         runInAction(() => {
                                                             marketkiller.matches_settings.c4_val = Number(
-                                                                e.target.value
-                                                            );
-                                                        })
-                                                    }
-                                                    style={{
-                                                        width: '4rem',
-                                                        background: '#0f172a',
-                                                        border: '1px solid #334155',
-                                                        color: '#fff',
-                                                        padding: '0.25rem',
-                                                        borderRadius: '0.25rem',
-                                                        outline: 'none',
-                                                    }}
-                                                />
-                                            </span>
-                                        )}
-                                        {idx === 5 && (
-                                            <span
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.5rem',
-                                                    marginTop: '0.5rem',
-                                                }}
-                                            >
-                                                <span style={{ color: '#94a3b8' }}>Min Bias %:</span>
-                                                <input
-                                                    type='number'
-                                                    min='50'
-                                                    max='90'
-                                                    value={matches_settings.even_odd_min_bias ?? 52}
-                                                    onClick={e => e.stopPropagation()}
-                                                    onChange={e =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.even_odd_min_bias = Number(
-                                                                e.target.value
-                                                            );
-                                                        })
-                                                    }
-                                                    style={{
-                                                        width: '4rem',
-                                                        background: '#0f172a',
-                                                        border: '1px solid #334155',
-                                                        color: '#fff',
-                                                        padding: '0.25rem',
-                                                        borderRadius: '0.25rem',
-                                                        outline: 'none',
-                                                    }}
-                                                />
-                                            </span>
-                                        )}
-                                        {idx === 6 && (
-                                            <span
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.5rem',
-                                                    marginTop: '0.5rem',
-                                                }}
-                                            >
-                                                <span style={{ color: '#94a3b8' }}>Min Cluster %:</span>
-                                                <input
-                                                    type='number'
-                                                    min='40'
-                                                    max='90'
-                                                    value={matches_settings.over_under_min_bias ?? 50}
-                                                    onClick={e => e.stopPropagation()}
-                                                    onChange={e =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.over_under_min_bias = Number(
-                                                                e.target.value
-                                                            );
-                                                        })
-                                                    }
-                                                    style={{
-                                                        width: '4rem',
-                                                        background: '#0f172a',
-                                                        border: '1px solid #334155',
-                                                        color: '#fff',
-                                                        padding: '0.25rem',
-                                                        borderRadius: '0.25rem',
-                                                        outline: 'none',
-                                                    }}
-                                                />
-                                            </span>
-                                        )}
-                                        {idx === 7 && (
-                                            <span
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.5rem',
-                                                    marginTop: '0.5rem',
-                                                }}
-                                            >
-                                                <span style={{ color: '#94a3b8' }}>Max Freq %:</span>
-                                                <input
-                                                    type='number'
-                                                    min='1'
-                                                    max='25'
-                                                    value={matches_settings.differs_max_freq ?? 10}
-                                                    onClick={e => e.stopPropagation()}
-                                                    onChange={e =>
-                                                        runInAction(() => {
-                                                            marketkiller.matches_settings.differs_max_freq = Number(
                                                                 e.target.value
                                                             );
                                                         })
