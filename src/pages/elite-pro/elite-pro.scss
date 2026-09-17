@@ -422,6 +422,11 @@ body.theme--light,
             animation: ep-border-pulse 2s infinite ease-in-out;
         }
 
+        &.cycle-paused {
+            border-color: rgba(239, 68, 68, 0.4);
+            opacity: 0.85;
+        }
+
         &__top {
             display: flex;
             align-items: center;
@@ -468,6 +473,16 @@ body.theme--light,
                         color: var(--ep-accent-orange);
                         border: 1px solid rgba(245, 158, 11, 0.4);
                     }
+                }
+
+                .pause-tag {
+                    font-size: 0.62rem;
+                    font-weight: 800;
+                    padding: 1px 6px;
+                    border-radius: 4px;
+                    background: rgba(239, 68, 68, 0.2);
+                    color: #f87171;
+                    border: 1px solid rgba(239, 68, 68, 0.4);
                 }
             }
 
@@ -1525,6 +1540,432 @@ body.theme--light,
         display: flex;
         flex-direction: column;
         gap: 18px;
+    }
+
+    /* ── Macro 1000-Tick Intelligence Card (~30m–1hr Horizon) ── */
+    .ep-macro-intel-card {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+
+        .card-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+
+            .title-wrap {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+
+                .icon {
+                    flex-shrink: 0;
+                }
+
+                .title {
+                    margin: 0;
+                    font-size: 1rem;
+                    font-weight: 800;
+                    color: #ffffff;
+                }
+
+                .sub {
+                    font-size: 0.73rem;
+                    color: var(--ep-text-muted);
+                }
+            }
+
+            .macro-bias-badge {
+                font-size: 0.75rem;
+                font-weight: 800;
+                padding: 5px 14px;
+                border-radius: 99px;
+                letter-spacing: 0.03em;
+
+                &.badge--under {
+                    background: rgba(16, 185, 129, 0.15);
+                    color: #34d399;
+                    border: 1px solid rgba(16, 185, 129, 0.4);
+                }
+
+                &.badge--over {
+                    background: rgba(245, 158, 11, 0.15);
+                    color: #fbbf24;
+                    border: 1px solid rgba(245, 158, 11, 0.4);
+                }
+
+                &.badge--neutral {
+                    background: rgba(255, 255, 255, 0.08);
+                    color: var(--ep-text-muted);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+            }
+        }
+
+        .ep-macro-ranks-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+
+            @media (max-width: 680px) {
+                grid-template-columns: 1fr;
+            }
+
+            .macro-rank-item {
+                background: rgba(15, 23, 42, 0.5);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 12px;
+                padding: 12px 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+
+                .rank-label {
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    color: var(--ep-text-secondary);
+                }
+
+                .rank-digit-box {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 8px;
+
+                    .digit {
+                        font-size: 1.6rem;
+                        font-weight: 900;
+                        font-family: 'JetBrains Mono', monospace;
+                        color: #ffffff;
+                    }
+
+                    .pct {
+                        font-size: 0.85rem;
+                        font-weight: 700;
+                        color: #c084fc;
+                    }
+                }
+
+                .status-tag {
+                    font-size: 0.68rem;
+                    color: var(--ep-text-muted);
+                    font-weight: 600;
+                }
+
+                &.most {
+                    border-color: rgba(139, 92, 246, 0.3);
+                    background: rgba(139, 92, 246, 0.08);
+                }
+                &.second {
+                    border-color: rgba(56, 189, 248, 0.3);
+                    background: rgba(56, 189, 248, 0.06);
+                }
+                &.least {
+                    border-color: rgba(245, 158, 11, 0.25);
+                    background: rgba(245, 158, 11, 0.05);
+                }
+            }
+        }
+
+        .ep-outlier-safety-matrix {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+
+            @media (max-width: 800px) {
+                grid-template-columns: 1fr;
+            }
+
+            .safety-col {
+                background: rgba(15, 23, 42, 0.45);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 12px;
+                padding: 12px 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+
+                .safety-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    font-size: 0.74rem;
+                    font-weight: 700;
+                    color: var(--ep-text-secondary);
+
+                    .safety-status-pill {
+                        font-size: 0.68rem;
+                        font-weight: 800;
+                        padding: 2px 8px;
+                        border-radius: 99px;
+
+                        &.safe {
+                            background: rgba(16, 185, 129, 0.15);
+                            color: #34d399;
+                            border: 1px solid rgba(16, 185, 129, 0.3);
+                        }
+
+                        &.warn {
+                            background: rgba(239, 68, 68, 0.15);
+                            color: #f87171;
+                            border: 1px solid rgba(239, 68, 68, 0.3);
+                        }
+                    }
+                }
+
+                .outlier-chips-row {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 8px;
+
+                    .outlier-chip {
+                        background: rgba(3, 7, 18, 0.5);
+                        border: 1px solid rgba(255, 255, 255, 0.06);
+                        border-radius: 8px;
+                        padding: 8px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 2px;
+                        text-align: center;
+
+                        .name {
+                            font-size: 0.68rem;
+                            color: var(--ep-text-muted);
+                            font-weight: 600;
+                        }
+
+                        strong {
+                            font-size: 0.88rem;
+                            font-family: 'JetBrains Mono', monospace;
+                            color: #ffffff;
+                        }
+
+                        .trend {
+                            font-size: 0.65rem;
+                            font-weight: 700;
+                        }
+
+                        &.good {
+                            border-color: rgba(16, 185, 129, 0.3);
+                            .trend {
+                                color: #34d399;
+                            }
+                        }
+
+                        &.bad {
+                            border-color: rgba(239, 68, 68, 0.3);
+                            strong {
+                                color: #f87171;
+                            }
+                            .trend {
+                                color: #f87171;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /* ── 15-Tick Rolling Stability Cycle Card ── */
+    .ep-cycle-monitor-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+
+        .card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+
+            .title-wrap {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+
+                h4 {
+                    margin: 0;
+                    font-size: 0.95rem;
+                    font-weight: 800;
+                    color: #ffffff;
+                }
+            }
+
+            .cycle-status-pill {
+                font-size: 0.72rem;
+                font-weight: 800;
+                padding: 4px 12px;
+                border-radius: 99px;
+
+                &--stable_under {
+                    background: rgba(16, 185, 129, 0.15);
+                    color: #34d399;
+                    border: 1px solid rgba(16, 185, 129, 0.4);
+                }
+
+                &--stable_over {
+                    background: rgba(245, 158, 11, 0.15);
+                    color: #fbbf24;
+                    border: 1px solid rgba(245, 158, 11, 0.4);
+                }
+
+                &--shifting {
+                    background: rgba(239, 68, 68, 0.2);
+                    color: #f87171;
+                    border: 1px solid rgba(239, 68, 68, 0.5);
+                    animation: ep-border-pulse 1.8s infinite ease-in-out;
+                }
+
+                &--neutral {
+                    background: rgba(255, 255, 255, 0.08);
+                    color: var(--ep-text-muted);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+            }
+        }
+
+        .cycle-body {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 12px 16px;
+
+            .cycle-stat {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 0.8rem;
+
+                .label {
+                    color: var(--ep-text-secondary);
+                }
+
+                strong {
+                    color: #ffffff;
+                    font-family: 'JetBrains Mono', monospace;
+                }
+            }
+
+            .cycle-note {
+                font-size: 0.74rem;
+                font-weight: 600;
+            }
+        }
+    }
+
+    /* ── Systematic Checklist HUD Card ── */
+    .ep-checklist-hud-card {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+
+        .card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+
+            .title-wrap {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+
+                h4 {
+                    margin: 0;
+                    font-size: 0.95rem;
+                    font-weight: 800;
+                    color: #ffffff;
+                }
+            }
+
+            .signal-state-pill {
+                font-size: 0.72rem;
+                font-weight: 800;
+                padding: 4px 12px;
+                border-radius: 99px;
+
+                &.triggered {
+                    background: linear-gradient(135deg, #10b981, #059669);
+                    color: #ffffff;
+                    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+                }
+
+                &.paused {
+                    background: rgba(239, 68, 68, 0.2);
+                    color: #f87171;
+                    border: 1px solid rgba(239, 68, 68, 0.4);
+                }
+
+                &.waiting {
+                    background: rgba(245, 158, 11, 0.15);
+                    color: #fbbf24;
+                    border: 1px solid rgba(245, 158, 11, 0.3);
+                }
+            }
+        }
+
+        .ep-checklist-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+
+            @media (max-width: 680px) {
+                grid-template-columns: 1fr;
+            }
+
+            .check-item {
+                background: rgba(15, 23, 42, 0.45);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 10px;
+                padding: 10px 12px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                transition: all 0.2s;
+
+                .check-icon {
+                    font-size: 16px;
+                }
+
+                .check-info {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+
+                    .name {
+                        font-size: 0.76rem;
+                        font-weight: 700;
+                        color: #ffffff;
+                    }
+
+                    .desc {
+                        font-size: 0.68rem;
+                        color: var(--ep-text-muted);
+                    }
+                }
+
+                &.pass {
+                    border-color: rgba(16, 185, 129, 0.3);
+                    background: rgba(16, 185, 129, 0.05);
+                }
+
+                &.fail {
+                    border-color: rgba(255, 255, 255, 0.05);
+                    opacity: 0.75;
+                }
+            }
+        }
     }
 
     /* ── Glowing Highest Entry Digit Cards ── */

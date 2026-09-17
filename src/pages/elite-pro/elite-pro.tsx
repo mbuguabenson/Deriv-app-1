@@ -4,16 +4,18 @@ import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import { api_base } from '@/external/bot-skeleton';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 import { useStore } from '@/hooks/useStore';
-import { SUPPORTED_VOLATILITY_MARKETS } from '@/utils/digit-strategy';
 import { isLoggedIn } from '@/utils/token-bridge';
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
 import { subscribeTicks, derivTickManager } from '@/utils/websocket-handler';
 import { aiContinuousLearningService } from '@/services/ai-continuous-learning.service';
 import { AiLearningHubModal } from '@/components/ai-learning-hub/ai-learning-hub-modal';
 import {
+    Activity,
     LayoutGrid,
     Pause,
     Play,
+    RotateCcw,
+    ShieldCheck,
     Square,
     Target,
 } from 'lucide-react';
@@ -21,7 +23,7 @@ import './elite-pro.scss';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type MarketDigitData = {
+export type MarketDigitData = {
     symbol: string;
     label: string;
     digits: number[];
@@ -29,9 +31,102 @@ type MarketDigitData = {
     lastDigit: number;
     tickCount: number;
     lastTickTime: number;
+    cycleTicks: number; // Rolling ticks counter for 15-tick cycle evaluation
 };
 
-type TradeLogEntry = {
+export type Macro1000Analysis = {
+    total1000: number;
+    freq1000: number[];
+    pct1000: number[];
+    most1000: number;
+    second1000: number;
+    least1000: number;
+    outlier7Pct: number;
+    outlier8Pct: number;
+    outlier9Pct: number;
+    outlier0Pct: number;
+    outlier1Pct: number;
+    outlier2Pct: number;
+    outlier7Increasing: boolean;
+    outlier8Increasing: boolean;
+    outlier9Increasing: boolean;
+    outlier0Increasing: boolean;
+    outlier1Increasing: boolean;
+    outlier2Increasing: boolean;
+    outliersUnder6Safe: boolean;
+    outliersOver3Safe: boolean;
+    macroUnder6Dominant: boolean;
+    macroOver3Dominant: boolean;
+};
+
+export type Mid50Analysis = {
+    under04: number;
+    over59: number;
+    pctUnder04: number;
+    pctOver59: number;
+    under05: number;
+    over49: number;
+    pctUnder05: number;
+    pctOver49: number;
+    underIncreasing: boolean;
+    overIncreasing: boolean;
+    highestUnderDigit: number;
+    highestUnderCount: number;
+    highestUnderPct: number;
+    highestOverDigit: number;
+    highestOverCount: number;
+    highestOverPct: number;
+    freq50: number[];
+};
+
+export type Cycle15Analysis = {
+    cycleUnder05: number;
+    cycleOver49: number;
+    pctCycleUnder05: number;
+    pctCycleOver49: number;
+    isRegimeShiftUnder: boolean;
+    isRegimeShiftOver: boolean;
+    stabilityStatus: 'STABLE_UNDER' | 'STABLE_OVER' | 'SHIFTING' | 'NEUTRAL';
+};
+
+export type MicroAnalysis = {
+    last10UnderCount: number;
+    last10OverCount: number;
+    last7UnderCount: number;
+    last7OverCount: number;
+};
+
+export type ComprehensiveMarketAnalysis = {
+    macro: Macro1000Analysis;
+    mid: Mid50Analysis;
+    cycle: Cycle15Analysis;
+    micro: MicroAnalysis;
+    bias: 'under' | 'over' | 'shifting' | 'neutral';
+    qualityScore: number;
+    totalTicks: number;
+    isAvoidMarket: boolean;
+};
+
+export type EntrySignalResult = {
+    direction: 'UNDER' | 'OVER';
+    prediction: number;
+    triggerDigit: number;
+    reason: string;
+    status: 'WAITING' | 'TRIGGERED';
+    isAutoPaused: boolean;
+    pauseReason?: string;
+    qualityScore: number;
+    conditions: {
+        macroCondition: boolean;
+        midCondition: boolean;
+        cycleCondition: boolean;
+        micro10Condition: boolean;
+        micro7Condition: boolean;
+        triggerDigitCondition: boolean;
+    };
+};
+
+export type TradeLogEntry = {
     id: string;
     time: string;
     type: string;
@@ -42,18 +137,25 @@ type TradeLogEntry = {
     details?: string;
 };
 
-type AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
+export type AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// ─── Universally Valid Deriv Volatility Synthetic Markets ───────────────────────
 
-const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
-    symbol: m.symbol,
-    label: m.label.replace('Volatility ', 'Vol ').replace(' Index', ''),
-}));
+const MARKETS = [
+    { symbol: 'R_10', label: 'Vol 10' },
+    { symbol: 'R_25', label: 'Vol 25' },
+    { symbol: 'R_50', label: 'Vol 50' },
+    { symbol: 'R_75', label: 'Vol 75' },
+    { symbol: 'R_100', label: 'Vol 100' },
+    { symbol: '1HZ10V', label: 'Vol 10 (1s)' },
+    { symbol: '1HZ25V', label: 'Vol 25 (1s)' },
+    { symbol: '1HZ50V', label: 'Vol 50 (1s)' },
+    { symbol: '1HZ75V', label: 'Vol 75 (1s)' },
+    { symbol: '1HZ100V', label: 'Vol 100 (1s)' },
+];
 
-const MAX_DIGITS = 100;
+const MAX_DIGITS_BUFFER = 1000;
 const CHART_DIGITS = 50;
-const ANALYSIS_WINDOW = 50;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -97,6 +199,7 @@ const createInitialMarketsMap = (): Map<string, MarketDigitData> => {
             lastDigit: 0,
             tickCount: 0,
             lastTickTime: 0,
+            cycleTicks: 0,
         });
     });
     return map;
@@ -291,6 +394,7 @@ const ElitePro: React.FC = observer(() => {
 
     const marketsRef = useRef<Map<string, MarketDigitData>>(createInitialMarketsMap());
     const subscriptionsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    const historyFetchedSymbolsRef = useRef<Set<string>>(new Set());
     const unmountedRef = useRef(false);
     const uiThrottleRef = useRef<number>(0);
     const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -340,135 +444,262 @@ const ElitePro: React.FC = observer(() => {
         }
     }, []);
 
-    // ── Comprehensive Multi-Horizon Statistical Analyzer ──
-    const computeAnalysis = useCallback((digits: number[]) => {
-        const slice = digits.slice(-ANALYSIS_WINDOW);
-        const total = slice.length || 1;
+    // ── Systematic Multi-Horizon Statistical Analyzer ──
+    // Evaluates Macro 1000-tick (~30m-1hr), Mid 50-tick, 15-tick cycle, and Micro 10/7 tick windows
+    const computeAnalysis = useCallback((digits: number[]): ComprehensiveMarketAnalysis => {
+        const totalTicks = digits.length;
 
-        // Ratio 1: Under (0-4) vs Over (5-9)
-        const under04 = slice.filter(d => d >= 0 && d <= 4).length;
-        const over59 = slice.filter(d => d >= 5 && d <= 9).length;
-        const pctUnder04 = (under04 / total) * 100;
-        const pctOver59 = (over59 / total) * 100;
+        // 1. MACRO 1000-TICK ANALYSIS (~30 min to 1 hr history)
+        const slice1000 = digits.slice(-1000);
+        const total1000 = slice1000.length || 1;
+        const freq1000 = new Array(10).fill(0);
+        slice1000.forEach(d => {
+            if (d >= 0 && d <= 9) freq1000[d]++;
+        });
+        const pct1000 = freq1000.map(c => (c / total1000) * 100);
 
-        // Ratio 2: Under (0-5) vs Over (4-9)
-        const under05 = slice.filter(d => d >= 0 && d <= 5).length;
-        const over49 = slice.filter(d => d >= 4 && d <= 9).length;
-        const pctUnder05 = (under05 / total) * 100;
-        const pctOver49 = (over49 / total) * 100;
+        const sortedDigits1000 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].sort((a, b) => freq1000[b] - freq1000[a]);
+        const most1000 = sortedDigits1000[0];
+        const second1000 = sortedDigits1000[1];
+        const least1000 = sortedDigits1000[9];
 
-        // Trend momentum: First 25 vs Second 25
-        const firstHalf = slice.slice(0, Math.floor(total / 2));
-        const secondHalf = slice.slice(Math.floor(total / 2));
-        const firstHalfUnder04 = firstHalf.filter(d => d >= 0 && d <= 4).length / (firstHalf.length || 1);
-        const secondHalfUnder04 = secondHalf.filter(d => d >= 0 && d <= 4).length / (secondHalf.length || 1);
-        const underIncreasing = secondHalfUnder04 >= firstHalfUnder04;
+        // Macro Trend & Outlier Momentum (First Half vs Second Half of 1000 ticks)
+        const halfLen = Math.floor(total1000 / 2) || 1;
+        const half1 = slice1000.slice(0, halfLen);
+        const half2 = slice1000.slice(halfLen);
+
+        const getHalfPct = (half: number[], digit: number) => {
+            const count = half.filter(d => d === digit).length;
+            return (count / (half.length || 1)) * 100;
+        };
+
+        const outlier7Pct = pct1000[7] || 0;
+        const outlier8Pct = pct1000[8] || 0;
+        const outlier9Pct = pct1000[9] || 0;
+        const outlier0Pct = pct1000[0] || 0;
+        const outlier1Pct = pct1000[1] || 0;
+        const outlier2Pct = pct1000[2] || 0;
+
+        const outlier7Increasing = getHalfPct(half2, 7) > getHalfPct(half1, 7) + 0.5;
+        const outlier8Increasing = getHalfPct(half2, 8) > getHalfPct(half1, 8) + 0.5;
+        const outlier9Increasing = getHalfPct(half2, 9) > getHalfPct(half1, 9) + 0.5;
+        const outlier0Increasing = getHalfPct(half2, 0) > getHalfPct(half1, 0) + 0.5;
+        const outlier1Increasing = getHalfPct(half2, 1) > getHalfPct(half1, 1) + 0.5;
+        const outlier2Increasing = getHalfPct(half2, 2) > getHalfPct(half1, 2) + 0.5;
+
+        // Outlier Safety Checks: Outliers must be < 10% each and NOT increasing
+        const outliersUnder6Safe =
+            outlier7Pct < 10.0 &&
+            outlier8Pct < 10.0 &&
+            outlier9Pct < 10.0 &&
+            !outlier7Increasing &&
+            !outlier8Increasing &&
+            !outlier9Increasing;
+
+        const outliersOver3Safe =
+            outlier0Pct < 10.0 &&
+            outlier1Pct < 10.0 &&
+            outlier2Pct < 10.0 &&
+            !outlier0Increasing &&
+            !outlier1Increasing &&
+            !outlier2Increasing;
+
+        // Macro Dominance: Top 2 digits and least appearing digit must align in the target zone (<6 or >3)
+        const macroUnder6Dominant = (most1000 <= 5 && second1000 <= 5 && least1000 <= 5) || (outliersUnder6Safe && pct1000.slice(0, 6).reduce((a, b) => a + b, 0) >= 58);
+        const macroOver3Dominant = (most1000 >= 4 && second1000 >= 4 && least1000 >= 4) || (outliersOver3Safe && pct1000.slice(4, 10).reduce((a, b) => a + b, 0) >= 58);
+
+        // 2. MID 50-TICK ANALYSIS
+        const slice50 = digits.slice(-50);
+        const total50 = slice50.length || 1;
+
+        const under04 = slice50.filter(d => d >= 0 && d <= 4).length;
+        const over59 = slice50.filter(d => d >= 5 && d <= 9).length;
+        const pctUnder04 = (under04 / total50) * 100;
+        const pctOver59 = (over59 / total50) * 100;
+
+        const under05 = slice50.filter(d => d >= 0 && d <= 5).length;
+        const over49 = slice50.filter(d => d >= 4 && d <= 9).length;
+        const pctUnder05 = (under05 / total50) * 100;
+        const pctOver49 = (over49 / total50) * 100;
+
+        // Momentum: 1st 25 vs 2nd 25 of 50 ticks
+        const firstHalf50 = slice50.slice(0, Math.floor(total50 / 2));
+        const secondHalf50 = slice50.slice(Math.floor(total50 / 2));
+        const firstHalfUnder04Pct = firstHalf50.filter(d => d <= 4).length / (firstHalf50.length || 1);
+        const secondHalfUnder04Pct = secondHalf50.filter(d => d <= 4).length / (secondHalf50.length || 1);
+        const underIncreasing = secondHalfUnder04Pct >= firstHalfUnder04Pct;
         const overIncreasing = !underIncreasing;
 
-        // Frequency table for all 10 digits (0..9)
-        const freq = new Array(10).fill(0);
-        slice.forEach(d => {
-            if (d >= 0 && d <= 9) freq[d]++;
+        // Frequency table for 50 ticks
+        const freq50 = new Array(10).fill(0);
+        slice50.forEach(d => {
+            if (d >= 0 && d <= 9) freq50[d]++;
         });
 
-        // Highest Entry Digit in Under (0-5)
+        // Dominant Entry Digit in Under (0-5)
         let maxUnderCount = -1;
         let highestUnderDigit = 0;
-        freq.slice(0, 6).forEach((c, idx) => {
+        freq50.slice(0, 6).forEach((c, idx) => {
             if (c > maxUnderCount) {
                 maxUnderCount = c;
                 highestUnderDigit = idx;
             }
         });
-        const highestUnderPct = (maxUnderCount / total) * 100;
+        const highestUnderPct = (maxUnderCount / total50) * 100;
 
-        // Highest Entry Digit in Over (4-9)
+        // Dominant Entry Digit in Over (4-9)
         let maxOverCount = -1;
         let highestOverDigit = 4;
-        freq.slice(4, 10).forEach((c, idx) => {
+        freq50.slice(4, 10).forEach((c, idx) => {
             if (c > maxOverCount) {
                 maxOverCount = c;
                 highestOverDigit = idx + 4;
             }
         });
-        const highestOverPct = (maxOverCount / total) * 100;
+        const highestOverPct = (maxOverCount / total50) * 100;
 
-        // Micro Windows: Last 15, Last 10, and Last 7 ticks
-        const last15 = slice.slice(-15);
-        const last15UnderCount = last15.filter(d => d <= 5).length;
-        const last15OverCount = last15.filter(d => d >= 4).length;
+        // 3. 15-TICK ROLLING STABILITY CYCLE
+        const slice15 = digits.slice(-15);
+        const total15 = slice15.length || 1;
+        const cycleUnder05 = slice15.filter(d => d <= 5).length;
+        const cycleOver49 = slice15.filter(d => d >= 4).length;
+        const pctCycleUnder05 = (cycleUnder05 / total15) * 100;
+        const pctCycleOver49 = (cycleOver49 / total15) * 100;
 
-        const last10 = slice.slice(-10);
-        const last10UnderCount = last10.filter(d => d <= 5).length;
-        const last10OverCount = last10.filter(d => d >= 4).length;
+        // Regime shift detection: Market has flip-flopped significantly within 15 ticks
+        const isRegimeShiftUnder = cycleOver49 >= 9; // Looking for Under, but last 15 has 9+ Over digits
+        const isRegimeShiftOver = cycleUnder05 >= 9; // Looking for Over, but last 15 has 9+ Under digits
 
-        const last7 = slice.slice(-7);
-        const last7UnderCount = last7.filter(d => d <= 5).length;
-        const last7OverCount = last7.filter(d => d >= 4).length;
+        let stabilityStatus: 'STABLE_UNDER' | 'STABLE_OVER' | 'SHIFTING' | 'NEUTRAL' = 'NEUTRAL';
+        if (cycleUnder05 >= 10 && !isRegimeShiftUnder) {
+            stabilityStatus = 'STABLE_UNDER';
+        } else if (cycleOver49 >= 10 && !isRegimeShiftOver) {
+            stabilityStatus = 'STABLE_OVER';
+        } else if (isRegimeShiftUnder || isRegimeShiftOver) {
+            stabilityStatus = 'SHIFTING';
+        }
 
-        // Market Bias
-        let bias: 'under' | 'over' | 'neutral' = 'neutral';
-        if ((pctUnder05 >= 58 || (pctUnder04 >= 55 && underIncreasing)) && under05 > over49) {
+        // 4. MICRO WINDOWS (Last 10 & Last 7 Ticks)
+        const slice10 = digits.slice(-10);
+        const last10UnderCount = slice10.filter(d => d <= 5).length;
+        const last10OverCount = slice10.filter(d => d >= 4).length;
+
+        const slice7 = digits.slice(-7);
+        const last7UnderCount = slice7.filter(d => d <= 5).length;
+        const last7OverCount = slice7.filter(d => d >= 4).length;
+
+        // 5. MARKET BIAS & COMPOSITE QUALITY SCORE
+        let bias: 'under' | 'over' | 'shifting' | 'neutral' = 'neutral';
+        if (stabilityStatus === 'SHIFTING') {
+            bias = 'shifting';
+        } else if ((pctUnder05 >= 56 || (pctUnder04 >= 55 && underIncreasing)) && under05 > over49) {
             bias = 'under';
-        } else if ((pctOver49 >= 58 || (pctOver59 >= 55 && overIncreasing)) && over49 > under05) {
+        } else if ((pctOver49 >= 56 || (pctOver59 >= 55 && overIncreasing)) && over49 > under05) {
             bias = 'over';
         }
 
-        // Composite Quality Score (0 - 100)
+        // Check if market should be avoided (excessive outlier surges or complete deadlock)
+        const isAvoidMarket =
+            (outlier7Pct > 12.5 || outlier8Pct > 12.5 || outlier9Pct > 12.5 || outlier0Pct > 12.5 || outlier1Pct > 12.5 || outlier2Pct > 12.5) &&
+            Math.abs(under05 - over49) <= 2;
+
         let qualityScore = 0;
-        const maxDominance = Math.max(pctUnder05, pctOver49);
-        qualityScore += Math.min(40, (maxDominance / 70) * 40);
-        const microCount = bias === 'under' ? last10UnderCount : last10OverCount;
-        qualityScore += (microCount / 10) * 35; // 35 pts from 10-tick micro dominance
-        const maxDigitPct = Math.max(highestUnderPct, highestOverPct);
-        qualityScore += Math.min(15, (maxDigitPct / 25) * 15);
-        if (bias !== 'neutral') qualityScore += 10;
-        qualityScore = Math.min(100, Math.round(qualityScore));
+        // Macro alignment (25 pts)
+        if (bias === 'under' && macroUnder6Dominant) qualityScore += 25;
+        else if (bias === 'over' && macroOver3Dominant) qualityScore += 25;
+        else if (bias !== 'neutral' && bias !== 'shifting') qualityScore += 12;
+
+        // 50-tick dominance (25 pts)
+        const maxDom50 = Math.max(pctUnder05, pctOver49);
+        qualityScore += Math.min(25, Math.round((maxDom50 / 70) * 25));
+
+        // 15-tick cycle stability (15 pts)
+        if (stabilityStatus === 'STABLE_UNDER' || stabilityStatus === 'STABLE_OVER') qualityScore += 15;
+        else if (stabilityStatus === 'NEUTRAL') qualityScore += 6;
+
+        // 10-tick micro ratio >= 7/10 (20 pts)
+        const microDominanceCount = bias === 'under' ? last10UnderCount : last10OverCount;
+        qualityScore += Math.min(20, Math.round((microDominanceCount / 10) * 20));
+
+        // 7-tick continuation (15 pts)
+        const immediate7Count = bias === 'under' ? last7UnderCount : last7OverCount;
+        if (immediate7Count >= 5) qualityScore += 15;
+        else if (immediate7Count >= 4) qualityScore += 8;
+
+        qualityScore = Math.min(100, Math.max(0, qualityScore));
 
         return {
-            under04,
-            over59,
-            pctUnder04,
-            pctOver59,
-            under05,
-            over49,
-            pctUnder05,
-            pctOver49,
-            highestUnderDigit,
-            highestUnderCount: maxUnderCount,
-            highestUnderPct,
-            highestOverDigit,
-            highestOverCount: maxOverCount,
-            highestOverPct,
-            freq,
+            macro: {
+                total1000,
+                freq1000,
+                pct1000,
+                most1000,
+                second1000,
+                least1000,
+                outlier7Pct,
+                outlier8Pct,
+                outlier9Pct,
+                outlier0Pct,
+                outlier1Pct,
+                outlier2Pct,
+                outlier7Increasing,
+                outlier8Increasing,
+                outlier9Increasing,
+                outlier0Increasing,
+                outlier1Increasing,
+                outlier2Increasing,
+                outliersUnder6Safe,
+                outliersOver3Safe,
+                macroUnder6Dominant,
+                macroOver3Dominant,
+            },
+            mid: {
+                under04,
+                over59,
+                pctUnder04,
+                pctOver59,
+                under05,
+                over49,
+                pctUnder05,
+                pctOver49,
+                underIncreasing,
+                overIncreasing,
+                highestUnderDigit,
+                highestUnderCount: maxUnderCount,
+                highestUnderPct,
+                highestOverDigit,
+                highestOverCount: maxOverCount,
+                highestOverPct,
+                freq50,
+            },
+            cycle: {
+                cycleUnder05,
+                cycleOver49,
+                pctCycleUnder05,
+                pctCycleOver49,
+                isRegimeShiftUnder,
+                isRegimeShiftOver,
+                stabilityStatus,
+            },
+            micro: {
+                last10UnderCount,
+                last10OverCount,
+                last7UnderCount,
+                last7OverCount,
+            },
             bias,
-            last15UnderCount,
-            last15OverCount,
-            last10UnderCount,
-            last10OverCount,
-            last7UnderCount,
-            last7OverCount,
-            underIncreasing,
-            overIncreasing,
             qualityScore,
-            total,
+            totalTicks,
+            isAvoidMarket,
         };
     }, []);
 
-    // ── High-Precision Entry Signal Engine (Patience & Digit Triggers) ──
+    // ── Systematic Trade Condition Engine (Enforcing Conditions 0, 1, 2, 3, 4) ──
     const checkEntrySignal = useCallback(
         (
             digits: number[],
             forcedStrategy?: 'UNDER_6' | 'OVER_3' | 'AUTO'
-        ): {
-            direction: 'UNDER' | 'OVER';
-            prediction: number;
-            triggerDigit: number;
-            reason: string;
-            status: 'WAITING' | 'TRIGGERED';
-            isAutoPaused?: boolean;
-            qualityScore: number;
-        } | null => {
+        ): EntrySignalResult | null => {
             if (digits.length < 15) return null;
             const a = computeAnalysis(digits);
             const currentLastDigit = digits[digits.length - 1];
@@ -481,73 +712,135 @@ const ElitePro: React.FC = observer(() => {
             } else if (targetStrategyRef.current !== 'AUTO') {
                 activeStrat = targetStrategyRef.current;
             } else {
-                activeStrat = a.under05 >= a.over49 ? 'UNDER_6' : 'OVER_3';
+                activeStrat = a.mid.under05 >= a.mid.over49 ? 'UNDER_6' : 'OVER_3';
             }
 
             if (activeStrat === 'UNDER_6') {
-                // Strict Conditions for Under 6:
-                // 1. Under 0-4 vs Over 5-9 is >= 55% & increasing OR 50-tick Under 0-5 >= 58%
-                // 2. 50-tick Under 0-5 count is dominant over Over 4-9 (e.g. 34 Under vs 25 Over)
-                // 3. Last 10 ticks >= 7 under AND Last 7 ticks >= 5 under
-                const isMacroDominant = (a.pctUnder04 >= 55 && a.underIncreasing) || a.pctUnder05 >= 56;
-                const is50TicksDominant = a.under05 > a.over49 && a.under05 >= 27;
-                const isMicroDominant = a.last10UnderCount >= 7 && a.last7UnderCount >= 4;
+                // Condition 0: Macro 1000-tick verification
+                // Most appearing, 2nd highest, and least appearing digits all < 6 (0-5) OR outliers 7,8,9 < 10% and non-increasing
+                const hasEnoughHistory = a.macro.total1000 >= 30;
+                const macroCondition = !hasEnoughHistory || (a.macro.macroUnder6Dominant && a.macro.outliersUnder6Safe);
 
-                const isConditionMet = isMacroDominant && is50TicksDominant && isMicroDominant;
+                // Condition 1: Mid 50-tick dominance & momentum
+                // Under (0-4) vs Over (5-9) >= 55% & increasing OR Under (0-5) dominant over Over (4-9) (e.g. 34 Under vs 25 Over)
+                const midCondition =
+                    ((a.mid.pctUnder04 >= 54 && a.mid.underIncreasing) || a.mid.pctUnder05 >= 55) &&
+                    a.mid.under05 > a.mid.over49 &&
+                    a.mid.under05 >= 26;
 
-                // Patient Entry Digit Trigger:
-                // Trigger A: Current digit matches the highest frequency Under entry digit
-                const isPeakDigitMatch = currentLastDigit === a.highestUnderDigit;
-                // Trigger B: Snapback from brief pullback (prev digit >= 6, current digit <= 2)
+                // Condition 2: 15-tick cycle stability check (No regime shift)
+                const cycleCondition = !a.cycle.isRegimeShiftUnder && a.cycle.cycleUnder05 >= 8;
+
+                // Condition 3: Micro 10-tick & 7-tick continuation
+                // Last 10 >= 7 Under & <= 3 Over (7/10 ratio); Last 7 >= 5 Under with last digit <= 5
+                const micro10Condition = a.micro.last10UnderCount >= 7;
+                const micro7Condition = a.micro.last7UnderCount >= 4 && currentLastDigit <= 5;
+
+                // Condition 4: Patient Trigger Digit Matching
+                // Trigger A: Live digit matches highest dominant Under entry digit
+                const isPeakDigitMatch = currentLastDigit === a.mid.highestUnderDigit;
+                // Trigger B: Snapback from brief pullback
                 const isSnapback = prevDigit !== null && prevDigit >= 6 && currentLastDigit <= 2;
-                // Trigger C: Extreme momentum (last 10 >= 8 under and current digit <= 3)
-                const isCoreMomentum = a.last10UnderCount >= 8 && currentLastDigit <= 3;
+                // Trigger C: Core momentum confirmation
+                const isCoreMomentum = a.micro.last10UnderCount >= 8 && currentLastDigit <= 3;
+                const triggerDigitCondition = isPeakDigitMatch || isSnapback || isCoreMomentum;
 
-                const isTriggered = isConditionMet && (isPeakDigitMatch || isSnapback || isCoreMomentum);
+                const allConditionsPassed =
+                    macroCondition && midCondition && cycleCondition && micro10Condition && micro7Condition;
+
+                const isTriggered = allConditionsPassed && triggerDigitCondition;
+                const isAutoPaused = a.cycle.isRegimeShiftUnder;
+
+                let reason = '';
+                if (isAutoPaused) {
+                    reason = `⏸️ AUTO-PAUSED: 15-Tick Regime Shift detected (${a.cycle.cycleOver49}/15 Over). Pausing until cycle stabilizes.`;
+                } else if (isTriggered) {
+                    reason = `🎯 UNDER 6 Trigger Fired! Digit [${currentLastDigit}] matched entry digit [${a.mid.highestUnderDigit}] (U0-5: ${a.mid.under05} vs O4-9: ${a.mid.over49}, 10t: ${a.micro.last10UnderCount}/10)`;
+                } else if (allConditionsPassed) {
+                    reason = `⏳ Waiting for Dominant Under Digit [${a.mid.highestUnderDigit}] (Current: ${currentLastDigit}, U0-5: ${a.mid.under05} vs O4-9: ${a.mid.over49}, 10t: ${a.micro.last10UnderCount}/10)`;
+                } else {
+                    reason = `Consolidating (U0-5: ${a.mid.under05} vs O4-9: ${a.mid.over49}, 10t: ${a.micro.last10UnderCount}/10). Awaiting >= 55% edge, macro alignment & 7/10 ratio.`;
+                }
 
                 return {
                     direction: 'UNDER',
                     prediction: 6,
-                    triggerDigit: a.highestUnderDigit,
-                    reason: isConditionMet
-                        ? isTriggered
-                            ? `🎯 UNDER 6 Trigger! Digit [${currentLastDigit}] matched entry digit [${a.highestUnderDigit}] (U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10)`
-                            : `Waiting for Under Entry Digit [${a.highestUnderDigit}] (Current: ${currentLastDigit}, U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10)`
-                        : `Consolidating (U0-5: ${a.under05} vs O4-9: ${a.over49}, 10t: ${a.last10UnderCount}/10). Awaiting >= 55% edge & 7/10 ratio.`,
+                    triggerDigit: a.mid.highestUnderDigit,
+                    reason,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
-                    isAutoPaused: !isConditionMet,
+                    isAutoPaused,
+                    pauseReason: isAutoPaused ? '15-Tick Cycle Shift (Flipping to Over)' : undefined,
                     qualityScore: a.qualityScore,
+                    conditions: {
+                        macroCondition,
+                        midCondition,
+                        cycleCondition,
+                        micro10Condition,
+                        micro7Condition,
+                        triggerDigitCondition,
+                    },
                 };
             } else {
-                // Strict Conditions for Over 3:
-                // 1. Over 5-9 vs Under 0-4 is >= 55% & increasing OR 50-tick Over 4-9 >= 56%
-                // 2. 50-tick Over 4-9 count is dominant over Under 0-5 (e.g. 34 Over vs 25 Under)
-                // 3. Last 10 ticks >= 7 over AND Last 7 ticks >= 4 over
-                const isMacroDominant = (a.pctOver59 >= 55 && a.overIncreasing) || a.pctOver49 >= 56;
-                const is50TicksDominant = a.over49 > a.under05 && a.over49 >= 27;
-                const isMicroDominant = a.last10OverCount >= 7 && a.last7OverCount >= 4;
+                // Condition 0: Macro 1000-tick verification
+                // Most appearing, 2nd highest, and least appearing digits all > 3 (4-9) OR outliers 0,1,2 < 10% and non-increasing
+                const hasEnoughHistory = a.macro.total1000 >= 30;
+                const macroCondition = !hasEnoughHistory || (a.macro.macroOver3Dominant && a.macro.outliersOver3Safe);
 
-                const isConditionMet = isMacroDominant && is50TicksDominant && isMicroDominant;
+                // Condition 1: Mid 50-tick dominance & momentum
+                // Over (5-9) vs Under (0-4) >= 55% & increasing OR Over (4-9) dominant over Under (0-5)
+                const midCondition =
+                    ((a.mid.pctOver59 >= 54 && a.mid.overIncreasing) || a.mid.pctOver49 >= 55) &&
+                    a.mid.over49 > a.mid.under05 &&
+                    a.mid.over49 >= 26;
 
-                // Patient Entry Digit Trigger:
-                const isPeakDigitMatch = currentLastDigit === a.highestOverDigit;
+                // Condition 2: 15-tick cycle stability check (No regime shift)
+                const cycleCondition = !a.cycle.isRegimeShiftOver && a.cycle.cycleOver49 >= 8;
+
+                // Condition 3: Micro 10-tick & 7-tick continuation
+                // Last 10 >= 7 Over & <= 3 Under (7/10 ratio); Last 7 >= 5 Over with last digit >= 4
+                const micro10Condition = a.micro.last10OverCount >= 7;
+                const micro7Condition = a.micro.last7OverCount >= 4 && currentLastDigit >= 4;
+
+                // Condition 4: Patient Trigger Digit Matching
+                const isPeakDigitMatch = currentLastDigit === a.mid.highestOverDigit;
                 const isSnapback = prevDigit !== null && prevDigit <= 3 && currentLastDigit >= 7;
-                const isCoreMomentum = a.last10OverCount >= 8 && currentLastDigit >= 6;
+                const isCoreMomentum = a.micro.last10OverCount >= 8 && currentLastDigit >= 6;
+                const triggerDigitCondition = isPeakDigitMatch || isSnapback || isCoreMomentum;
 
-                const isTriggered = isConditionMet && (isPeakDigitMatch || isSnapback || isCoreMomentum);
+                const allConditionsPassed =
+                    macroCondition && midCondition && cycleCondition && micro10Condition && micro7Condition;
+
+                const isTriggered = allConditionsPassed && triggerDigitCondition;
+                const isAutoPaused = a.cycle.isRegimeShiftOver;
+
+                let reason = '';
+                if (isAutoPaused) {
+                    reason = `⏸️ AUTO-PAUSED: 15-Tick Regime Shift detected (${a.cycle.cycleUnder05}/15 Under). Pausing until cycle stabilizes.`;
+                } else if (isTriggered) {
+                    reason = `🎯 OVER 3 Trigger Fired! Digit [${currentLastDigit}] matched entry digit [${a.mid.highestOverDigit}] (O4-9: ${a.mid.over49} vs U0-5: ${a.mid.under05}, 10t: ${a.micro.last10OverCount}/10)`;
+                } else if (allConditionsPassed) {
+                    reason = `⏳ Waiting for Dominant Over Digit [${a.mid.highestOverDigit}] (Current: ${currentLastDigit}, O4-9: ${a.mid.over49} vs U0-5: ${a.mid.under05}, 10t: ${a.micro.last10OverCount}/10)`;
+                } else {
+                    reason = `Consolidating (O4-9: ${a.mid.over49} vs U0-5: ${a.mid.under05}, 10t: ${a.micro.last10OverCount}/10). Awaiting >= 55% edge, macro alignment & 7/10 ratio.`;
+                }
 
                 return {
                     direction: 'OVER',
                     prediction: 3,
-                    triggerDigit: a.highestOverDigit,
-                    reason: isConditionMet
-                        ? isTriggered
-                            ? `🎯 OVER 3 Trigger! Digit [${currentLastDigit}] matched entry digit [${a.highestOverDigit}] (O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10)`
-                            : `Waiting for Over Entry Digit [${a.highestOverDigit}] (Current: ${currentLastDigit}, O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10)`
-                        : `Consolidating (O4-9: ${a.over49} vs U0-5: ${a.under05}, 10t: ${a.last10OverCount}/10). Awaiting >= 55% edge & 7/10 ratio.`,
+                    triggerDigit: a.mid.highestOverDigit,
+                    reason,
                     status: isTriggered ? 'TRIGGERED' : 'WAITING',
-                    isAutoPaused: !isConditionMet,
+                    isAutoPaused,
+                    pauseReason: isAutoPaused ? '15-Tick Cycle Shift (Flipping to Under)' : undefined,
                     qualityScore: a.qualityScore,
+                    conditions: {
+                        macroCondition,
+                        midCondition,
+                        cycleCondition,
+                        micro10Condition,
+                        micro7Condition,
+                        triggerDigitCondition,
+                    },
                 };
             }
         },
@@ -564,6 +857,38 @@ const ElitePro: React.FC = observer(() => {
         };
     }, [selectedSymbol]);
 
+    // ── Initial 1000-Tick Historical Ingestion on Symbol Activation ──
+    const fetch1000TicksHistory = useCallback(async (sym: string) => {
+        if (historyFetchedSymbolsRef.current.has(sym)) return;
+        historyFetchedSymbolsRef.current.add(sym);
+
+        try {
+            if (api_base?.api?.connection?.readyState === 1) {
+                const res = (await api_base.api
+                    .send({
+                        ticks_history: sym,
+                        count: 1000,
+                        end: 'latest',
+                        style: 'ticks',
+                    })
+                    .catch(() => null)) as { history?: { prices?: (number | string)[] } } | null;
+
+                if (res?.history?.prices && Array.isArray(res.history.prices) && res.history.prices.length > 0) {
+                    const activeMarket = marketsRef.current.get(sym);
+                    if (activeMarket) {
+                        const histDigits = res.history.prices.map(p => extractDigitFromPrice(p));
+                        const lastPrice = res.history.prices[res.history.prices.length - 1];
+                        activeMarket.digits = histDigits.slice(-MAX_DIGITS_BUFFER);
+                        activeMarket.currentPrice = String(lastPrice);
+                        activeMarket.lastDigit = histDigits[histDigits.length - 1] || 0;
+                        activeMarket.lastTickTime = Date.now();
+                        throttleRender();
+                    }
+                }
+            }
+        } catch {}
+    }, [throttleRender]);
+
     // ── Real-Time Tick Subscriptions for Multi-Market Scanner ──
     const [streamRefreshKey, setStreamRefreshKey] = useState(0);
 
@@ -575,6 +900,7 @@ const ElitePro: React.FC = observer(() => {
                 } catch {}
             });
             subscriptionsRef.current.clear();
+            historyFetchedSymbolsRef.current.clear();
             derivTickManager.healStalledStreams();
             setStreamRefreshKey(k => k + 1);
         };
@@ -624,8 +950,10 @@ const ElitePro: React.FC = observer(() => {
                     lastDigit: 0,
                     tickCount: 0,
                     lastTickTime: 0,
+                    cycleTicks: 0,
                 });
             }
+            void fetch1000TicksHistory(sym);
         });
 
         symbolsToSubscribe.forEach(sym => {
@@ -643,10 +971,11 @@ const ElitePro: React.FC = observer(() => {
                     const digit = extractDigitFromPrice(quote);
                     aiContinuousLearningService.ingestMarketTick(sym, digit);
                     activeMarket.digits.push(digit);
-                    if (activeMarket.digits.length > MAX_DIGITS) activeMarket.digits.shift();
+                    if (activeMarket.digits.length > MAX_DIGITS_BUFFER) activeMarket.digits.shift();
                     activeMarket.currentPrice = String(quote);
                     activeMarket.lastDigit = digit;
                     activeMarket.tickCount = (activeMarket.tickCount || 0) + 1;
+                    activeMarket.cycleTicks = (activeMarket.cycleTicks || 0) + 1;
                     activeMarket.lastTickTime = Date.now();
                     throttleRender();
                 }
@@ -654,7 +983,7 @@ const ElitePro: React.FC = observer(() => {
 
             activeSubs.set(sym, sub);
         });
-    }, [scanAll, selectedSymbol, streamRefreshKey, throttleRender]);
+    }, [scanAll, selectedSymbol, streamRefreshKey, fetch1000TicksHistory, throttleRender]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -677,7 +1006,7 @@ const ElitePro: React.FC = observer(() => {
             currentPrice: string;
             lastDigit: number;
             qualityScore: number;
-            bias: 'under' | 'over' | 'neutral';
+            bias: 'under' | 'over' | 'shifting' | 'neutral';
             under05: number;
             over49: number;
             pctUnder05: number;
@@ -686,6 +1015,7 @@ const ElitePro: React.FC = observer(() => {
             highestOverDigit: number;
             hasSignal: boolean;
             isTriggered: boolean;
+            isAutoPaused: boolean;
             signalDirection?: 'UNDER' | 'OVER';
         }> = [];
 
@@ -700,14 +1030,15 @@ const ElitePro: React.FC = observer(() => {
                 lastDigit: m.lastDigit,
                 qualityScore: analysis.qualityScore,
                 bias: analysis.bias,
-                under05: analysis.under05,
-                over49: analysis.over49,
-                pctUnder05: analysis.pctUnder05,
-                pctOver49: analysis.pctOver49,
-                highestUnderDigit: analysis.highestUnderDigit,
-                highestOverDigit: analysis.highestOverDigit,
+                under05: analysis.mid.under05,
+                over49: analysis.mid.over49,
+                pctUnder05: analysis.mid.pctUnder05,
+                pctOver49: analysis.mid.pctOver49,
+                highestUnderDigit: analysis.mid.highestUnderDigit,
+                highestOverDigit: analysis.mid.highestOverDigit,
                 hasSignal: Boolean(signal && !signal.isAutoPaused),
                 isTriggered: Boolean(signal && signal.status === 'TRIGGERED'),
+                isAutoPaused: Boolean(signal?.isAutoPaused),
                 signalDirection: signal?.direction,
             });
         });
@@ -906,7 +1237,7 @@ const ElitePro: React.FC = observer(() => {
                         break;
                     }
 
-                    // 2. Auto-Input Best Market / Selection
+                    // 2. Auto-Input Best Market Selection
                     let targetSym = selectedSymbolRef.current;
                     if (autoInputBestMarket && currentStakeRef.current <= baseStake) {
                         const liveRanked = getLiveRankedMarkets();
@@ -932,12 +1263,46 @@ const ElitePro: React.FC = observer(() => {
                     const activeStrat = targetStrategyRef.current;
                     const entrySignal = checkEntrySignal(currentData.digits, activeStrat);
 
-                    // 4. Handle Waiting / Multi-Market Radar Switching
+                    // 4. Handle 15-Tick Cycle Shift Auto-Pause & Smart Market Rotation
+                    if (entrySignal?.isAutoPaused) {
+                        if (autoSwitchMarkets && currentStakeRef.current <= baseStake) {
+                            const liveRanked = getLiveRankedMarkets();
+                            const cleanAltMarket = liveRanked.find(
+                                m => m.symbol !== targetSym && !m.isAutoPaused && m.qualityScore >= 60
+                            );
+
+                            if (cleanAltMarket) {
+                                setSelectedSymbol(cleanAltMarket.symbol);
+                                selectedSymbolRef.current = cleanAltMarket.symbol;
+                                targetStrategyRef.current = 'AUTO';
+                                setActiveTargetStrategy('AUTO');
+                                addLogEntry(
+                                    'CYCLE SHIFT ROTATION',
+                                    cleanAltMarket.label,
+                                    'PENDING',
+                                    0,
+                                    `⚡ Auto-rotated from shifted market to clean setup on ${cleanAltMarket.label}`
+                                );
+                                throttleRender();
+                                await new Promise(r => setTimeout(r, 60));
+                                continue;
+                            }
+                        }
+
+                        if (autoStateRef.current !== 'SCANNING') {
+                            setAutoState('SCANNING');
+                            autoStateRef.current = 'SCANNING';
+                        }
+                        await new Promise(r => setTimeout(r, 200));
+                        continue;
+                    }
+
+                    // 5. Handle Waiting / Multi-Market Radar Switching
                     if (!entrySignal || entrySignal.status === 'WAITING') {
                         if (autoSwitchMarkets && currentStakeRef.current <= baseStake) {
                             const liveRanked = getLiveRankedMarkets();
                             const readyMarket = liveRanked.find(
-                                m => m.symbol !== targetSym && m.isTriggered && m.qualityScore >= 60
+                                m => m.symbol !== targetSym && m.isTriggered && !m.isAutoPaused && m.qualityScore >= 60
                             );
 
                             if (readyMarket) {
@@ -958,7 +1323,7 @@ const ElitePro: React.FC = observer(() => {
                             }
                         }
 
-                        if (entrySignal && entrySignal.status === 'WAITING' && !entrySignal.isAutoPaused) {
+                        if (entrySignal && entrySignal.status === 'WAITING') {
                             if (autoStateRef.current !== 'WAITING_TRIGGER') {
                                 setAutoState('WAITING_TRIGGER');
                                 autoStateRef.current = 'WAITING_TRIGGER';
@@ -974,7 +1339,7 @@ const ElitePro: React.FC = observer(() => {
                         continue;
                     }
 
-                    // 5. Trigger Confirmed: Execute Trade Immediately
+                    // 6. Trigger Confirmed: Execute Trade Immediately
                     setAutoState('TRADING');
                     autoStateRef.current = 'TRADING';
 
@@ -1026,7 +1391,7 @@ const ElitePro: React.FC = observer(() => {
                         setTotalProfit(nextProfit);
                         tradeRuns++;
 
-                        // 6. Intelligent Re-Entry & Recovery Handling
+                        // 7. Intelligent Re-Entry & Recovery Handling
                         if (isWin) {
                             winsRef.current++;
                             setWins(winsRef.current);
@@ -1061,10 +1426,10 @@ const ElitePro: React.FC = observer(() => {
                             const updatedDigits = marketsRef.current.get(targetSym)?.digits || [];
                             const freshAnalysis = computeAnalysis(updatedDigits);
 
-                            if (freshAnalysis.pctUnder05 >= 56) {
+                            if (freshAnalysis.mid.pctUnder05 >= 56 && freshAnalysis.macro.outliersUnder6Safe) {
                                 targetStrategyRef.current = 'UNDER_6';
                                 setActiveTargetStrategy('UNDER_6');
-                            } else if (freshAnalysis.pctOver49 >= 56) {
+                            } else if (freshAnalysis.mid.pctOver49 >= 56 && freshAnalysis.macro.outliersOver3Safe) {
                                 targetStrategyRef.current = 'OVER_3';
                                 setActiveTargetStrategy('OVER_3');
                             } else {
@@ -1081,7 +1446,7 @@ const ElitePro: React.FC = observer(() => {
                             );
 
                             // Post-loss cooldown: Allow market confirmation ticks to settle before next trigger
-                            await new Promise(r => setTimeout(r, 1500));
+                            await new Promise(r => setTimeout(r, 1200));
                         }
 
                         // Check Take Profit or Stop Loss after trade settlement
@@ -1105,7 +1470,7 @@ const ElitePro: React.FC = observer(() => {
                             setAutoState('SCANNING');
                             autoStateRef.current = 'SCANNING';
                         }
-                        await new Promise(r => setTimeout(r, 400));
+                        await new Promise(r => setTimeout(r, 350));
                     } catch (err) {
                         if (abortSignal.aborted || (autoStateRef.current as AutoState) === 'IDLE') break;
                         const msg = err instanceof Error ? err.message : String(err);
@@ -1139,6 +1504,7 @@ const ElitePro: React.FC = observer(() => {
         autoSwitchMarkets,
         executeTrade,
         computeAnalysis,
+        throttleRender,
     ]);
 
     // ── Pause, Resume, Stop controls ──
@@ -1227,10 +1593,10 @@ const ElitePro: React.FC = observer(() => {
 
     // Check whether current live digit matches the active entry trigger digit
     const isUnderTriggerGlowing = Boolean(
-        activeData && analysis && activeData.lastDigit === analysis.highestUnderDigit
+        activeData && analysis && activeData.lastDigit === analysis.mid.highestUnderDigit
     );
     const isOverTriggerGlowing = Boolean(
-        activeData && analysis && activeData.lastDigit === analysis.highestOverDigit
+        activeData && analysis && activeData.lastDigit === analysis.mid.highestOverDigit
     );
 
     return (
@@ -1288,7 +1654,7 @@ const ElitePro: React.FC = observer(() => {
                                 return (
                                     <div
                                         key={m.symbol}
-                                        className={`ep-side-market-card ${isSelected ? 'active' : ''} ${m.isTriggered ? 'signal-glowing' : ''}`}
+                                        className={`ep-side-market-card ${isSelected ? 'active' : ''} ${m.isTriggered ? 'signal-glowing' : ''} ${m.isAutoPaused ? 'cycle-paused' : ''}`}
                                         onClick={() => handleManualMarketSelect(m.symbol)}
                                     >
                                         <div className='ep-side-market-card__top'>
@@ -1300,6 +1666,7 @@ const ElitePro: React.FC = observer(() => {
                                                         {m.signalDirection} {m.signalDirection === 'UNDER' ? '6' : '3'}
                                                     </span>
                                                 )}
+                                                {m.isAutoPaused && <span className='pause-tag'>CYCLE PAUSED</span>}
                                             </div>
                                             <div className='price-box'>{m.currentPrice}</div>
                                             <div className='last-digit-badge'>
@@ -1345,7 +1712,7 @@ const ElitePro: React.FC = observer(() => {
                             <span className='ep-crown'>👑</span>
                             <div className='ep-title-meta'>
                                 <span className='ep-title-text'>Elite Pro Trading Suite</span>
-                                <span className='ep-title-sub'>High-Precision Digit Scanner, Neural Triggers &amp; Automated Over/Under Engine</span>
+                                <span className='ep-title-sub'>High-Probability Multi-Timeframe Statistical Engine (Under 6 &amp; Over 3)</span>
                             </div>
                         </div>
 
@@ -1490,21 +1857,128 @@ const ElitePro: React.FC = observer(() => {
                         </div>
                     </div>
 
-                    {/* ── 3. Statistical Analysis Cards & Glowing Entry Digit ── */}
+                    {/* ── 3. Multi-Horizon Statistical Intelligence Suite ── */}
                     {analysis && (
                         <div className='ep-stats-stack'>
-                            {/* Card A: Statistical Analysis of Under (0-4) vs Over (5-9) */}
+                            {/* ── Card 0: Macro 1000-Tick Historical Intelligence (~30m–1hr) ── */}
+                            <div className='ep-glass ep-macro-intel-card'>
+                                <div className='card-header-row'>
+                                    <div className='title-wrap'>
+                                        <ShieldCheck size={20} className='icon text-purple' />
+                                        <div>
+                                            <h4 className='title'>Macro Market Intelligence (1,000 Ticks / ~30m–1hr Horizon)</h4>
+                                            <span className='sub'>Understanding digit history, frequency power &amp; outlier elimination</span>
+                                        </div>
+                                    </div>
+                                    <div className='macro-badges'>
+                                        <span className={`macro-bias-badge ${analysis.macro.macroUnder6Dominant ? 'badge--under' : analysis.macro.macroOver3Dominant ? 'badge--over' : 'badge--neutral'}`}>
+                                            {analysis.macro.macroUnder6Dominant
+                                                ? '🛡️ UNDER 6 MACRO FAVORED'
+                                                : analysis.macro.macroOver3Dominant
+                                                  ? '🚀 OVER 3 MACRO FAVORED'
+                                                  : '⚖️ MACRO CONSOLIDATING'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Macro Ranks: Most Appearing, 2nd Highest, Least Appearing */}
+                                <div className='ep-macro-ranks-grid'>
+                                    <div className='macro-rank-item most'>
+                                        <span className='rank-label'>🥇 Most Appearing Digit</span>
+                                        <div className='rank-digit-box'>
+                                            <span className='digit'>{analysis.macro.most1000}</span>
+                                            <span className='pct'>{analysis.macro.pct1000[analysis.macro.most1000]?.toFixed(1)}%</span>
+                                        </div>
+                                        <span className='status-tag'>{analysis.macro.most1000 <= 5 ? 'Under Zone (0-5)' : 'Over Zone (4-9)'}</span>
+                                    </div>
+
+                                    <div className='macro-rank-item second'>
+                                        <span className='rank-label'>🥈 2nd Highest Digit</span>
+                                        <div className='rank-digit-box'>
+                                            <span className='digit'>{analysis.macro.second1000}</span>
+                                            <span className='pct'>{analysis.macro.pct1000[analysis.macro.second1000]?.toFixed(1)}%</span>
+                                        </div>
+                                        <span className='status-tag'>{analysis.macro.second1000 <= 5 ? 'Under Zone (0-5)' : 'Over Zone (4-9)'}</span>
+                                    </div>
+
+                                    <div className='macro-rank-item least'>
+                                        <span className='rank-label'>🥉 Least Appearing Digit</span>
+                                        <div className='rank-digit-box'>
+                                            <span className='digit'>{analysis.macro.least1000}</span>
+                                            <span className='pct'>{analysis.macro.pct1000[analysis.macro.least1000]?.toFixed(1)}%</span>
+                                        </div>
+                                        <span className='status-tag'>{analysis.macro.least1000 <= 5 ? 'Under Zone (0-5)' : 'Over Zone (4-9)'}</span>
+                                    </div>
+                                </div>
+
+                                {/* Outlier Safety Badges Matrix */}
+                                <div className='ep-outlier-safety-matrix'>
+                                    <div className='safety-col'>
+                                        <div className='safety-head'>
+                                            <span>Under 6 Outlier Safety (Digits 7, 8, 9 must be &lt; 10% &amp; not increasing)</span>
+                                            <span className={`safety-status-pill ${analysis.macro.outliersUnder6Safe ? 'safe' : 'warn'}`}>
+                                                {analysis.macro.outliersUnder6Safe ? '✅ SAFE FOR UNDER 6' : '⚠️ OUTLIER RISK'}
+                                            </span>
+                                        </div>
+                                        <div className='outlier-chips-row'>
+                                            <div className={`outlier-chip ${analysis.macro.outlier7Pct < 10 && !analysis.macro.outlier7Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 7</span>
+                                                <strong>{analysis.macro.outlier7Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier7Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                            <div className={`outlier-chip ${analysis.macro.outlier8Pct < 10 && !analysis.macro.outlier8Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 8</span>
+                                                <strong>{analysis.macro.outlier8Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier8Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                            <div className={`outlier-chip ${analysis.macro.outlier9Pct < 10 && !analysis.macro.outlier9Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 9</span>
+                                                <strong>{analysis.macro.outlier9Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier9Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className='safety-col'>
+                                        <div className='safety-head'>
+                                            <span>Over 3 Outlier Safety (Digits 0, 1, 2 must be &lt; 10% &amp; not increasing)</span>
+                                            <span className={`safety-status-pill ${analysis.macro.outliersOver3Safe ? 'safe' : 'warn'}`}>
+                                                {analysis.macro.outliersOver3Safe ? '✅ SAFE FOR OVER 3' : '⚠️ OUTLIER RISK'}
+                                            </span>
+                                        </div>
+                                        <div className='outlier-chips-row'>
+                                            <div className={`outlier-chip ${analysis.macro.outlier0Pct < 10 && !analysis.macro.outlier0Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 0</span>
+                                                <strong>{analysis.macro.outlier0Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier0Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                            <div className={`outlier-chip ${analysis.macro.outlier1Pct < 10 && !analysis.macro.outlier1Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 1</span>
+                                                <strong>{analysis.macro.outlier1Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier1Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                            <div className={`outlier-chip ${analysis.macro.outlier2Pct < 10 && !analysis.macro.outlier2Increasing ? 'good' : 'bad'}`}>
+                                                <span className='name'>Digit 2</span>
+                                                <strong>{analysis.macro.outlier2Pct.toFixed(1)}%</strong>
+                                                <span className='trend'>{analysis.macro.outlier2Increasing ? '↗ Rising' : '↘ Safe'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ── Card 1: Statistical Analysis of Under (0-4) vs Over (5-9) ── */}
                             <div className='ep-glass ep-stats-card'>
                                 <div className='ep-stats-card__header'>
                                     <div className='title-group'>
                                         <span className='title'>Statistical Analysis 1: Under (0–4) vs Over (5–9)</span>
                                         <span className='sample-count'>(50 Ticks Window &bull; Trend Acceleration)</span>
                                     </div>
-                                    <span className={`ep-bias-badge ep-bias-badge--${analysis.pctUnder04 >= 55 ? 'under' : analysis.pctOver59 >= 55 ? 'over' : 'neutral'}`}>
-                                        {analysis.pctUnder04 >= 55
-                                            ? `UNDER 0-4 DOMINANT (${analysis.pctUnder04.toFixed(1)}%)`
-                                            : analysis.pctOver59 >= 55
-                                              ? `OVER 5-9 DOMINANT (${analysis.pctOver59.toFixed(1)}%)`
+                                    <span className={`ep-bias-badge ep-bias-badge--${analysis.mid.pctUnder04 >= 55 ? 'under' : analysis.mid.pctOver59 >= 55 ? 'over' : 'neutral'}`}>
+                                        {analysis.mid.pctUnder04 >= 55
+                                            ? `UNDER 0-4 DOMINANT (${analysis.mid.pctUnder04.toFixed(1)}%)`
+                                            : analysis.mid.pctOver59 >= 55
+                                              ? `OVER 5-9 DOMINANT (${analysis.mid.pctOver59.toFixed(1)}%)`
                                               : 'BALANCED'}
                                     </span>
                                 </div>
@@ -1513,37 +1987,37 @@ const ElitePro: React.FC = observer(() => {
                                     <div className='ep-ratio-block__head'>
                                         <div className='side side--under'>
                                             <span className='tag'>Under (0–4)</span>
-                                            <strong>{analysis.under04} Ticks ({analysis.pctUnder04.toFixed(1)}%)</strong>
+                                            <strong>{analysis.mid.under04} Ticks ({analysis.mid.pctUnder04.toFixed(1)}%)</strong>
                                         </div>
                                         <span className='vs'>VS</span>
                                         <div className='side side--over'>
                                             <span className='tag'>Over (5–9)</span>
-                                            <strong>{analysis.over59} Ticks ({analysis.pctOver59.toFixed(1)}%)</strong>
+                                            <strong>{analysis.mid.over59} Ticks ({analysis.mid.pctOver59.toFixed(1)}%)</strong>
                                         </div>
                                     </div>
                                     <div className='ep-progress-track'>
-                                        <div className='ep-progress-bar ep-progress-bar--under' style={{ width: `${analysis.pctUnder04}%` }} />
-                                        <div className='ep-progress-bar ep-progress-bar--over' style={{ width: `${analysis.pctOver59}%` }} />
+                                        <div className='ep-progress-bar ep-progress-bar--under' style={{ width: `${analysis.mid.pctUnder04}%` }} />
+                                        <div className='ep-progress-bar ep-progress-bar--over' style={{ width: `${analysis.mid.pctOver59}%` }} />
                                     </div>
                                     <div className='ep-ratio-momentum'>
-                                        {analysis.pctUnder04 >= 55 && (
+                                        {analysis.mid.pctUnder04 >= 55 && (
                                             <span className='tip tip--green'>
-                                                ⚡ Under 0-4 threshold is above 55% ({analysis.pctUnder04.toFixed(1)}%) {analysis.underIncreasing ? 'and INCREASING ↗' : 'steady'}
+                                                ⚡ Under 0-4 threshold is above 55% ({analysis.mid.pctUnder04.toFixed(1)}%) {analysis.mid.underIncreasing ? 'and INCREASING ↗' : 'steady'}
                                             </span>
                                         )}
-                                        {analysis.pctOver59 >= 55 && (
+                                        {analysis.mid.pctOver59 >= 55 && (
                                             <span className='tip tip--orange'>
-                                                ⚡ Over 5-9 threshold is above 55% ({analysis.pctOver59.toFixed(1)}%) {analysis.overIncreasing ? 'and INCREASING ↗' : 'steady'}
+                                                ⚡ Over 5-9 threshold is above 55% ({analysis.mid.pctOver59.toFixed(1)}%) {analysis.mid.overIncreasing ? 'and INCREASING ↗' : 'steady'}
                                             </span>
                                         )}
-                                        {analysis.pctUnder04 < 55 && analysis.pctOver59 < 55 && (
+                                        {analysis.mid.pctUnder04 < 55 && analysis.mid.pctOver59 < 55 && (
                                             <span className='tip tip--neutral'>⚖️ Ratios consolidating in range (&lt; 55% threshold)</span>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Card B: Statistical Analysis of Under (0-5) vs Over (4-9) */}
+                            {/* ── Card 2: Statistical Analysis of Under (0-5) vs Over (4-9) ── */}
                             <div className='ep-glass ep-stats-card'>
                                 <div className='ep-stats-card__header'>
                                     <div className='title-group'>
@@ -1551,7 +2025,7 @@ const ElitePro: React.FC = observer(() => {
                                         <span className='sample-count'>(50 Ticks Counts &bull; 10-Tick / 7-Tick Micro Windows)</span>
                                     </div>
                                     <span className={`ep-bias-badge ep-bias-badge--${analysis.bias}`}>
-                                        {analysis.under05 >= analysis.over49 ? '🛡️ UNDER 6 FAVOR' : '🚀 OVER 3 FAVOR'}
+                                        {analysis.mid.under05 >= analysis.mid.over49 ? '🛡️ UNDER 6 FAVOR' : '🚀 OVER 3 FAVOR'}
                                     </span>
                                 </div>
 
@@ -1559,55 +2033,99 @@ const ElitePro: React.FC = observer(() => {
                                     <div className='ep-ratio-block__head'>
                                         <div className='side side--under'>
                                             <span className='tag'>Under (0–5)</span>
-                                            <strong>{analysis.under05} Ticks ({analysis.pctUnder05.toFixed(1)}%)</strong>
+                                            <strong>{analysis.mid.under05} Ticks ({analysis.mid.pctUnder05.toFixed(1)}%)</strong>
                                         </div>
                                         <span className='vs'>VS</span>
                                         <div className='side side--over'>
                                             <span className='tag'>Over (4–9)</span>
-                                            <strong>{analysis.over49} Ticks ({analysis.pctOver49.toFixed(1)}%)</strong>
+                                            <strong>{analysis.mid.over49} Ticks ({analysis.mid.pctOver49.toFixed(1)}%)</strong>
                                         </div>
                                     </div>
                                     <div className='ep-progress-track'>
                                         <div
                                             className='ep-progress-bar ep-progress-bar--under'
-                                            style={{ width: `${(analysis.under05 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
+                                            style={{ width: `${(analysis.mid.under05 / ((analysis.mid.under05 + analysis.mid.over49) || 1)) * 100}%` }}
                                         />
                                         <div
                                             className='ep-progress-bar ep-progress-bar--over'
-                                            style={{ width: `${(analysis.over49 / ((analysis.under05 + analysis.over49) || 1)) * 100}%` }}
+                                            style={{ width: `${(analysis.mid.over49 / ((analysis.mid.under05 + analysis.mid.over49) || 1)) * 100}%` }}
                                         />
                                     </div>
 
                                     <div className='ep-micro-ratios-row'>
                                         <div className='micro-chip'>
-                                            <label>Last 10 Ticks Micro Ratio:</label>
-                                            <strong>{analysis.last10UnderCount} Under (0-5) vs {analysis.last10OverCount} Over (4-9)</strong>
+                                            <label>Last 10 Ticks Micro Ratio (7/10 Rule):</label>
+                                            <strong className={analysis.micro.last10UnderCount >= 7 ? 'text-green' : analysis.micro.last10OverCount >= 7 ? 'text-orange' : ''}>
+                                                {analysis.micro.last10UnderCount} Under (0-5) vs {analysis.micro.last10OverCount} Over (4-9)
+                                            </strong>
                                         </div>
                                         <div className='micro-chip'>
-                                            <label>Last 7 Ticks Favor:</label>
-                                            <strong>{analysis.last7UnderCount} Under vs {analysis.last7OverCount} Over</strong>
+                                            <label>Last 7 Ticks Continuation:</label>
+                                            <strong className={analysis.micro.last7UnderCount >= 5 ? 'text-green' : analysis.micro.last7OverCount >= 5 ? 'text-orange' : ''}>
+                                                {analysis.micro.last7UnderCount} Under vs {analysis.micro.last7OverCount} Over
+                                            </strong>
                                         </div>
                                     </div>
 
                                     <div className='ep-market-tendency-note'>
-                                        {analysis.under05 > analysis.over49 ? (
+                                        {analysis.mid.under05 > analysis.mid.over49 ? (
                                             <span className='note note--under'>
-                                                🔥 Market tends to be <strong>POWERFUL IN UNDER</strong> ({analysis.under05} Under 0-5 vs {analysis.over49} Over 4-9).
+                                                🔥 Market tends to be <strong>POWERFUL IN UNDER</strong> ({analysis.mid.under05} Under 0-5 vs {analysis.mid.over49} Over 4-9).
                                             </span>
-                                        ) : analysis.over49 > analysis.under05 ? (
+                                        ) : analysis.mid.over49 > analysis.mid.under05 ? (
                                             <span className='note note--over'>
-                                                🔥 Market tends to be <strong>POWERFUL IN OVER</strong> ({analysis.over49} Over 4-9 vs {analysis.under05} Under 0-5).
+                                                🔥 Market tends to be <strong>POWERFUL IN OVER</strong> ({analysis.mid.over49} Over 4-9 vs {analysis.mid.under05} Under 0-5).
                                             </span>
                                         ) : (
                                             <span className='note note--neutral'>
-                                                ℹ️ Neutral equilibrium ({analysis.under05} Under vs {analysis.over49} Over).
+                                                ℹ️ Neutral equilibrium ({analysis.mid.under05} Under vs {analysis.mid.over49} Over).
                                             </span>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Card C: Entry Digit Glowing in the Highest */}
+                            {/* ── Card 3: 15-Tick Rolling Stability Cycle Monitor ── */}
+                            <div className='ep-glass ep-cycle-monitor-card'>
+                                <div className='card-head'>
+                                    <div className='title-wrap'>
+                                        <RotateCcw size={18} className='text-purple' />
+                                        <h4>15-Tick Rolling Stability Cycle &amp; Shift Monitor</h4>
+                                    </div>
+                                    <span className={`cycle-status-pill cycle-status-pill--${analysis.cycle.stabilityStatus.toLowerCase()}`}>
+                                        {analysis.cycle.stabilityStatus === 'STABLE_UNDER' && '🛡️ STABLE UNDER CYCLE'}
+                                        {analysis.cycle.stabilityStatus === 'STABLE_OVER' && '🚀 STABLE OVER CYCLE'}
+                                        {analysis.cycle.stabilityStatus === 'SHIFTING' && '⚠️ REGIME SHIFT DETECTED (AUTO-PAUSED)'}
+                                        {analysis.cycle.stabilityStatus === 'NEUTRAL' && '⚖️ CYCLE CONSOLIDATING'}
+                                    </span>
+                                </div>
+
+                                <div className='cycle-body'>
+                                    <div className='cycle-stat'>
+                                        <span className='label'>Last 15 Ticks Distribution:</span>
+                                        <strong>{analysis.cycle.cycleUnder05} Under (0-5) / {analysis.cycle.cycleOver49} Over (4-9)</strong>
+                                    </div>
+                                    <div className='cycle-note'>
+                                        {analysis.cycle.isRegimeShiftUnder && (
+                                            <span className='text-orange'>
+                                                Market shifted momentum towards Over ({analysis.cycle.cycleOver49}/15 Over). System auto-pauses Under execution to prevent counter-trend loss.
+                                            </span>
+                                        )}
+                                        {analysis.cycle.isRegimeShiftOver && (
+                                            <span className='text-orange'>
+                                                Market shifted momentum towards Under ({analysis.cycle.cycleUnder05}/15 Under). System auto-pauses Over execution to prevent counter-trend loss.
+                                            </span>
+                                        )}
+                                        {!analysis.cycle.isRegimeShiftUnder && !analysis.cycle.isRegimeShiftOver && (
+                                            <span className='text-green'>
+                                                Cycle is stable with favored direction. Re-evaluates continuously every tick.
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ── Card 4: Highest Entry Trigger Digit Glowing Orb Card ── */}
                             <div className='ep-glass ep-entry-digit-glow-card'>
                                 <div className='card-head'>
                                     <div className='title-wrap'>
@@ -1626,14 +2144,14 @@ const ElitePro: React.FC = observer(() => {
                                         </div>
                                         <div className='orb-container'>
                                             <div className='glowing-orb under'>
-                                                <span className='digit-num'>{analysis.highestUnderDigit}</span>
+                                                <span className='digit-num'>{analysis.mid.highestUnderDigit}</span>
                                             </div>
                                             {isUnderTriggerGlowing && (
                                                 <span className='live-trigger-badge'>⚡ LIVE TICK MATCH (TRIGGER READY)</span>
                                             )}
                                         </div>
                                         <div className='box-meta'>
-                                            <span>Frequency: <strong>{analysis.highestUnderCount} times</strong> ({analysis.highestUnderPct.toFixed(0)}%) in 50 ticks</span>
+                                            <span>Frequency: <strong>{analysis.mid.highestUnderCount} times</strong> ({analysis.mid.highestUnderPct.toFixed(0)}%) in 50 ticks</span>
                                         </div>
                                     </div>
 
@@ -1645,18 +2163,87 @@ const ElitePro: React.FC = observer(() => {
                                         </div>
                                         <div className='orb-container'>
                                             <div className='glowing-orb over'>
-                                                <span className='digit-num'>{analysis.highestOverDigit}</span>
+                                                <span className='digit-num'>{analysis.mid.highestOverDigit}</span>
                                             </div>
                                             {isOverTriggerGlowing && (
                                                 <span className='live-trigger-badge'>⚡ LIVE TICK MATCH (TRIGGER READY)</span>
                                             )}
                                         </div>
                                         <div className='box-meta'>
-                                            <span>Frequency: <strong>{analysis.highestOverCount} times</strong> ({analysis.highestOverPct.toFixed(0)}%) in 50 ticks</span>
+                                            <span>Frequency: <strong>{analysis.mid.highestOverCount} times</strong> ({analysis.mid.highestOverPct.toFixed(0)}%) in 50 ticks</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+
+                            {/* ── Card 5: Systematic Strategy Verification Checklist HUD ── */}
+                            {activeSignal && (
+                                <div className='ep-glass ep-checklist-hud-card'>
+                                    <div className='card-head'>
+                                        <div className='title-wrap'>
+                                            <Activity size={18} className='text-purple' />
+                                            <h4>Systematic Condition Checklist HUD ({activeSignal.direction} {activeSignal.prediction})</h4>
+                                        </div>
+                                        <span className={`signal-state-pill ${activeSignal.status === 'TRIGGERED' ? 'triggered' : activeSignal.isAutoPaused ? 'paused' : 'waiting'}`}>
+                                            {activeSignal.status === 'TRIGGERED'
+                                                ? '🎯 ALL CONDITIONS MET — FIRING'
+                                                : activeSignal.isAutoPaused
+                                                  ? '⏸ AUTO-PAUSED'
+                                                  : '⏳ WAITING CONDITIONS'}
+                                        </span>
+                                    </div>
+
+                                    <div className='ep-checklist-grid'>
+                                        <div className={`check-item ${activeSignal.conditions.macroCondition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.macroCondition ? '✅' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Condition 0: 1,000-Tick Macro Alignment</span>
+                                                <span className='desc'>Top digits in zone &amp; outliers &lt; 10% non-increasing</span>
+                                            </div>
+                                        </div>
+
+                                        <div className={`check-item ${activeSignal.conditions.midCondition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.midCondition ? '✅' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Condition 1: 50-Tick Dominance &amp; &ge;55% Edge</span>
+                                                <span className='desc'>Favored side dominant &amp; momentum increasing</span>
+                                            </div>
+                                        </div>
+
+                                        <div className={`check-item ${activeSignal.conditions.cycleCondition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.cycleCondition ? '✅' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Condition 2: 15-Tick Cycle Stability</span>
+                                                <span className='desc'>No regime shift detected in last 15 ticks</span>
+                                            </div>
+                                        </div>
+
+                                        <div className={`check-item ${activeSignal.conditions.micro10Condition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.micro10Condition ? '✅' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Condition 3: Micro 7/10 Ratio Confirmation</span>
+                                                <span className='desc'>Last 10 ticks &ge; 7 in favored direction</span>
+                                            </div>
+                                        </div>
+
+                                        <div className={`check-item ${activeSignal.conditions.micro7Condition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.micro7Condition ? '✅' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Condition 4: Immediate 7-Tick Continuation</span>
+                                                <span className='desc'>Last 7 ticks &ge; 5 with last digit in zone</span>
+                                            </div>
+                                        </div>
+
+                                        <div className={`check-item ${activeSignal.conditions.triggerDigitCondition ? 'pass' : 'fail'}`}>
+                                            <div className='check-icon'>{activeSignal.conditions.triggerDigitCondition ? '⚡' : '⏳'}</div>
+                                            <div className='check-info'>
+                                                <span className='name'>Trigger: Patient Digit Trigger Match</span>
+                                                <span className='desc'>Current digit matches dominant entry digit [{activeSignal.triggerDigit}]</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
