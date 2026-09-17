@@ -460,7 +460,7 @@ class AiContinuousLearningEngine {
     // ─────────────────────────────────────────────────────────────────────────
 
     public recordBotTrade(trade: BotTradeRecord): void {
-        const { botName, strategy, market, contractType, barrier, prediction, isWin, profit, stake } = trade;
+        const { botName, strategy, contractType, barrier, prediction, isWin, profit } = trade;
         if (!botName) return;
 
         // 1. Update Per-Bot Contribution Telemetry
@@ -522,7 +522,7 @@ class AiContinuousLearningEngine {
         }
     }
 
-    public updateQValue(patternKey: string, reward: number, profitAmount = 0, botName?: SupportedBotName): void {
+    public updateQValue(patternKey: string, reward: number, _profitAmount = 0, botName?: SupportedBotName): void {
         if (!patternKey) return;
         const current = this.qTable.get(patternKey) || { qValue: 0.5, samples: 0, wins: 0, botName };
         const alpha = 0.15; // Learning Rate

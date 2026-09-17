@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     aiContinuousLearningService,
     LiveLearningDiagnostics,
     QPatternWeight,
-    SupportedBotName,
-    BotLearningContribution,
 } from '@/services/ai-continuous-learning.service';
 import {
     Brain,
@@ -546,7 +544,7 @@ export const AiLearningHubModal: React.FC<AiLearningHubModalProps> = ({ isOpen, 
                                 <div className='step-body'>
                                     <h4>Dynamic Markov Chain State Transitions</h4>
                                     <p>
-                                        Every tick from all 13+ synthetic markets is decoded. The engine updates a live $10 \times 10$ transition matrix $P(D_t \mid D_{t-1})$ and a $2 \times 2$ parity matrix in real-time to discover statistical non-uniformities.
+                                        Every tick from all 13+ synthetic markets is decoded. The engine updates a live 10 &times; 10 transition matrix P(D<sub>t</sub> | D<sub>t-1</sub>) and a 2 &times; 2 parity matrix in real-time to discover statistical non-uniformities.
                                     </p>
                                 </div>
                             </div>
@@ -554,9 +552,9 @@ export const AiLearningHubModal: React.FC<AiLearningHubModalProps> = ({ isOpen, 
                             <div className='step-card'>
                                 <div className='step-number'>3</div>
                                 <div className='step-body'>
-                                    <h4>Cross-Strategy Learning (Elite, Overlord, Poverty, Auto E/O)</h4>
+                                    <h4>Cross-Strategy Learning (Elite, Overlord, Poverty, Auto E/O, Autoflipper)</h4>
                                     <p>
-                                        Trades executed across all 4 flagship bots stream into a unified Q-learning state space. Winning strategies and barrier combinations are rewarded ($+Q$), while losing patterns receive negative weight adjustments.
+                                        Trades executed across all 5 flagship bots stream into a unified Q-learning state space. Winning strategies and barrier combinations are rewarded (+Q), while losing patterns receive negative weight adjustments.
                                     </p>
                                 </div>
                             </div>
@@ -566,7 +564,7 @@ export const AiLearningHubModal: React.FC<AiLearningHubModalProps> = ({ isOpen, 
                                 <div className='step-body'>
                                     <h4>Regime Decay Adaptation</h4>
                                     <p>
-                                        Every 500 ticks, historical transitions are decayed by $\gamma = 0.95$. This allows the model to immediately adapt to changing market conditions without losing long-term statistical stability.
+                                        Every 500 ticks, historical transitions are decayed by &gamma; = 0.95. This allows the model to immediately adapt to changing market conditions without losing long-term statistical stability.
                                     </p>
                                 </div>
                             </div>
