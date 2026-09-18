@@ -8,6 +8,7 @@ import {
     RegimeAssessment,
     SignalScoreBreakdown,
     StrategyDirection,
+    TargetStrategyChoice,
 } from '../types/b254.types';
 
 // ─── Multi-Horizon Market Breakdown Engine ─────────────────────────────────────

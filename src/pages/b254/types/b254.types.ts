@@ -130,6 +130,7 @@ export interface B254SignalResult {
 export type ChallengeTimeUnit = 'DAYS' | 'HOURS' | 'MINUTES';
 
 export interface CompoundingConfig {
+    challengeName?: string;
     startBalance: number;
     targetBalance: number;
     durationValue: number; // e.g. 30, 24, 60
@@ -167,6 +168,8 @@ export interface CompoundingProgress {
     requiredFutureGrowthPct: number;
     schedule: Array<{
         step: number;
+        stepNumber?: number;
+        day?: number;
         stepLabel: string;
         startBal: number;
         targetProfit: number;
