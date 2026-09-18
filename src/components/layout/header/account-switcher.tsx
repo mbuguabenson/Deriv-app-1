@@ -105,7 +105,7 @@ export const RealAccount3DGlassIcon = ({ currency = 'USD' }: { currency?: string
     );
 };
 
-// ─── Account Avatar with 3D Glass Real Account Support ───────────────────────
+// ─── Account Avatar with Official Deriv Currency Icon ─────────────────────────
 const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?: boolean }) => (
     <div
         className={classNames('acc-icon', {
@@ -113,11 +113,7 @@ const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?:
             'acc-icon--real': !isVirtual,
         })}
     >
-        {isVirtual ? (
-            <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
-        ) : (
-            <RealAccount3DGlassIcon currency={currency} />
-        )}
+        <CurrencyIcon currency={currency || 'usd'} isVirtual={isVirtual} />
     </div>
 );
 
@@ -564,18 +560,14 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                         }
                     }}
                 >
-                    {/* Currency / Avatar circle icon (3D Glass for Real, Real Currency Icon for Demo) */}
+                    {/* Currency / Avatar circle icon (Official Deriv Currency Coin) */}
                     <div
                         className={classNames('acc-chip__currency-icon', {
                             'acc-chip__currency-icon--demo': isVirtual,
                             'acc-chip__currency-icon--real': !isVirtual,
                         })}
                     >
-                        {isVirtual ? (
-                            <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
-                        ) : (
-                            <RealAccount3DGlassIcon currency={currency} />
-                        )}
+                        <CurrencyIcon currency={currency || 'usd'} isVirtual={isVirtual} />
                         <span className='acc-chip__online-dot'></span>
                     </div>
 
