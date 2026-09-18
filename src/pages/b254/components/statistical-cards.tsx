@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MultiHorizonBreakdown, DigitPowerItem } from '../types/b254.types';
-import { BarChart3, Sparkles, TrendingUp } from 'lucide-react';
+import { BarChart3, Layers, Sparkles, TrendingUp } from 'lucide-react';
 
 interface StatisticalCardsProps {
     multiHorizon: MultiHorizonBreakdown;

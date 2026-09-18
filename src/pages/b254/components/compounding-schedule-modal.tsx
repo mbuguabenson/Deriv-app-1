@@ -43,11 +43,11 @@ export const CompoundingScheduleModal: React.FC<CompoundingScheduleModalProps> =
                     <div className='schedule-meta-ribbon'>
                         <div className='meta-item'>
                             <span className='lbl'>Start Balance:</span>
-                            <strong>${config.startBalance.toFixed(2)}</strong>
+                            <strong>${config.startBalance.toFixed(2)} {currency}</strong>
                         </div>
                         <div className='meta-item'>
                             <span className='lbl'>Target End Balance:</span>
-                            <strong className='text-amber'>${config.targetBalance.toFixed(2)}</strong>
+                            <strong className='text-amber'>${config.targetBalance.toFixed(2)} {currency}</strong>
                         </div>
                         <div className='meta-item'>
                             <span className='lbl'>Current Day:</span>
@@ -55,7 +55,7 @@ export const CompoundingScheduleModal: React.FC<CompoundingScheduleModalProps> =
                         </div>
                         <div className='meta-item'>
                             <span className='lbl'>Total Target Profit:</span>
-                            <strong className='text-green'>+${(config.targetBalance - config.startBalance).toFixed(2)}</strong>
+                            <strong className='text-green'>+${(config.targetBalance - config.startBalance).toFixed(2)} {currency}</strong>
                         </div>
                     </div>
 
@@ -65,9 +65,9 @@ export const CompoundingScheduleModal: React.FC<CompoundingScheduleModalProps> =
                             <thead>
                                 <tr>
                                     <th>Day</th>
-                                    <th>Start Balance</th>
-                                    <th>Daily Target Profit</th>
-                                    <th>Target End Balance</th>
+                                    <th>Start Balance ({currency})</th>
+                                    <th>Daily Target Profit ({currency})</th>
+                                    <th>Target End Balance ({currency})</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>

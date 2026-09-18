@@ -1,6 +1,6 @@
 import React from 'react';
 import { CompoundingConfig, B254AutoState, TargetStrategyChoice } from '../types/b254.types';
-import { AlertOctagon, Pause, Play, Settings2, Square, Zap } from 'lucide-react';
+import { AlertOctagon, Pause, Play, Square, Zap } from 'lucide-react';
 
 interface TradingControlPanelProps {
     config: CompoundingConfig;

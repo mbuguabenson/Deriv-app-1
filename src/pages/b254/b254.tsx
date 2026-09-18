@@ -177,12 +177,10 @@ export const B254Page: React.FC = observer(() => {
 
     // ── Automated Trading & Session State ──
     const [autoState, setAutoState] = useState<B254AutoState>('IDLE');
-    const [currentStake, setCurrentStake] = useState<number>(config.baseStake);
     const [martingaleLevel, setMartingaleLevel] = useState<number>(0);
     const [consecutiveLosses, setConsecutiveLosses] = useState<number>(0);
     const [sessionProfit, setSessionProfit] = useState<number>(0);
     const [dailyProfit, setDailyProfit] = useState<number>(0);
-    const [tradesThisSession, setTradesThisSession] = useState<number>(0);
 
     const [sessionState, setSessionState] = useState<SessionState>({
         isActive: false,
@@ -224,14 +222,12 @@ export const B254Page: React.FC = observer(() => {
     const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
     const [milestoneModal, setMilestoneModal] = useState<{
         isOpen: boolean;
-        type: 'take_profit' | 'stop_loss' | 'session_target';
-        message: string;
-        profit: number;
+        type: 'tp' | 'sl';
+        amount: number;
     }>({
         isOpen: false,
-        type: 'take_profit',
-        message: '',
-        profit: 0,
+        type: 'tp',
+        amount: 0,
     });
 
     // Trading in-progress execution lock
@@ -450,7 +446,6 @@ export const B254Page: React.FC = observer(() => {
             }
 
             const mh = computeMultiHorizon(digits);
-            const dp = computeDigitPower(digits);
             const reg = evaluateRegime(digits);
             const sig = evaluateB254Signal(digits, 'AUTO', config.signalScoreThreshold);
 
@@ -536,9 +531,8 @@ export const B254Page: React.FC = observer(() => {
                     setAutoState('IDLE');
                     setMilestoneModal({
                         isOpen: true,
-                        type: 'session_target',
-                        message: `Session timer finished (${config.sessionDurationMinutes} minutes reached). Net Profit: $${prev.sessionProfit.toFixed(2)}`,
-                        profit: prev.sessionProfit,
+                        type: 'tp',
+                        amount: prev.sessionProfit,
                     });
                     return {
                         ...prev,
@@ -571,7 +565,8 @@ export const B254Page: React.FC = observer(() => {
         // Verify user login status
         if (!isLoggedIn()) {
             setAutoState('IDLE');
-            window.location.assign(generateOAuthURL());
+            const oauthUrl = await generateOAuthURL();
+            window.location.assign(oauthUrl);
             return;
         }
 
@@ -586,9 +581,7 @@ export const B254Page: React.FC = observer(() => {
 
         // Auto-pause if regime shift or continuation broken
         if (signal.isAutoPaused) {
-            if (currentAutoState !== 'PAUSED') {
-                setAutoState('PAUSED');
-            }
+            setAutoState('PAUSED');
             return;
         }
 
@@ -599,9 +592,8 @@ export const B254Page: React.FC = observer(() => {
                 setAutoState('IDLE');
                 setMilestoneModal({
                     isOpen: true,
-                    type: 'take_profit',
-                    message: `Daily Take Profit of $${config.dailyTakeProfit.toFixed(2)} achieved!`,
-                    profit: dailyProfit,
+                    type: 'tp',
+                    amount: dailyProfit,
                 });
                 return;
             }
@@ -610,9 +602,8 @@ export const B254Page: React.FC = observer(() => {
                 setAutoState('IDLE');
                 setMilestoneModal({
                     isOpen: true,
-                    type: 'stop_loss',
-                    message: `Daily Stop Loss limit (-$${config.dailyStopLoss.toFixed(2)}) reached. Halting automated execution.`,
-                    profit: dailyProfit,
+                    type: 'sl',
+                    amount: Math.abs(dailyProfit),
                 });
                 return;
             }
@@ -621,9 +612,8 @@ export const B254Page: React.FC = observer(() => {
                 setAutoState('IDLE');
                 setMilestoneModal({
                     isOpen: true,
-                    type: 'take_profit',
-                    message: `Session Take Profit of $${config.sessionTakeProfit.toFixed(2)} reached!`,
-                    profit: sessionProfit,
+                    type: 'tp',
+                    amount: sessionProfit,
                 });
                 return;
             }
@@ -632,9 +622,8 @@ export const B254Page: React.FC = observer(() => {
                 setAutoState('IDLE');
                 setMilestoneModal({
                     isOpen: true,
-                    type: 'stop_loss',
-                    message: `Session Stop Loss (-$${config.sessionStopLoss.toFixed(2)}) reached.`,
-                    profit: sessionProfit,
+                    type: 'sl',
+                    amount: Math.abs(sessionProfit),
                 });
                 return;
             }
@@ -643,9 +632,8 @@ export const B254Page: React.FC = observer(() => {
                 setAutoState('IDLE');
                 setMilestoneModal({
                     isOpen: true,
-                    type: 'stop_loss',
-                    message: `Max consecutive losses (${config.maxConsecutiveLosses}) reached. Automation paused to preserve capital.`,
-                    profit: sessionProfit,
+                    type: 'sl',
+                    amount: Math.abs(sessionProfit),
                 });
                 return;
             }
@@ -743,7 +731,10 @@ export const B254Page: React.FC = observer(() => {
             });
 
             if (buyResult?.contract_id) {
-                const settled = await streamContractUntilSettled(buyResult.contract_id);
+                const settled = await streamContractUntilSettled({
+                    contractId: buyResult.contract_id,
+                    source: 'B254',
+                });
                 const isWin = (settled?.profit ?? 0) > 0;
                 const profitAmount = settled?.profit ?? (isWin ? tradeStake * 0.40 : -tradeStake);
 
@@ -761,20 +752,22 @@ export const B254Page: React.FC = observer(() => {
 
                 // Update AI continuous learning engine
                 try {
-                    aiContinuousLearningService.recordTradeOutcome(
-                        marketData.symbol,
-                        signal.direction === 'UNDER_6' ? 'UNDER_7_MARKET' : 'OVER_2_MARKET',
+                    aiContinuousLearningService.recordBotTrade({
+                        botName: 'AUTOFLIPPER',
+                        strategy: signal.direction,
+                        market: marketData.symbol,
+                        contractType,
+                        barrier,
+                        prediction: signal.prediction,
                         isWin,
-                        profitAmount,
-                        tradeStake,
-                        signal.entryDigit
-                    );
+                        profit: profitAmount,
+                        stake: tradeStake,
+                    });
                 } catch {}
 
                 // Update Session & Risk Stats
                 setSessionProfit(p => Number((p + profitAmount).toFixed(2)));
                 setDailyProfit(p => Number((p + profitAmount).toFixed(2)));
-                setTradesThisSession(t => t + 1);
 
                 setSessionState(prev => ({
                     ...prev,
@@ -787,7 +780,6 @@ export const B254Page: React.FC = observer(() => {
                 if (isWin) {
                     setMartingaleLevel(0);
                     setConsecutiveLosses(0);
-                    setCurrentStake(config.baseStake);
                 } else {
                     setMartingaleLevel(l => l + 1);
                     setConsecutiveLosses(c => c + 1);
@@ -1022,9 +1014,9 @@ export const B254Page: React.FC = observer(() => {
                 <TradingMilestoneModal
                     isOpen={milestoneModal.isOpen}
                     type={milestoneModal.type}
-                    profit={milestoneModal.profit}
+                    amount={milestoneModal.amount}
                     currency={currency}
-                    customMessage={milestoneModal.message}
+                    botName='B254'
                     onClose={() => setMilestoneModal(prev => ({ ...prev, isOpen: false }))}
                 />
             )}
