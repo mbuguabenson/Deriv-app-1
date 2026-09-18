@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { getLegacyDTraderToken, isInvalidBearerToken } from '@/utils/token-bridge';
+import {
+    getAccountsList,
+    getActiveLoginId,
+    getActiveToken,
+    getLegacyDTraderToken,
+    isInvalidBearerToken,
+} from '@/utils/token-bridge';
+import { ParentBridgeClient } from '../iframe-bridge';
 import './dtrader-iframe-container.scss';
 
 export interface DTraderIframeContainerProps {
@@ -54,14 +61,30 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Resolve clean token (filters out OAuth2 Bearer JWTs that break DTrader)
+    // Robust token resolver checking all local storage sources and account maps
     const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
         if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
-        const legacy = getLegacyDTraderToken(loginid);
+        const targetId =
+            loginid ||
+            localStorage.getItem('active_loginid') ||
+            localStorage.getItem('client.loginid') ||
+            getActiveLoginId() ||
+            '';
+        const active = getActiveToken(targetId);
+        if (active && !isInvalidBearerToken(active)) return active;
+        const legacy = getLegacyDTraderToken(targetId);
         if (legacy && !isInvalidBearerToken(legacy)) return legacy;
+        const accounts = getAccountsList();
+        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId])) {
+            return accounts[targetId];
+        }
+        for (const k in accounts) {
+            if (accounts[k] && !isInvalidBearerToken(accounts[k])) return accounts[k];
+        }
         const candidate =
             localStorage.getItem('legacy_dtrader_token') ||
             localStorage.getItem('token') ||
+            localStorage.getItem('token1') ||
             localStorage.getItem('active_token') ||
             '';
         if (candidate && !isInvalidBearerToken(candidate)) return candidate;
@@ -77,6 +100,8 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         return (
             localStorage.getItem('active_loginid') ||
             localStorage.getItem('client.loginid') ||
+            getActiveLoginId() ||
+            Object.keys(getAccountsList())[0] ||
             ''
         );
     });
@@ -182,6 +207,28 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             return baseUrl;
         }
     }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp]);
+
+    // Attach ParentBridgeClient to handle postMessage auth handshakes
+    useEffect(() => {
+        const iframe = iframeRef.current;
+        if (!iframe || !iframeSrc) return;
+
+        let bridge: ParentBridgeClient | null = null;
+        try {
+            bridge = new ParentBridgeClient();
+            bridge.attach(iframe, new URL(baseUrl).origin);
+        } catch (e) {
+            console.warn('[DTraderIframeContainer] Bridge attach warning:', e);
+        }
+
+        return () => {
+            if (bridge) {
+                try {
+                    bridge.detach();
+                } catch {}
+            }
+        };
+    }, [baseUrl, iframeKey, iframeSrc]);
 
     const handleIframeLoad = () => {
         setIsLoading(false);
