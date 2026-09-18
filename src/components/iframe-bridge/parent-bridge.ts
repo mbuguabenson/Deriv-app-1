@@ -112,7 +112,10 @@ export class ParentBridgeClient {
         if (!targetWindow || targetWindow === window) return;
         try {
             // For Deriv DTrader iframe, if OAuth JWT is passed, fallback to legacy token if available
-            const isDTrader = Boolean(this.iframeOrigin && this.iframeOrigin.includes('deriv-dtrader'));
+            const isDTrader = Boolean(
+                this.iframeOrigin &&
+                (this.iframeOrigin.includes('deriv-dtrader') || this.iframeOrigin.includes('profhubdtrader'))
+            );
             let tokenToUse = tok;
             if (isDTrader && tok && tok.startsWith('ey')) {
                 tokenToUse = getLegacyDTraderToken(loginid) || localStorage.getItem('token1') || '';
