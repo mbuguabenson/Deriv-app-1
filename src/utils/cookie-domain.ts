@@ -14,6 +14,24 @@ export const getCookieDomain = (
         return undefined;
     }
 
+    // Do not set domain attribute for multi-tenant public suffixes (e.g. vercel.app, pages.dev, netlify.app)
+    // Browsers reject cookies set on public suffixes with "Cookie has been rejected for invalid domain"
+    const publicSuffixes = [
+        'vercel.app',
+        'pages.dev',
+        'netlify.app',
+        'github.io',
+        'herokuapp.com',
+        'firebaseapp.com',
+        'web.app',
+        'azurewebsites.net',
+    ];
+
+    const lowerHostname = hostname.toLowerCase();
+    if (publicSuffixes.some(suffix => lowerHostname === suffix || lowerHostname.endsWith(`.${suffix}`))) {
+        return undefined;
+    }
+
     if (parts.length === 2) {
         return `.${hostname}`;
     }

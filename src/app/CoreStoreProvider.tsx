@@ -243,9 +243,13 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                         : null) || activeLoginid,
             };
 
-            Cookies.set('client_information', JSON.stringify(client_information), {
-                domain: currentDomain,
-            });
+            if (currentDomain) {
+                Cookies.set('client_information', JSON.stringify(client_information), {
+                    domain: currentDomain,
+                });
+            } else {
+                Cookies.set('client_information', JSON.stringify(client_information));
+            }
         }
     }, [isAuthorizing, isAuthorized, client, activeAccount?.loginid, activeLoginid, currentDomain]);
 

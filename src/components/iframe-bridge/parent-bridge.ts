@@ -22,7 +22,7 @@ export interface BridgeDiagnosticInfo {
 export class ParentBridgeClient {
     public stateMachine: BridgeStateMachine;
     private iframeWindow: Window | null = null;
-    private iframeOrigin: string = '*';
+    private iframeOrigin: string = 'https://profhubdtrader.vercel.app';
     private reconnectAttempts: number = 0;
     private maxReconnects: number = 5;
     private instanceId: string;
@@ -34,7 +34,7 @@ export class ParentBridgeClient {
         state: BridgeState.IDLE,
         appId: getAppId() || '121856',
         parentOrigin: typeof window !== 'undefined' ? window.location.origin : 'unknown',
-        iframeOrigin: 'unknown',
+        iframeOrigin: 'https://profhubdtrader.vercel.app',
         sessionStatus: 'none',
         lastEvent: null,
         lastError: null,
@@ -80,10 +80,11 @@ export class ParentBridgeClient {
     }
 
     public attach(iframe: HTMLIFrameElement, expectedOrigin: string) {
+        const targetOrigin = expectedOrigin && expectedOrigin !== '*' ? expectedOrigin : 'https://profhubdtrader.vercel.app';
         this.iframeWindow = iframe.contentWindow;
-        this.iframeOrigin = expectedOrigin;
-        this.diagnostics.iframeOrigin = expectedOrigin;
-        this.logger.debug('IFRAME_ATTACH', { iframeOrigin: expectedOrigin });
+        this.iframeOrigin = targetOrigin;
+        this.diagnostics.iframeOrigin = targetOrigin;
+        this.logger.debug('IFRAME_ATTACH', { iframeOrigin: targetOrigin });
 
         this.stateMachine.transitionTo(BridgeState.LOADING_IFRAME);
 
@@ -224,26 +225,14 @@ export class ParentBridgeClient {
 
             const postBoth = (msg: any) => {
                 try {
-                    const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : '*';
-                    try {
-                        targetWindow.postMessage(msg, targetOrigin);
-                    } catch {
-                        if (targetOrigin !== '*') {
-                            try {
-                                targetWindow.postMessage(msg, '*');
-                            } catch {}
-                        }
-                    }
+                    const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*'
+                        ? this.iframeOrigin
+                        : 'https://profhubdtrader.vercel.app';
+                    targetWindow.postMessage(msg, targetOrigin);
                     if (typeof msg === 'object') {
                         try {
                             targetWindow.postMessage(JSON.stringify(msg), targetOrigin);
-                        } catch {
-                            if (targetOrigin !== '*') {
-                                try {
-                                    targetWindow.postMessage(JSON.stringify(msg), '*');
-                                } catch {}
-                            }
-                        }
+                        } catch {}
                     }
                 } catch {
                     // ignore
@@ -305,7 +294,7 @@ export class ParentBridgeClient {
 
         const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*'
             ? this.iframeOrigin
-            : (this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app');
+            : 'https://profhubdtrader.vercel.app';
 
         try {
             this.iframeWindow.postMessage({
@@ -458,27 +447,13 @@ export class ParentBridgeClient {
             return;
         }
 
-        const allowedOrigins = [
-            this.iframeOrigin,
-            'https://profhubdtrader.vercel.app',
-            'https://deriv-dtrader.vercel.app',
-            'https://trader.deriv.com',
-            'https://app.deriv.com',
-            'https://www.derivcircles.com',
-            'https://analysisprofithub.vercel.app',
-            'https://xenontool.netlify.app',
-            'https://dcircles.netlify.app',
-            'https://dcircles-six.vercel.app',
-        ];
+        const targetOrigin =
+            this.iframeOrigin && this.iframeOrigin !== '*'
+                ? this.iframeOrigin
+                : 'https://profhubdtrader.vercel.app';
 
-        const isAllowed =
-            (this.iframeOrigin && this.iframeOrigin !== '*' && event.origin === this.iframeOrigin) ||
-            allowedOrigins.some(o => o && o !== '*' && (event.origin === o || event.origin.startsWith(o))) ||
-            /\.vercel\.app$/i.test(new URL(event.origin).hostname) ||
-            /\.deriv\.com$/i.test(new URL(event.origin).hostname) ||
-            /^http:\/\/localhost(:\d+)?$/i.test(event.origin);
-
-        if (!isAllowed) {
+        // Check event.origin against the actual iframe origin
+        if (event.origin !== targetOrigin) {
             return;
         }
 
