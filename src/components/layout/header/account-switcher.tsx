@@ -34,7 +34,78 @@ const getCurrencyLabel = (currency: string): string => {
     return labels[currency] || currency;
 };
 
-// ─── Deriv Standard Account Avatar Icon ──────────────────────────────────────
+// ─── 3D Glass Icon for Real Accounts ─────────────────────────────────────────
+export const RealAccount3DGlassIcon = ({ currency = 'USD' }: { currency?: string }) => {
+    const curr = currency?.toUpperCase() || 'USD';
+    const symbol = curr === 'USD' ? '$' : curr === 'EUR' ? '€' : curr === 'GBP' ? '£' : curr === 'KES' ? 'K' : curr.slice(0, 1);
+
+    return (
+        <svg
+            viewBox='0 0 40 40'
+            fill='none'
+            xmlns='http://www.w3.org/2000/svg'
+            className='acc-icon-3d-glass'
+            width='26'
+            height='26'
+        >
+            <defs>
+                <radialGradient id='glass3dBase' cx='35%' cy='30%' r='70%'>
+                    <stop offset='0%' stopColor='#00f5ff' stopOpacity='0.95' />
+                    <stop offset='45%' stopColor='#0284c7' stopOpacity='0.85' />
+                    <stop offset='85%' stopColor='#0369a1' stopOpacity='0.95' />
+                    <stop offset='100%' stopColor='#082f49' stopOpacity='1' />
+                </radialGradient>
+                <linearGradient id='glass3dRim' x1='0%' y1='0%' x2='100%' y2='100%'>
+                    <stop offset='0%' stopColor='#ffffff' stopOpacity='0.95' />
+                    <stop offset='40%' stopColor='#00F5FF' stopOpacity='0.85' />
+                    <stop offset='80%' stopColor='#7000FF' stopOpacity='0.55' />
+                    <stop offset='100%' stopColor='#00FF88' stopOpacity='0.95' />
+                </linearGradient>
+                <linearGradient id='glass3dHighlight' x1='0%' y1='0%' x2='100%' y2='50%'>
+                    <stop offset='0%' stopColor='#ffffff' stopOpacity='0.75' />
+                    <stop offset='100%' stopColor='#ffffff' stopOpacity='0' />
+                </linearGradient>
+                <filter id='glass3dGlow' x='-20%' y='-20%' width='140%' height='140%'>
+                    <feDropShadow dx='0' dy='2' stdDeviation='2.5' floodColor='#00F5FF' floodOpacity='0.45' />
+                </filter>
+            </defs>
+
+            <g filter='url(#glass3dGlow)'>
+                {/* 3D Outer Glass Rim */}
+                <circle cx='20' cy='20' r='18' fill='url(#glass3dBase)' stroke='url(#glass3dRim)' strokeWidth='1.6' />
+
+                {/* Inner Bevel Ring */}
+                <circle cx='20' cy='20' r='15.5' stroke='rgba(255, 255, 255, 0.3)' strokeWidth='0.8' />
+
+                {/* Specular Glass Arc */}
+                <path
+                    d='M7 17 C8 10 14 6 20 6 C26 6 32 10 33 17 C28 14 12 14 7 17 Z'
+                    fill='url(#glass3dHighlight)'
+                />
+
+                {/* 3D Center Currency Symbol */}
+                <text
+                    x='20'
+                    y='25'
+                    textAnchor='middle'
+                    fill='#ffffff'
+                    fontSize='13'
+                    fontWeight='900'
+                    fontFamily="'JetBrains Mono', 'Plus Jakarta Sans', sans-serif"
+                    letterSpacing='-0.5px'
+                    filter='drop-shadow(0 1px 2px rgba(0,0,0,0.6))'
+                >
+                    {symbol}
+                </text>
+
+                {/* Diamond Sparkle Highlight */}
+                <circle cx='11' cy='11' r='1.2' fill='#ffffff' />
+            </g>
+        </svg>
+    );
+};
+
+// ─── Account Avatar with 3D Glass Real Account Support ───────────────────────
 const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?: boolean }) => (
     <div
         className={classNames('acc-icon', {
@@ -42,7 +113,11 @@ const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?:
             'acc-icon--real': !isVirtual,
         })}
     >
-        <CurrencyIcon currency={currency} isVirtual={isVirtual} />
+        {isVirtual ? (
+            <CurrencyIcon currency={currency} isVirtual={true} />
+        ) : (
+            <RealAccount3DGlassIcon currency={currency} />
+        )}
     </div>
 );
 
@@ -489,14 +564,18 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                         }
                     }}
                 >
-                    {/* Currency / Avatar circle icon (Standard Deriv Currency Icon) */}
+                    {/* Currency / Avatar circle icon (3D Glass for Real, Currency for Demo) */}
                     <div
                         className={classNames('acc-chip__currency-icon', {
                             'acc-chip__currency-icon--demo': isVirtual,
                             'acc-chip__currency-icon--real': !isVirtual,
                         })}
                     >
-                        <CurrencyIcon currency={currency} isVirtual={isVirtual} />
+                        {isVirtual ? (
+                            <CurrencyIcon currency={currency} isVirtual={true} />
+                        ) : (
+                            <RealAccount3DGlassIcon currency={currency} />
+                        )}
                         <span className='acc-chip__online-dot'></span>
                     </div>
 

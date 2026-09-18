@@ -69,7 +69,7 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
         setFormVisibility(true);
     };
 
-    // ─── Top Row: 5 Strategy Loading Cards in ONE Single Line on Desktop ─
+    // ─── Top Row: 4 Strategy Loading Cards in ONE Single Line on Desktop ─
     const loadingCards = [
         {
             id: 'bot-builder',
@@ -106,15 +106,6 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
             badge: 'PRE-LOADED',
             theme: 'card--amber',
             callback: () => setActiveTab(DBOT_TABS.TRADING_BOTS),
-        },
-        {
-            id: 'smart-trader',
-            title: 'Manual Trading',
-            subtitle: 'Live institutional manual trading',
-            icon: <TrendingUp size={22} className='text-emerald' />,
-            badge: 'MANUAL',
-            theme: 'card--emerald',
-            callback: () => setActiveTab(DBOT_TABS.MANUAL_TRADING),
         },
     ];
 

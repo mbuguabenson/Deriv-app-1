@@ -310,27 +310,27 @@ export const getDefaultTabConfig = (): TabConfigItem[] => [
     { key: 'dashboard', label: 'Dashboard', enabled: true, order: 0 },
     { key: 'bot_builder', label: 'Bot Builder', enabled: true, order: 1 },
     { key: 'chart', label: 'Charts', enabled: true, order: 2 },
-    { key: 'trading_bots', label: 'Trading Bots', enabled: true, order: 4 },
-    { key: 'analysis_tool', label: 'Analysis Tool', enabled: true, order: 5 },
-    { key: 'tradingview', label: 'TradingView', enabled: true, order: 6 },
-    { key: 'signals', label: 'Signals', enabled: true, order: 7 },
-    { key: 'scanner', label: 'AI Strategy Scanner', enabled: true, order: 8 },
-    { key: 'manual_trading', label: 'Manual Trading', enabled: true, order: 9 },
-    { key: 'easy_tool', label: 'Easy Tool', enabled: true, order: 10 },
-    { key: 'marketkiller', label: 'MarketKiller', enabled: true, order: 11 },
-    { key: 'multi_trader', label: 'Multi Trader', enabled: true, order: 12 },
-    { key: 'market_hunter_pro', label: 'Market Hunter Pro', enabled: true, order: 13 },
-    { key: 'ai_trading_engine', label: 'AI Trading Engine 🤖', enabled: true, order: 14 },
-    { key: 'digitflow', label: 'DigitFlow 📊', enabled: true, order: 15 },
-    { key: 'elite_pro', label: 'Elite Pro 💎', enabled: true, order: 16 },
-    { key: 'poverty_hunter', label: 'Poverty Hunter 🎯', enabled: true, order: 17 },
-    { key: 'auto_x_eo', label: 'AUTO X E/O ⚡', enabled: true, order: 18 },
-    { key: 'overlord_ai', label: 'OVERLORD AI 👑', enabled: true, order: 19 },
-    { key: 'copy_trading', label: 'Copy Trading 👥', enabled: true, order: 20 },
+    { key: 'trading_bots', label: 'Trading Bots', enabled: true, order: 3 },
+    { key: 'analysis_tool', label: 'Analysis Tool', enabled: true, order: 4 },
+    { key: 'tradingview', label: 'TradingView', enabled: true, order: 5 },
+    { key: 'signals', label: 'Signals', enabled: true, order: 6 },
+    { key: 'scanner', label: 'AI Strategy Scanner', enabled: true, order: 7 },
+    { key: 'easy_tool', label: 'Easy Tool', enabled: true, order: 8 },
+    { key: 'marketkiller', label: 'MarketKiller', enabled: true, order: 9 },
+    { key: 'multi_trader', label: 'Multi Trader', enabled: true, order: 10 },
+    { key: 'market_hunter_pro', label: 'Market Hunter Pro', enabled: true, order: 11 },
+    { key: 'ai_trading_engine', label: 'AI Trading Engine 🤖', enabled: true, order: 12 },
+    { key: 'digitflow', label: 'DigitFlow 📊', enabled: true, order: 13 },
+    { key: 'elite_pro', label: 'Elite Pro 💎', enabled: true, order: 14 },
+    { key: 'poverty_hunter', label: 'Poverty Hunter 🎯', enabled: true, order: 15 },
+    { key: 'auto_x_eo', label: 'AUTO X E/O ⚡', enabled: true, order: 16 },
+    { key: 'overlord_ai', label: 'OVERLORD AI 👑', enabled: true, order: 17 },
+    { key: 'b254', label: 'B254 🚀', enabled: true, order: 18 },
+    { key: 'copy_trading', label: 'Copy Trading 👥', enabled: true, order: 19 },
 ];
 
 // Bump this when new tabs are added or removed to force clients to pick up new defaults
-const TAB_CONFIG_VERSION = 25;
+const TAB_CONFIG_VERSION = 26;
 
 export const getSiteConfig = (): SiteConfig => {
     try {
@@ -348,19 +348,17 @@ export const getSiteConfig = (): SiteConfig => {
                 changed = true;
             }
 
-            // Force re-enable any tab that is in defaults but was somehow disabled
-            // Also re-sync if version stamp is old
+            // Force re-enable and re-sync if version stamp is old
             const storedVersion = (stored as any).__tabConfigVersion || 0;
             if (storedVersion < TAB_CONFIG_VERSION) {
                 const defaultKeySet = new Set(defaults.map(t => t.key));
-                stored.tabConfig = (stored.tabConfig || []).map(tab => {
-                    if (defaultKeySet.has(tab.key)) {
+                // Remove obsolete tabs that no longer exist in defaults
+                stored.tabConfig = (stored.tabConfig || [])
+                    .filter(tab => defaultKeySet.has(tab.key))
+                    .map(tab => {
                         const def = defaults.find(d => d.key === tab.key)!;
-                        // Only force-enable if the default says enabled: true
-                        return { ...tab, enabled: tab.enabled ?? def.enabled };
-                    }
-                    return tab;
-                });
+                        return { ...tab, enabled: tab.enabled ?? def.enabled, order: def.order };
+                    });
                 // Ensure all default tabs exist
                 const currentKeys = new Set(stored.tabConfig.map(t => t.key));
                 defaults.forEach(def => {
@@ -368,6 +366,7 @@ export const getSiteConfig = (): SiteConfig => {
                         stored.tabConfig!.push(def);
                     }
                 });
+                stored.tabConfig.sort((a, b) => a.order - b.order);
                 (stored as any).__tabConfigVersion = TAB_CONFIG_VERSION;
                 changed = true;
             }

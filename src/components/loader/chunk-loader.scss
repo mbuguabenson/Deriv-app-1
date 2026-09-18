@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// ✦ LEGACY TRADING HUB — ULTRA CHUNK LOADER SCSS
+// ✦ ULTIMATE TRADERS — 3D CYBER GYRO CHUNK LOADER SCSS
 // ═══════════════════════════════════════════════════════════════
 
 /* ── COMPACT GYROSCOPIC LOADER (IN-APP TAB SWITCHES) ── */
@@ -19,8 +19,8 @@
 
     .lth-gyro-wrapper {
         position: relative;
-        width: 58px;
-        height: 58px;
+        width: 62px;
+        height: 62px;
         perspective: 800px;
 
         .lth-orbit {
@@ -42,51 +42,51 @@
         }
 
         .lth-orbit-outer {
-            border-top-color: #00f2fe;
-            border-right-color: #38bdf8;
-            filter: drop-shadow(0 0 8px rgba(0, 242, 254, 0.6));
+            border-top-color: #00f5ff;
+            border-right-color: #00ff88;
+            filter: drop-shadow(0 0 10px rgba(0, 245, 255, 0.7));
             animation: lthGyroRotate 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 
             .lth-orbit-dot {
-                background: #00f2fe;
-                box-shadow: 0 0 10px #00f2fe;
+                background: #00f5ff;
+                box-shadow: 0 0 12px #00f5ff;
             }
         }
 
         .lth-orbit-mid {
-            inset: 7px;
-            border-bottom-color: #f59e0b;
-            border-left-color: #fbbf24;
-            filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+            inset: 8px;
+            border-bottom-color: #7000ff;
+            border-left-color: #a855f7;
+            filter: drop-shadow(0 0 8px rgba(112, 0, 255, 0.6));
             animation: lthGyroReverse 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 
             .lth-orbit-dot {
-                background: #fbbf24;
-                box-shadow: 0 0 8px #fbbf24;
+                background: #c084fc;
+                box-shadow: 0 0 10px #c084fc;
             }
         }
 
         .lth-orbit-inner {
-            inset: 14px;
-            border-top-color: #10b981;
+            inset: 16px;
+            border-top-color: #00ff88;
             border-left-color: #34d399;
-            filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.5));
+            filter: drop-shadow(0 0 6px rgba(0, 255, 136, 0.6));
             animation: lthGyroRotate 0.8s linear infinite;
         }
 
         .lth-core-orb {
             position: absolute;
-            inset: 19px;
-            background: radial-gradient(circle, #ffffff 20%, #00f2fe 70%, #0284c7 100%);
+            inset: 21px;
+            background: radial-gradient(circle, #ffffff 15%, #00f5ff 60%, #7000ff 100%);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 14px #00f2fe;
+            box-shadow: 0 0 18px #00f5ff;
             animation: lthCorePulse 1.4s ease-in-out infinite alternate;
 
             .lth-core-icon {
-                color: #060911;
+                color: #070a13;
                 filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
             }
         }
@@ -96,18 +96,18 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(0, 242, 254, 0.18);
-        padding: 6px 14px;
+        background: rgba(10, 16, 32, 0.8);
+        border: 1px solid rgba(0, 245, 255, 0.25);
+        padding: 6px 16px;
         border-radius: 9999px;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 245, 255, 0.1);
 
         .lth-loader-label {
             font-size: 0.82rem;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            color: #cbd5e1;
+            font-weight: 800;
+            letter-spacing: 0.07em;
+            color: #e2e8f0;
             text-transform: uppercase;
         }
 
@@ -117,19 +117,19 @@
             gap: 4px;
 
             .p-dot {
-                width: 4px;
-                height: 4px;
+                width: 5px;
+                height: 5px;
                 border-radius: 50%;
-                background: #00f2fe;
+                background: #00f5ff;
                 animation: lthPulseWave 1s infinite ease-in-out;
 
                 &:nth-child(2) {
                     animation-delay: 0.2s;
-                    background: #38bdf8;
+                    background: #7000ff;
                 }
                 &:nth-child(3) {
                     animation-delay: 0.4s;
-                    background: #f59e0b;
+                    background: #00ff88;
                 }
             }
         }

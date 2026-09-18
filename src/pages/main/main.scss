@@ -1134,22 +1134,58 @@ main {
 // The active tab's background, border, underline and icon tint adapt to the
 // current page by reading --tab-accent set on the [data-active-tab] container.
 
-[data-active-tab='dashboard']         { --tab-accent: #3b82f6; }   // Blue        – Dashboard
-[data-active-tab='bot_builder']       { --tab-accent: #a855f7; }   // Purple      – Bot Builder
-[data-active-tab='chart']             { --tab-accent: #10b981; }   // Emerald     – Charts
-[data-active-tab='trading_bots']      { --tab-accent: #f59e0b; }   // Amber       – Trading Bots
-[data-active-tab='analysis_tool']     { --tab-accent: #06b6d4; }   // Cyan        – Analysis Tool
+[data-active-tab='dashboard']         { --tab-accent: #00F5FF; }   // Electric Cyan – Dashboard
+[data-active-tab='bot_builder']       { --tab-accent: #a855f7; }   // Purple        – Bot Builder
+[data-active-tab='chart']             { --tab-accent: #00FF88; }   // Emerald       – Charts
+[data-active-tab='trading_bots']      { --tab-accent: #f59e0b; }   // Amber         – Trading Bots
+[data-active-tab='analysis_tool']     { --tab-accent: #06b6d4; }   // Cyan          – Analysis Tool
 [data-active-tab='tradingview']       { --tab-accent: #2962ff; }   // TradingView Blue
-[data-active-tab='signals']           { --tab-accent: #22d3ee; }   // Light Cyan  – Signals
-[data-active-tab='scanner']           { --tab-accent: #f97316; }   // Orange      – AI Scanner
-[data-active-tab='manual_trading']    { --tab-accent: #14b8a6; }   // Teal        – Manual Trading
-[data-active-tab='easy_tool']         { --tab-accent: #84cc16; }   // Lime        – Easy Tool
-[data-active-tab='marketkiller']      { --tab-accent: #ef4444; }   // Red         – Marketkiller
-[data-active-tab='multi_trader']      { --tab-accent: #8b5cf6; }   // Violet      – Multi Trader
-[data-active-tab='market_hunter_pro'] { --tab-accent: #d97706; }   // Dark Amber  – Market Hunter Pro
-[data-active-tab='ai_trading_engine'] { --tab-accent: #00e5ff; }   // Electric    – AI Trading Engine
-[data-active-tab='digitflow']         { --tab-accent: #ec4899; }   // Pink        – DigitFlow
-[data-active-tab='elite_pro']         { --tab-accent: #ffd600; }   // Gold        – Elite Pro
-[data-active-tab='poverty_hunter']    { --tab-accent: #4ade80; }   // Green       – Poverty Hunter
-[data-active-tab='auto_x_eo']         { --tab-accent: #fb7185; }   // Rose        – AUTO X E/O
-[data-active-tab='overlord_ai']       { --tab-accent: #c084fc; }   // Lavender    – OVERLORD AI
+[data-active-tab='signals']           { --tab-accent: #22d3ee; }   // Light Cyan    – Signals
+[data-active-tab='scanner']           { --tab-accent: #f97316; }   // Orange        – AI Scanner
+[data-active-tab='easy_tool']         { --tab-accent: #84cc16; }   // Lime          – Easy Tool
+[data-active-tab='marketkiller']      { --tab-accent: #ef4444; }   // Red           – Marketkiller
+[data-active-tab='multi_trader']      { --tab-accent: #8b5cf6; }   // Violet        – Multi Trader
+[data-active-tab='market_hunter_pro'] { --tab-accent: #d97706; }   // Dark Amber    – Market Hunter Pro
+[data-active-tab='ai_trading_engine'] { --tab-accent: #00e5ff; }   // Electric      – AI Trading Engine
+[data-active-tab='digitflow']         { --tab-accent: #ec4899; }   // Pink          – DigitFlow
+[data-active-tab='elite_pro']         { --tab-accent: #ffd600; }   // Gold          – Elite Pro
+[data-active-tab='poverty_hunter']    { --tab-accent: #4ade80; }   // Green         – Poverty Hunter
+[data-active-tab='auto_x_eo']         { --tab-accent: #fb7185; }   // Rose          – AUTO X E/O
+[data-active-tab='overlord_ai']       { --tab-accent: #c084fc; }   // Lavender      – OVERLORD AI
+[data-active-tab='b254']              { --tab-accent: #00F5FF; }   // Cyber Cyan    – B254
+[data-active-tab='copy_trading']      { --tab-accent: #00FF88; }   // Cyber Emerald – Copy Trading
+
+// ─── Cyber Glass Tab Bar Styling ──────────────────────────────────────────────
+.main__tabs {
+    .dc-tabs__list {
+        background: rgba(8, 12, 24, 0.75) !important;
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+        .dc-tabs__item {
+            transition: all 0.2s ease;
+
+            &:hover:not(.dc-tabs__active) {
+                color: #ffffff;
+                background: rgba(255, 255, 255, 0.04);
+            }
+
+            &.dc-tabs__active {
+                color: #ffffff;
+                text-shadow: 0 0 12px var(--tab-accent, #00F5FF);
+
+                svg {
+                    filter: drop-shadow(0 0 6px var(--tab-accent, #00F5FF));
+                }
+            }
+        }
+
+        .dc-tabs__active-line {
+            background: var(--tab-accent, #00F5FF) !important;
+            box-shadow: 0 0 12px var(--tab-accent, #00F5FF);
+            height: 2.5px !important;
+        }
+    }
+}
+

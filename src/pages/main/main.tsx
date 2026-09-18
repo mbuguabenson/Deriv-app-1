@@ -49,7 +49,6 @@ const AnalysisTools = lazyRetry(() => import('../analysis-tool'), 'analysis_tool
 const Signals = lazyRetry(() => import('../signals'), 'signals');
 const ScannerPage = lazyRetry(() => import('../scanner/scanner'), 'scanner');
 
-const ManualTrading = lazyRetry(() => import('../manual-trading'), 'manual_trading');
 const EasyTool = lazyRetry(() => import('../easy-tool'), 'easy_tool');
 const MultiTrader = lazyRetry(() => import('../multi-trader'), 'multi_trader');
 const Marketkiller = lazyRetry(() => import('../marketkiller'), 'marketkiller');
@@ -64,7 +63,6 @@ const EliteProPage = lazyRetry(() => import('../elite-pro/elite-pro'), 'elite_pr
 const PovertyHunterPage = lazyRetry(() => import('../poverty-hunter'), 'poverty_hunter');
 const AutoXEoPage = lazyRetry(() => import('../auto-x-eo'), 'auto_x_eo');
 const OverlordAiPage = lazyRetry(() => import('../overlord-ai'), 'overlord_ai');
-const AutoflipperPage = lazyRetry(() => import('../autoflipper'), 'autoflipper');
 const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 
@@ -126,7 +124,6 @@ const AppWrapper = observer(() => {
         'tradingview',
         'signals',
         'scanner',
-        'manual_trading',
         'easy_tool',
         'marketkiller',
         'multi_trader',
@@ -137,7 +134,6 @@ const AppWrapper = observer(() => {
         'poverty_hunter',
         'auto_x_eo',
         'overlord_ai',
-        'autoflipper',
         'b254',
         'copy_trading',
     ];
@@ -520,20 +516,6 @@ const AppWrapper = observer(() => {
                 ),
             },
             {
-                key: 'manual_trading',
-                id: 'id-manual-trading',
-                label: <TabIcon iconKey='manual_trading' label='Manual Trading' />,
-                content: (
-                    <TabErrorBoundary tabId='id-manual-trading' tabName='Manual Trading'>
-                        <Suspense
-                            fallback={<ChunkLoader message={localize('Please wait, loading Manual Trading...')} />}
-                        >
-                            <ManualTrading />
-                        </Suspense>
-                    </TabErrorBoundary>
-                ),
-            },
-            {
                 key: 'easy_tool',
                 id: 'id-easy-tool',
                 label: <TabIcon iconKey='easy_tool' label='Easy Tool' />,
@@ -655,18 +637,6 @@ const AppWrapper = observer(() => {
                     <TabErrorBoundary tabId='id-overlord-ai' tabName='OVERLORD AI'>
                         <Suspense fallback={<ChunkLoader message={localize('Please wait, loading OVERLORD AI...')} />}>
                             <OverlordAiPage />
-                        </Suspense>
-                    </TabErrorBoundary>
-                ),
-            },
-            {
-                key: 'autoflipper',
-                id: 'id-autoflipper',
-                label: <TabIcon iconKey='autoflipper' label='Autoflipper' />,
-                content: (
-                    <TabErrorBoundary tabId='id-autoflipper' tabName='Autoflipper'>
-                        <Suspense fallback={<ChunkLoader message={localize('Please wait, loading Autoflipper...')} />}>
-                            <AutoflipperPage />
                         </Suspense>
                     </TabErrorBoundary>
                 ),

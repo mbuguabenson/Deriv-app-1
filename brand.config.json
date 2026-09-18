@@ -1,12 +1,12 @@
 {
-    "brand_name": "Legacy Trading Hub",
-    "admin_loginid": "LegacyAdmin",
-    "brand_domain": "legacytradinghub.com",
+    "brand_name": "Ultimate Traders",
+    "admin_loginid": "UltimateAdmin",
+    "brand_domain": "ultimatetraders.com",
     "brand_hostname": {
-        "staging": "staging.legacytradinghub.com/dashboard",
-        "production": "www.legacytradinghub.com/dashboard"
+        "staging": "staging.ultimatetraders.com/dashboard",
+        "production": "www.ultimatetraders.com/dashboard"
     },
-    "domain_name": "www.legacytradinghub.com",
+    "domain_name": "www.ultimatetraders.com",
     "colors": {
         "primary": "#ff444f",
         "secondary": "#858d9d",
