@@ -427,6 +427,20 @@ body.theme--light,
             opacity: 0.85;
         }
 
+        &--not_good {
+            border-color: rgba(239, 68, 68, 0.2);
+            &:hover {
+                border-color: rgba(239, 68, 68, 0.45);
+            }
+        }
+
+        &--good {
+            border-color: rgba(16, 185, 129, 0.25);
+            &:hover {
+                border-color: rgba(16, 185, 129, 0.5);
+            }
+        }
+
         &__top {
             display: flex;
             align-items: center;
@@ -453,6 +467,33 @@ body.theme--light,
                     color: #000000;
                     padding: 1px 5px;
                     border-radius: 4px;
+                }
+
+                .health-tag {
+                    font-size: 0.6rem;
+                    font-weight: 800;
+                    padding: 1px 5px;
+                    border-radius: 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+
+                    &--good {
+                        background: rgba(16, 185, 129, 0.2);
+                        color: #34d399;
+                        border: 1px solid rgba(16, 185, 129, 0.4);
+                    }
+
+                    &--not_good {
+                        background: rgba(239, 68, 68, 0.2);
+                        color: #f87171;
+                        border: 1px solid rgba(239, 68, 68, 0.4);
+                    }
+
+                    &--analyzing {
+                        background: rgba(148, 163, 184, 0.15);
+                        color: #94a3b8;
+                        border: 1px solid rgba(148, 163, 184, 0.25);
+                    }
                 }
 
                 .signal-tag {
@@ -986,6 +1027,237 @@ body.theme--light,
                             color: var(--ep-text-muted);
                         }
                     }
+
+                    .cond-mini-tag {
+                        font-size: 0.62rem;
+                        font-weight: 800;
+                        padding: 1px 5px;
+                        border-radius: 4px;
+                        letter-spacing: 0.03em;
+
+                        &--good {
+                            background: rgba(16, 185, 129, 0.2);
+                            color: #34d399;
+                        }
+                        &--not_good {
+                            background: rgba(239, 68, 68, 0.2);
+                            color: #f87171;
+                        }
+                        &--analyzing {
+                            background: rgba(148, 163, 184, 0.15);
+                            color: #94a3b8;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /* ── Live Market Condition & Health Alert Banner ── */
+    .ep-market-health-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 18px 22px;
+        border-radius: 16px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+        @media (max-width: 900px) {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        &--danger {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(15, 23, 42, 0.85));
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 24px rgba(239, 68, 68, 0.2);
+            animation: ep-danger-pulse 3s infinite ease-in-out;
+        }
+
+        &--warning {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0.85));
+            border: 1px solid rgba(245, 158, 11, 0.45);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+        }
+
+        &--success {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(15, 23, 42, 0.85));
+            border: 1px solid rgba(16, 185, 129, 0.45);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+        }
+
+        &--info {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.14), rgba(15, 23, 42, 0.85));
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+        }
+
+        &__left {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+
+            .status-pill-wrap {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+
+                .health-status-pill {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 0.78rem;
+                    font-weight: 900;
+                    letter-spacing: 0.06em;
+                    padding: 5px 12px;
+                    border-radius: 99px;
+                    text-transform: uppercase;
+
+                    &--good {
+                        background: rgba(16, 185, 129, 0.22);
+                        color: #34d399;
+                        border: 1px solid rgba(16, 185, 129, 0.5);
+                    }
+
+                    &--not_good {
+                        background: rgba(239, 68, 68, 0.22);
+                        color: #f87171;
+                        border: 1px solid rgba(239, 68, 68, 0.5);
+                        animation: ep-border-pulse 1.8s infinite ease-in-out;
+                    }
+
+                    &--analyzing {
+                        background: rgba(139, 92, 246, 0.2);
+                        color: #c084fc;
+                        border: 1px solid rgba(139, 92, 246, 0.4);
+                    }
+                }
+
+                .market-name-tag {
+                    font-size: 0.78rem;
+                    font-weight: 800;
+                    color: #ffffff;
+                    background: rgba(255, 255, 255, 0.08);
+                    padding: 4px 10px;
+                    border-radius: 8px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+            }
+
+            .health-message {
+                margin: 0;
+                font-size: 0.88rem;
+                font-weight: 600;
+                color: var(--ep-text-primary);
+                line-height: 1.45;
+            }
+
+            .diagnostic-chips-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+
+                .diag-chip {
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    padding: 4px 10px;
+                    border-radius: 6px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+
+                    &--good {
+                        background: rgba(16, 185, 129, 0.12);
+                        color: #34d399;
+                        border: 1px solid rgba(16, 185, 129, 0.25);
+                    }
+
+                    &--bad {
+                        background: rgba(239, 68, 68, 0.15);
+                        color: #f87171;
+                        border: 1px solid rgba(239, 68, 68, 0.3);
+                    }
+
+                    &--warn {
+                        background: rgba(245, 158, 11, 0.15);
+                        color: #fbbf24;
+                        border: 1px solid rgba(245, 158, 11, 0.3);
+                    }
+
+                    strong {
+                        color: #ffffff;
+                    }
+                }
+            }
+        }
+
+        &__right {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+
+            @media (max-width: 900px) {
+                align-items: flex-start;
+                width: 100%;
+            }
+
+            .ep-btn-switch-best-market {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 18px;
+                background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.3));
+                border: 1px solid rgba(245, 158, 11, 0.5);
+                border-radius: 12px;
+                color: #fbbf24;
+                font-size: 0.82rem;
+                font-weight: 800;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+                box-shadow: 0 0 16px rgba(245, 158, 11, 0.25);
+
+                &:hover {
+                    background: linear-gradient(135deg, rgba(245, 158, 11, 0.4), rgba(217, 119, 6, 0.5));
+                    border-color: #f59e0b;
+                    color: #ffffff;
+                    transform: translateY(-2px);
+                    box-shadow: 0 0 24px rgba(245, 158, 11, 0.4);
+                }
+
+                strong {
+                    color: #ffffff;
+                }
+            }
+
+            .auto-switch-status-indicator {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.72rem;
+                color: var(--ep-text-secondary);
+                background: rgba(0, 0, 0, 0.3);
+                padding: 4px 10px;
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+
+                .dot {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    background: var(--ep-accent-green);
+                    box-shadow: 0 0 8px var(--ep-accent-green);
+                    animation: ep-pulse-badge 1.5s infinite;
+                }
+
+                strong {
+                    color: #ffffff;
                 }
             }
         }
@@ -2574,6 +2846,18 @@ body.theme--light,
     50% {
         transform: scale(1.4);
         opacity: 0.2;
+    }
+}
+
+@keyframes ep-danger-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+        border-color: rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 28px rgba(239, 68, 68, 0.45);
+        border-color: rgba(239, 68, 68, 0.8);
     }
 }
 .ep-btn-clear-logs {
