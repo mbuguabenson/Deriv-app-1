@@ -65,6 +65,7 @@ const PovertyHunterPage = lazyRetry(() => import('../poverty-hunter'), 'poverty_
 const AutoXEoPage = lazyRetry(() => import('../auto-x-eo'), 'auto_x_eo');
 const OverlordAiPage = lazyRetry(() => import('../overlord-ai'), 'overlord_ai');
 const AutoflipperPage = lazyRetry(() => import('../autoflipper'), 'autoflipper');
+const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
@@ -137,6 +138,7 @@ const AppWrapper = observer(() => {
         'auto_x_eo',
         'overlord_ai',
         'autoflipper',
+        'b254',
         'copy_trading',
     ];
     const { isDesktop } = useDevice();
@@ -665,6 +667,18 @@ const AppWrapper = observer(() => {
                     <TabErrorBoundary tabId='id-autoflipper' tabName='Autoflipper'>
                         <Suspense fallback={<ChunkLoader message={localize('Please wait, loading Autoflipper...')} />}>
                             <AutoflipperPage />
+                        </Suspense>
+                    </TabErrorBoundary>
+                ),
+            },
+            {
+                key: 'b254',
+                id: 'id-b254',
+                label: <TabIcon iconKey='b254' label='B254' />,
+                content: (
+                    <TabErrorBoundary tabId='id-b254' tabName='B254'>
+                        <Suspense fallback={<ChunkLoader message={localize('Please wait, loading B254...')} />}>
+                            <B254Page />
                         </Suspense>
                     </TabErrorBoundary>
                 ),
