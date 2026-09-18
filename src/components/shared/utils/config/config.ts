@@ -290,6 +290,41 @@ const createHostedDomainEntries = ({
 
 export const DOMAIN_CONFIG: Record<string, DomainConfig> = {
     ...createHostedDomainEntries({
+        primaryDomain: 'hazelhub.vercel.app',
+        aliases: ['www.hazelhub.vercel.app', 'hazelhub.com', 'www.hazelhub.com'],
+        clientId: '34qPhRSX2dxSujd2DQNLv',
+        appId: '121856',
+        redirectUri: 'https://hazelhub.vercel.app/',
+        features: {
+            autoTrades: true,
+            manualTrading: true,
+            chart: true,
+        },
+        ui: createDomainShellUI('Legacy Trading Hub', {
+            primaryColor: '#00f5ff',
+            secondaryColor: '#00ff88',
+            accentColor: '#7000ff',
+            headerBgColor: '#0a1020',
+            sidebarBgColor: '#060a14',
+            navBg: '#0d1527',
+            navActive: '#00f5ff',
+            navHover: '#162238',
+            pageBg: '#070a13',
+            pageBgLight: '#f8fafc',
+            sectionBg: '#0e1626',
+            sectionBg2: '#131e33',
+            sectionMuted: '#676a6f',
+            sectionBorder: 'rgba(0, 245, 255, 0.25)',
+            panelBorder: '#1c2942',
+            panelBorderSoft: 'rgba(255, 255, 255, 0.08)',
+            runButton: '#00ff88',
+            runButtonHover: '#00e67a',
+            authBlue: '#00f5ff',
+            authBorder: '#00f5ff',
+            gold: '#ffb703',
+        }),
+    }),
+    ...createHostedDomainEntries({
         primaryDomain: 'profithub.co.ke',
         aliases: ['www.profithub.co.ke', 'staging.profithub.co.ke'],
         clientId: '33Mmq9JHMrJaUKT2KIhKZ',
@@ -813,7 +848,7 @@ export const getDomainConfig = (activeHostname = window.location.hostname): Doma
     }
     // Fallback — used on localhost and Replit dev domains
     return {
-        clientId: process.env.CLIENT_ID || '33Mmq9JHMrJaUKT2KIhKZ',
+        clientId: process.env.CLIENT_ID || '34qPhRSX2dxSujd2DQNLv',
         appId: process.env.APP_ID || '121856',
         redirectUri: process.env.REDIRECT_URI || `${window.location.origin}/`,
         botsFolder: process.env.BOTS_FOLDER || DEFAULT_BOTS_FOLDER,

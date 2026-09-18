@@ -15,8 +15,6 @@ import {
 } from '@deriv/quill-icons/LabelPaired';
 import { localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
-/* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
-/* [/AI] */
 import ToolbarIcon from './toolbar-icon';
 
 const WorkspaceGroup = observer(() => {
@@ -55,8 +53,6 @@ const WorkspaceGroup = observer(() => {
                             onClick={() => {
                                 setPreviewOnPopup(true);
                                 toggleLoadModal();
-                                /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
-                                /* [/AI] */
                             }}
                         >
                             <LabelPairedFolderOpenMdRegularIcon />
@@ -382,3 +378,4 @@ const WorkspaceGroup = observer(() => {
 });
 
 export default WorkspaceGroup;
+

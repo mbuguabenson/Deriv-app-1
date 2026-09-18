@@ -13,7 +13,7 @@ type TBrandLogoProps = {
 export const BrandLogo = observer(({ height = 36, className = '' }: TBrandLogoProps) => {
     const cfg = getSiteConfig();
     const customLogo = cfg?.logoBase64;
-    const brandName = getBrandLabel() || 'Ultimate Traders';
+    const brandName = getBrandLabel() || 'Legacy Trading Hub';
 
     return (
         <div className={`lth-brand-logo ${className}`}>
@@ -34,74 +34,73 @@ export const BrandLogo = observer(({ height = 36, className = '' }: TBrandLogoPr
                         aria-hidden='true'
                     >
                         <defs>
-                            {/* 3D Glass Surface Gradient */}
+                            {/* Premium 3D Frosted Glass Tile Gradients */}
                             <linearGradient id='lth3dGlassBg' x1='0%' y1='0%' x2='100%' y2='100%'>
-                                <stop offset='0%' stopColor='#ffffff' stopOpacity='0.22' />
-                                <stop offset='40%' stopColor='#ffffff' stopOpacity='0.08' />
-                                <stop offset='100%' stopColor='#00F5FF' stopOpacity='0.15' />
+                                <stop offset='0%' stopColor='#1e293b' stopOpacity='0.95' />
+                                <stop offset='60%' stopColor='#0f172a' stopOpacity='0.92' />
+                                <stop offset='100%' stopColor='#020617' stopOpacity='0.98' />
                             </linearGradient>
-
-                            {/* 3D Glass Rim Bevel Highlight */}
                             <linearGradient id='lth3dGlassRim' x1='0%' y1='0%' x2='100%' y2='100%'>
-                                <stop offset='0%' stopColor='#00F5FF' stopOpacity='0.85' />
-                                <stop offset='50%' stopColor='#ffffff' stopOpacity='0.9' />
-                                <stop offset='100%' stopColor='#7000FF' stopOpacity='0.5' />
+                                <stop offset='0%' stopColor='#38bdf8' stopOpacity='0.9' />
+                                <stop offset='30%' stopColor='#34d399' stopOpacity='0.8' />
+                                <stop offset='70%' stopColor='#10b981' stopOpacity='0.7' />
+                                <stop offset='100%' stopColor='#064e3b' stopOpacity='0.4' />
                             </linearGradient>
-
-                            {/* Diagonal Glass Reflection Sheen */}
                             <linearGradient id='lth3dSheen' x1='0%' y1='0%' x2='100%' y2='100%'>
-                                <stop offset='0%' stopColor='#ffffff' stopOpacity='0.45' />
-                                <stop offset='100%' stopColor='#ffffff' stopOpacity='0' />
+                                <stop offset='0%' stopColor='#ffffff' stopOpacity='0.3' />
+                                <stop offset='25%' stopColor='#ffffff' stopOpacity='0.08' />
+                                <stop offset='50%' stopColor='#ffffff' stopOpacity='0' />
                             </linearGradient>
 
-                            {/* 3D Bar 1 - Front, Top, and Side */}
+                            {/* 3D Isometric Bar 1 Gradients */}
                             <linearGradient id='bar3dFront1' x1='0%' y1='0%' x2='0%' y2='100%'>
-                                <stop offset='0%' stopColor='#00F5FF' />
-                                <stop offset='100%' stopColor='#0099B8' />
+                                <stop offset='0%' stopColor='#0ea5e9' />
+                                <stop offset='100%' stopColor='#0369a1' />
                             </linearGradient>
                             <linearGradient id='bar3dTop1' x1='0%' y1='0%' x2='100%' y2='100%'>
-                                <stop offset='0%' stopColor='#e0f2fe' />
-                                <stop offset='100%' stopColor='#00F5FF' />
+                                <stop offset='0%' stopColor='#7dd3fc' />
+                                <stop offset='100%' stopColor='#38bdf8' />
                             </linearGradient>
                             <linearGradient id='bar3dSide1' x1='0%' y1='0%' x2='100%' y2='0%'>
                                 <stop offset='0%' stopColor='#0284c7' />
-                                <stop offset='100%' stopColor='#0369a1' />
+                                <stop offset='100%' stopColor='#075985' />
                             </linearGradient>
 
-                            {/* 3D Bar 2 - Front, Top, and Side */}
+                            {/* 3D Isometric Bar 2 Gradients */}
                             <linearGradient id='bar3dFront2' x1='0%' y1='0%' x2='0%' y2='100%'>
-                                <stop offset='0%' stopColor='#7000FF' />
-                                <stop offset='100%' stopColor='#4900B3' />
+                                <stop offset='0%' stopColor='#10b981' />
+                                <stop offset='100%' stopColor='#047857' />
                             </linearGradient>
                             <linearGradient id='bar3dTop2' x1='0%' y1='0%' x2='100%' y2='100%'>
-                                <stop offset='0%' stopColor='#f3e8ff' />
-                                <stop offset='100%' stopColor='#c084fc' />
+                                <stop offset='0%' stopColor='#6ee7b7' />
+                                <stop offset='100%' stopColor='#34d399' />
                             </linearGradient>
                             <linearGradient id='bar3dSide2' x1='0%' y1='0%' x2='100%' y2='0%'>
-                                <stop offset='0%' stopColor='#581c87' />
-                                <stop offset='100%' stopColor='#3b0764' />
+                                <stop offset='0%' stopColor='#059669' />
+                                <stop offset='100%' stopColor='#065f46' />
                             </linearGradient>
 
-                            {/* 3D Bar 3 - Front, Top, and Side */}
+                            {/* 3D Isometric Bar 3 Gradients */}
                             <linearGradient id='bar3dFront3' x1='0%' y1='0%' x2='0%' y2='100%'>
-                                <stop offset='0%' stopColor='#00FF88' />
-                                <stop offset='50%' stopColor='#00D16F' />
-                                <stop offset='100%' stopColor='#008F4C' />
+                                <stop offset='0%' stopColor='#22d3ee' />
+                                <stop offset='50%' stopColor='#10b981' />
+                                <stop offset='100%' stopColor='#059669' />
                             </linearGradient>
                             <linearGradient id='bar3dTop3' x1='0%' y1='0%' x2='100%' y2='100%'>
                                 <stop offset='0%' stopColor='#e0f2fe' />
                                 <stop offset='100%' stopColor='#38bdf8' />
                             </linearGradient>
                             <linearGradient id='bar3dSide3' x1='0%' y1='0%' x2='100%' y2='0%'>
-                                <stop offset='0%' stopColor='#065f46' />
-                                <stop offset='100%' stopColor='#022c22' />
+                                <stop offset='0%' stopColor='#0891b2' />
+                                <stop offset='100%' stopColor='#0e7490' />
                             </linearGradient>
 
                             {/* 3D Surging Growth Arrow */}
                             <linearGradient id='surgeArrowGrad' x1='0%' y1='100%' x2='100%' y2='0%'>
-                                <stop offset='0%' stopColor='#00F5FF' />
-                                <stop offset='50%' stopColor='#00FF88' />
-                                <stop offset='100%' stopColor='#FFD700' />
+                                <stop offset='0%' stopColor='#059669' />
+                                <stop offset='35%' stopColor='#10b981' />
+                                <stop offset='75%' stopColor='#06b6d4' />
+                                <stop offset='100%' stopColor='#38bdf8' />
                             </linearGradient>
 
                             {/* Filters: 3D Depth Shadows and Glass Ambient Glow */}
@@ -109,7 +108,7 @@ export const BrandLogo = observer(({ height = 36, className = '' }: TBrandLogoPr
                                 <feDropShadow dx='0' dy='6' stdDeviation='6' floodColor='#000000' floodOpacity='0.4' />
                             </filter>
                             <filter id='lthGlassGlow' x='-30%' y='-30%' width='160%' height='160%'>
-                                <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#00F5FF' floodOpacity='0.45' />
+                                <feDropShadow dx='0' dy='2' stdDeviation='3' floodColor='#10b981' floodOpacity='0.45' />
                             </filter>
                         </defs>
 
@@ -214,8 +213,8 @@ export const BrandLogo = observer(({ height = 36, className = '' }: TBrandLogoPr
                     </svg>
                 )}
                 <div className='lth-brand-logo__text-col'>
-                    <span className='lth-brand-logo__title lth-brand-logo__legacy'>ULTIMATE</span>
-                    <span className='lth-brand-logo__subtitle lth-brand-logo__trading-hub'>TRADERS</span>
+                    <span className='lth-brand-logo__title lth-brand-logo__legacy'>LEGACY</span>
+                    <span className='lth-brand-logo__subtitle lth-brand-logo__trading-hub'>TRADING HUB</span>
                 </div>
             </div>
         </div>

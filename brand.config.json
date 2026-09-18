@@ -1,12 +1,12 @@
 {
-    "brand_name": "Ultimate Traders",
-    "admin_loginid": "UltimateAdmin",
-    "brand_domain": "ultimatetraders.com",
+    "brand_name": "Legacy Trading Hub",
+    "admin_loginid": "LegacyAdmin",
+    "brand_domain": "hazelhub.vercel.app",
     "brand_hostname": {
-        "staging": "staging.ultimatetraders.com/dashboard",
-        "production": "www.ultimatetraders.com/dashboard"
+        "staging": "staging.hazelhub.vercel.app/dashboard",
+        "production": "hazelhub.vercel.app/dashboard"
     },
-    "domain_name": "www.ultimatetraders.com",
+    "domain_name": "hazelhub.vercel.app",
     "colors": {
         "primary": "#ff444f",
         "secondary": "#858d9d",

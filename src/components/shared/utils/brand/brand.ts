@@ -20,7 +20,7 @@ export const getBrandWebsiteName = () => {
         const siteConfig = JSON.parse(localStorage.getItem('site_config') || '{}');
         if (siteConfig?.brandDomain) return siteConfig.brandDomain;
     } catch {}
-    return config_data.domain_name || 'www.ultimatetraders.com';
+    return config_data.domain_name || 'hazelhub.vercel.app';
 };
 
 export const getBrandLabel = () => {
@@ -28,7 +28,7 @@ export const getBrandLabel = () => {
         const siteConfig = JSON.parse(localStorage.getItem('site_config') || '{}');
         if (siteConfig?.brandName) return siteConfig.brandName;
     } catch {}
-    return config_data.brand_name || 'Ultimate Traders';
+    return config_data.brand_name || 'Legacy Trading Hub';
 };
 
 export const getBrandTitle = () => {
@@ -36,7 +36,7 @@ export const getBrandTitle = () => {
 };
 
 export const getPlatformConfig = (): TPlatform => {
-    const allowed_config_data = config_data.platform;
+    const allowed_config_data: TPlatform = { ...config_data.platform };
 
     if (!isDomainAllowed(window.location.host)) {
         // Remove all official platform logos if the app is hosted under unofficial domain
