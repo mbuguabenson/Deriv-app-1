@@ -1,0 +1,415 @@
+/* ==========================================================================
+   ProfHub DTrader Embedded Iframe Container Styling
+   ========================================================================== */
+
+.dtrader-container {
+    width: 100%;
+    min-height: 700px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.45);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+
+    /* Dark Mode Theme */
+    &--dark {
+        background-color: #0b0f19;
+        color: #f1f5f9;
+
+        .dtrader-container__toolbar {
+            background: rgba(15, 23, 42, 0.85);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .dtrader-loader,
+        .dtrader-fallback {
+            background-color: #0b0f19;
+        }
+
+        .dtrader-fallback__card {
+            background: rgba(19, 27, 46, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+    }
+
+    /* Light Mode Theme */
+    &--light {
+        background-color: #f8fafc;
+        color: #0f172a;
+        border-color: rgba(0, 0, 0, 0.08);
+
+        .dtrader-container__toolbar {
+            background: rgba(255, 255, 255, 0.9);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            color: #0f172a;
+
+            .brand-title {
+                color: #0f172a;
+            }
+
+            .action-btn {
+                background: #e2e8f0;
+                color: #334155;
+
+                &:hover {
+                    background: #cbd5e1;
+                    color: #0f172a;
+                }
+            }
+        }
+
+        .dtrader-loader,
+        .dtrader-fallback {
+            background-color: #f8fafc;
+        }
+
+        .dtrader-fallback__card {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+
+            h3 {
+                color: #0f172a;
+            }
+            p {
+                color: #64748b;
+            }
+        }
+    }
+
+    /* Fullscreen Mode */
+    &--fullscreen {
+        border-radius: 0;
+        height: 100vh !important;
+        border: none;
+        z-index: 99999;
+    }
+
+    /* --------------------------------------------------------------------------
+       Toolbar
+       -------------------------------------------------------------------------- */
+    &__toolbar {
+        height: 48px;
+        min-height: 48px;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        backdrop-filter: blur(12px);
+        z-index: 20;
+        gap: 12px;
+    }
+
+    &__brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        .brand-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            background: linear-gradient(135deg, #ff444f, #ff6b74);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            box-shadow: 0 0 12px rgba(255, 68, 79, 0.35);
+        }
+
+        .brand-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+    }
+
+    .account-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #10b981;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+
+        &__dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 6px #10b981;
+        }
+
+        &__badge {
+            font-size: 0.65rem;
+            padding: 1px 4px;
+            border-radius: 4px;
+            background: #10b981;
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        &--demo {
+            background: rgba(245, 158, 11, 0.12);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+
+            .account-pill__dot {
+                background: #f59e0b;
+                box-shadow: 0 0 6px #f59e0b;
+            }
+
+            .account-pill__badge {
+                background: #f59e0b;
+            }
+        }
+    }
+
+    &__actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: #94a3b8;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+
+            &:hover {
+                background: rgba(255, 255, 255, 0.14);
+                color: #ffffff;
+                transform: translateY(-1px);
+            }
+
+            &:active {
+                transform: translateY(0);
+            }
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+       Stage & Iframe Layout
+       -------------------------------------------------------------------------- */
+    &__stage {
+        flex: 1;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    &__iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+
+        &--visible {
+            opacity: 1;
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+       Loading Skeleton & Spinner
+       -------------------------------------------------------------------------- */
+    .dtrader-loader {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        z-index: 10;
+
+        &__spinner {
+            position: relative;
+            width: 52px;
+            height: 52px;
+
+            .spinner-ring {
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                border: 3px solid rgba(255, 68, 79, 0.15);
+                border-top-color: #ff444f;
+                border-right-color: #ff6b74;
+                animation: dtraderSpin 0.9s cubic-bezier(0.6, 0.2, 0.4, 0.9) infinite;
+            }
+
+            .spinner-core {
+                position: absolute;
+                inset: 12px;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(255, 68, 79, 0.3) 0%, transparent 80%);
+                animation: dtraderPulse 1.8s ease-in-out infinite;
+            }
+        }
+
+        &__info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+
+            .title {
+                font-size: 0.92rem;
+                font-weight: 700;
+                letter-spacing: 0.4px;
+            }
+
+            .subtitle {
+                font-size: 0.78rem;
+                color: #64748b;
+            }
+        }
+
+        &__progress-bar {
+            width: 180px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            overflow: hidden;
+
+            .indicator {
+                width: 40%;
+                height: 100%;
+                background: linear-gradient(90deg, #ff444f, #ff8088);
+                border-radius: 2px;
+                animation: dtraderProgress 1.4s ease-in-out infinite;
+            }
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+       Unauthenticated Fallback
+       -------------------------------------------------------------------------- */
+    .dtrader-fallback {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 15;
+
+        &__card {
+            position: relative;
+            max-width: 420px;
+            width: 100%;
+            padding: 32px 28px;
+            border-radius: 16px;
+            backdrop-filter: blur(16px);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            overflow: hidden;
+
+            h3 {
+                margin: 0;
+                font-size: 1.25rem;
+                font-weight: 700;
+            }
+
+            p {
+                margin: 0;
+                font-size: 0.88rem;
+                line-height: 1.5;
+                color: #94a3b8;
+
+                strong {
+                    color: #ff444f;
+                }
+            }
+        }
+
+        &__icon-box {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            background: rgba(255, 68, 79, 0.12);
+            color: #ff444f;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 24px rgba(255, 68, 79, 0.2);
+        }
+
+        &__btn {
+            margin-top: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #ff444f, #d43b44);
+            color: #ffffff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 18px rgba(255, 68, 79, 0.4);
+            transition: all 0.2s ease;
+
+            &:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 22px rgba(255, 68, 79, 0.5);
+                filter: brightness(1.08);
+            }
+
+            &:active {
+                transform: translateY(0);
+            }
+        }
+    }
+}
+
+@keyframes dtraderSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes dtraderPulse {
+    0%, 100% {
+        transform: scale(0.85);
+        opacity: 0.5;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
+}
+
+@keyframes dtraderProgress {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(300%);
+    }
+}

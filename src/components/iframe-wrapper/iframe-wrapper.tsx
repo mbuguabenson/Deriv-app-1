@@ -37,6 +37,7 @@ const IframeWrapper: React.FC<IframeWrapperProps> = observer(({ src, title, clas
 
         const allowedOrigins = [
             iframeOrigin,
+            'https://profhubdtrader.vercel.app',
             'https://deriv-dtrader.vercel.app',
             'https://www.derivcircles.com',
             'https://bot-analysis-tool-belex.web.app',
@@ -49,7 +50,7 @@ const IframeWrapper: React.FC<IframeWrapperProps> = observer(({ src, title, clas
         ];
 
         // For DTrader Terminal, attach ParentBridgeClient which handles all auth handshakes
-        if (title === 'DTrader Terminal') {
+        if (title === 'DTrader Terminal' || title === 'ProfHub DTrader' || src.includes('profhubdtrader.vercel.app')) {
             const bridge = new ParentBridgeClient();
             bridge.attach(iframe, iframeOrigin);
 

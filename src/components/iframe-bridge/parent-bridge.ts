@@ -207,7 +207,7 @@ export class ParentBridgeClient {
                 timestamp: Date.now(),
                 authMode,
                 defaultSymbol: '1HZ100V',
-                embedBase: 'https://deriv-dtrader.vercel.app',
+                embedBase: this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app',
             };
 
             const rawClientAccounts = localStorage.getItem('client.accounts');
@@ -305,7 +305,7 @@ export class ParentBridgeClient {
 
         const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*'
             ? this.iframeOrigin
-            : 'https://deriv-dtrader.vercel.app';
+            : (this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app');
 
         try {
             this.iframeWindow.postMessage({
@@ -330,7 +330,7 @@ export class ParentBridgeClient {
             this.logger.debug('OTT_FETCH_FAILED', {});
             return;
         }
-        const targetOrigin = replyOrigin && replyOrigin !== '*' ? replyOrigin : (this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://deriv-dtrader.vercel.app');
+        const targetOrigin = replyOrigin && replyOrigin !== '*' ? replyOrigin : (this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app');
         try {
             targetWindow.postMessage({ type: 'OTT', ott }, targetOrigin);
         } catch (e) {
@@ -444,7 +444,7 @@ export class ParentBridgeClient {
         const msg = createMessage(type, appId, 'parent', payload);
         this.logMessage('out', msg);
         this.logger.messageSent(this.iframeOrigin, msg.type as string);
-        const origin = this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://deriv-dtrader.vercel.app';
+        const origin = this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app';
         try {
             this.iframeWindow.postMessage(msg, origin);
         } catch (error) {
@@ -460,6 +460,7 @@ export class ParentBridgeClient {
 
         const allowedOrigins = [
             this.iframeOrigin,
+            'https://profhubdtrader.vercel.app',
             'https://deriv-dtrader.vercel.app',
             'https://trader.deriv.com',
             'https://app.deriv.com',
