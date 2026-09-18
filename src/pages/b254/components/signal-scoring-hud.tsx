@@ -1,6 +1,6 @@
 import React from 'react';
 import { B254SignalResult } from '../types/b254.types';
-import { Activity, Award, CheckCircle2, ShieldCheck, Target, Zap } from 'lucide-react';
+import { Activity, Award, ShieldCheck, Target } from 'lucide-react';
 
 interface SignalScoringHudProps {
     signal: B254SignalResult | null;

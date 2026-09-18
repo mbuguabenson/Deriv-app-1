@@ -1,6 +1,6 @@
 import React from 'react';
 import { RegimeAssessment } from '../types/b254.types';
-import { AlertTriangle, BookOpen, CheckCircle, HelpCircle, Info, ShieldAlert } from 'lucide-react';
+import { BookOpen, CheckCircle, HelpCircle } from 'lucide-react';
 
 interface MarketUnderstandingCardProps {
     explanation: string;

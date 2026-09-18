@@ -1,6 +1,6 @@
 import React from 'react';
-import { B254MarketData, MultiHorizonBreakdown, StrategyDirection } from '../types/b254.types';
-import { ChevronLeft, ChevronRight, Compass, Flame, Radio, Zap } from 'lucide-react';
+import { StrategyDirection } from '../types/b254.types';
+import { ChevronLeft, ChevronRight, Compass } from 'lucide-react';
 
 export interface ScannerMarketItem {
     symbol: string;

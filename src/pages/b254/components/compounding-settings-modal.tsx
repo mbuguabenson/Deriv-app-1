@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CompoundingConfig } from '../types/b254.types';
-import { Award, Check, Settings, X, Zap } from 'lucide-react';
+import { Check, Settings, X } from 'lucide-react';
 
 interface CompoundingSettingsModalProps {
     isOpen: boolean;

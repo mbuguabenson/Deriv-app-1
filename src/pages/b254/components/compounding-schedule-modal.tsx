@@ -1,6 +1,6 @@
 import React from 'react';
 import { CompoundingConfig, CompoundingProgress } from '../types/b254.types';
-import { Award, CheckCircle2, TrendingUp, X } from 'lucide-react';
+import { Award, CheckCircle2, X } from 'lucide-react';
 
 interface CompoundingScheduleModalProps {
     isOpen: boolean;

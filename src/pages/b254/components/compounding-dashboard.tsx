@@ -1,6 +1,6 @@
 import React from 'react';
 import { CompoundingConfig, CompoundingProgress, SessionState, B254AutoState } from '../types/b254.types';
-import { Activity, Award, CheckCircle2, Clock, DollarSign, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap } from 'lucide-react';
+import { Activity, Award, CheckCircle2, Clock, DollarSign, Flame, RefreshCw, TrendingUp, Zap } from 'lucide-react';
 
 interface CompoundingDashboardProps {
     config: CompoundingConfig;

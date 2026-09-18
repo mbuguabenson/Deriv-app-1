@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { B254TransactionRecord } from '../types/b254.types';
-import { CheckCircle2, ChevronDown, ChevronUp, FileText, History, X, Zap } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, History, X, Zap } from 'lucide-react';
 
 interface TransactionDrawerProps {
     isOpen: boolean;

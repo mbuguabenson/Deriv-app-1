@@ -17,7 +17,6 @@ import {
     B254TransactionRecord,
     CompoundingConfig,
     SessionState,
-    StrategyDirection,
     TargetStrategyChoice,
     TradeConditionSnapshot,
 } from './types/b254.types';
@@ -42,7 +41,7 @@ import { CompoundingScheduleModal } from './components/compounding-schedule-moda
 import { CompoundingSettingsModal } from './components/compounding-settings-modal';
 
 import './b254.scss';
-import { ChevronRight, Database, History, Radio, Sparkles, TrendingUp, Zap } from 'lucide-react';
+import { ChevronRight, History, Radio, Sparkles } from 'lucide-react';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
