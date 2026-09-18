@@ -5,6 +5,8 @@ import { addComma, getDecimalPlaces } from '@/components/shared';
 import { useApiBase } from '@/hooks/useApiBase';
 import { Balance } from '@deriv/api-types';
 
+import { RealAccount3DGlassIcon } from '@/components/layout/header/account-switcher';
+
 /** A custom hook that returns the account object for the current active account. */
 const useActiveAccount = ({
     allBalanceData,
@@ -61,7 +63,11 @@ const useActiveAccount = ({
             ...activeAccount,
             balance: addComma(numBal.toFixed(getDecimalPlaces(currentBalanceData?.currency || accCurrency))),
             currencyLabel: isVirtual ? 'Demo' : accCurrency,
-            icon: <CurrencyIcon currency={accCurrency.toLowerCase()} isVirtual={isVirtual} />,
+            icon: isVirtual ? (
+                <CurrencyIcon currency={accCurrency.toLowerCase()} isVirtual={true} />
+            ) : (
+                <RealAccount3DGlassIcon currency={accCurrency} />
+            ),
             isVirtual: isVirtual,
             isActive: true,
         };
