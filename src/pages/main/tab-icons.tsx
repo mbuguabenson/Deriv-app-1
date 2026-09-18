@@ -23,6 +23,7 @@ const TAB_ICONS: Record<string, TQuillIcon> = {
     tradingview: LabelPairedChartLineSmRegularIcon,
     signals: LabelPairedChartLineSmRegularIcon,
     scanner: LabelPairedBarsFilterSmRegularIcon,
+    dtrader: LabelPairedChartLineSmRegularIcon,
     manual_trading: LabelPairedChartLineSmRegularIcon,
     easy_tool: LabelPairedBarsFilterSmRegularIcon,
     marketkiller: LabelPairedBarsFilterSmRegularIcon,

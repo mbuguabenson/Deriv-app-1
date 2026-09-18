@@ -32,7 +32,8 @@ export const DBOT_TABS: TDashboardTabIndex = Object.freeze({
     OVERLORD_AI: 17,
     B254: 18,
     COPY_TRADING: 19,
-    MANUAL_TRADING: 20,
+    DTRADER: 20,
+    MANUAL_TRADING: 21,
 });
 
 export const MAX_STRATEGIES = 10;
@@ -58,4 +59,5 @@ export const TAB_IDS = [
     'id-overlord-ai',
     'id-b254',
     'id-copy-trading',
+    'id-dtrader',
 ];

@@ -179,6 +179,32 @@
         align-items: center;
         gap: 8px;
 
+        .dtrader-time-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #38bdf8;
+            font-size: 0.76rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', 'Roboto Mono', monospace, sans-serif;
+            letter-spacing: 0.5px;
+            user-select: none;
+
+            &__dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #38bdf8;
+                box-shadow: 0 0 8px #38bdf8;
+                animation: dtraderTimePulse 1.8s infinite ease-in-out;
+            }
+        }
+
         .action-btn {
             display: inline-flex;
             align-items: center;
@@ -411,5 +437,16 @@
     }
     100% {
         transform: translateX(300%);
+    }
+}
+
+@keyframes dtraderTimePulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.85);
     }
 }

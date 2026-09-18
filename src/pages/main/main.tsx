@@ -65,6 +65,7 @@ const AutoXEoPage = lazyRetry(() => import('../auto-x-eo'), 'auto_x_eo');
 const OverlordAiPage = lazyRetry(() => import('../overlord-ai'), 'overlord_ai');
 const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
+const DTraderPage = lazyRetry(() => import('../dtrader'), 'dtrader');
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
 import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';
@@ -136,6 +137,7 @@ const AppWrapper = observer(() => {
         'overlord_ai',
         'b254',
         'copy_trading',
+        'dtrader',
     ];
     const { isDesktop } = useDevice();
     const location = useLocation();
@@ -661,6 +663,18 @@ const AppWrapper = observer(() => {
                     <TabErrorBoundary tabId='id-copy-trading' tabName='Copy Trading'>
                         <Suspense fallback={<ChunkLoader message={localize('Please wait, loading Copy Trading...')} />}>
                             <CopyTradingPage />
+                        </Suspense>
+                    </TabErrorBoundary>
+                ),
+            },
+            {
+                key: 'dtrader',
+                id: 'id-dtrader',
+                label: <TabIcon iconKey='dtrader' label='DTrader' />,
+                content: (
+                    <TabErrorBoundary tabId='id-dtrader' tabName='DTrader'>
+                        <Suspense fallback={<ChunkLoader message={localize('Please wait, loading DTrader...')} />}>
+                            <DTraderPage />
                         </Suspense>
                     </TabErrorBoundary>
                 ),

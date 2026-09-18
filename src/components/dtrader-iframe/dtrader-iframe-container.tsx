@@ -81,6 +81,20 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         return document.body.classList.contains('theme--light') ? 'light' : 'dark';
     });
 
+    // Live Server / GMT Time clock
+    const [currentTime, setCurrentTime] = useState<string>(() => {
+        const now = new Date();
+        return `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}:${String(now.getUTCSeconds()).padStart(2, '0')} GMT`;
+    });
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            const now = new Date();
+            setCurrentTime(`${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}:${String(now.getUTCSeconds()).padStart(2, '0')} GMT`);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
     // Sync state when props change
     useEffect(() => {
         if (propToken !== undefined) setCurrentToken(propToken);
@@ -232,6 +246,11 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                     </div>
 
                     <div className='dtrader-container__actions'>
+                        <div className='dtrader-time-badge' title='Live GMT Server Time'>
+                            <span className='dtrader-time-badge__dot' />
+                            <span className='dtrader-time-badge__label'>{currentTime}</span>
+                        </div>
+
                         <button
                             type='button'
                             className='action-btn'
