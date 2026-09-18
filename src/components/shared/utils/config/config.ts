@@ -996,42 +996,51 @@ export const getDefaultServerURL = () => getLegacyServerURL();
  * permanently prevent OTP authentication.
  */
 export const getSocketURL = async (): Promise<string> => {
-    // Always clear the legacy fallback flag — we never want it to bypass OTP auth
+    // Always clear the legacy fallback flag
     try { sessionStorage.removeItem('use_legacy_deriv_ws'); } catch {}
 
-    try {
-        let authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+    // The api.derivws.com REST endpoints do NOT allow CORS from our deployment
+    // origins (hazelhub.vercel.app, etc.). Attempting the OTP flow from these
+    // origins always fails with CORS errors and cascading 429 rate limits.
+    // Use the legacy ws.derivws.com/websockets/v3 endpoint which works from
+    // ANY origin via app_id-based authentication.
+    const CORS_WHITELISTED_ORIGINS = [
+        'https://app.deriv.com',
+        'https://staging-app.deriv.com',
+    ];
 
-        // Silently refresh the token if it is near expiry
-        const tokenNeedsRefresh =
-            !!authInfo?.refresh_token && !!authInfo.expires_at && Date.now() >= authInfo.expires_at - 300000;
-        if (tokenNeedsRefresh && authInfo?.refresh_token) {
-            const refreshedAuth = await OAuthTokenExchangeService.refreshAccessToken(authInfo.refresh_token);
-            if (refreshedAuth.access_token) {
-                authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: false });
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const canUseOTP = CORS_WHITELISTED_ORIGINS.includes(currentOrigin);
+
+    if (canUseOTP) {
+        try {
+            let authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+
+            const tokenNeedsRefresh =
+                !!authInfo?.refresh_token && !!authInfo.expires_at && Date.now() >= authInfo.expires_at - 300000;
+            if (tokenNeedsRefresh && authInfo?.refresh_token) {
+                const refreshedAuth = await OAuthTokenExchangeService.refreshAccessToken(authInfo.refresh_token);
+                if (refreshedAuth.access_token) {
+                    authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: false });
+                }
             }
-        }
 
-        if (authInfo?.access_token) {
-            // Authenticated path: fetch an OTP WebSocket URL from the Deriv REST API.
-            // This URL is already pre-authenticated — no separate authorize() needed.
-            const wsUrl = await DerivWSAccountsService.getAuthenticatedWebSocketURL(authInfo.access_token);
-            if (wsUrl) {
-                console.log('[getSocketURL] Using OTP-authenticated Deriv WebSocket endpoint');
-                return wsUrl;
+            if (authInfo?.access_token) {
+                const wsUrl = await DerivWSAccountsService.getAuthenticatedWebSocketURL(authInfo.access_token);
+                if (wsUrl) {
+                    console.log('[getSocketURL] Using OTP-authenticated Deriv WebSocket endpoint');
+                    return wsUrl;
+                }
             }
-            // OTP fetch returned an empty URL — fall through to the public endpoint
-            console.warn('[getSocketURL] OTP URL was empty, using public endpoint until re-authentication');
+        } catch (error) {
+            console.warn('[getSocketURL] OTP flow failed, using legacy endpoint:', error);
         }
-
-        // Unauthenticated path: public WebSocket for market data before login
-        console.log('[getSocketURL] Using public Deriv WebSocket endpoint (unauthenticated)');
-        return getDefaultServerURL();
-    } catch (error) {
-        // Any error (network, REST API down, etc.) falls back to the public endpoint
-        console.error('[getSocketURL] Error fetching OTP WebSocket URL, using public endpoint:', error);
-        return getDefaultServerURL();
     }
+
+    // Use the legacy WebSocket endpoint — works from any origin, supports
+    // authorize() call for authenticated sessions after connection
+    console.log('[getSocketURL] Using legacy Deriv WebSocket endpoint');
+    return getDefaultServerURL();
 };
 
 export const getDebugServiceWorker = () => {
