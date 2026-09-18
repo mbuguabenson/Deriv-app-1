@@ -8,6 +8,7 @@ import {
     isInvalidBearerToken,
 } from '@/utils/token-bridge';
 import { ParentBridgeClient } from '../iframe-bridge';
+import { generateOAuthURL } from '@/components/shared';
 import './dtrader-iframe-container.scss';
 
 export interface DTraderIframeContainerProps {
@@ -81,6 +82,15 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         for (const k in accounts) {
             if (accounts[k] && !isInvalidBearerToken(accounts[k])) return accounts[k];
         }
+        try {
+            const authInfoStr = localStorage.getItem('auth_info') || sessionStorage.getItem('auth_info');
+            if (authInfoStr) {
+                const parsed = JSON.parse(authInfoStr);
+                if (parsed?.access_token && !isInvalidBearerToken(parsed.access_token)) {
+                    return parsed.access_token;
+                }
+            }
+        } catch {}
         const candidate =
             localStorage.getItem('legacy_dtrader_token') ||
             localStorage.getItem('token') ||
@@ -255,10 +265,17 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         }
     };
 
-    const handleInitiateLogin = () => {
+    const handleInitiateLogin = async () => {
         if (onLoginClick) {
             onLoginClick();
         } else {
+            try {
+                const url = await generateOAuthURL();
+                if (url) {
+                    window.location.href = url;
+                    return;
+                }
+            } catch {}
             const redirectUri = window.location.origin;
             window.location.href = `https://oauth.deriv.com/oauth2/authorize?app_id=${encodeURIComponent(
                 appId

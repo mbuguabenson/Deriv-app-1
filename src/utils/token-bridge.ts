@@ -114,7 +114,7 @@ export const isInvalidBearerToken = (token: string | null | undefined): boolean 
     token.startsWith('dummy_token') ||
     token.startsWith('mock_token') ||
     token.startsWith('test_token') ||
-    token.length > 512;
+    token.length > 4096;
 
 export const STORAGE_KEYS = {
     BOT_NEW_API_TOKEN: 'bot_new_api_token',
