@@ -114,7 +114,7 @@ const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?:
         })}
     >
         {isVirtual ? (
-            <CurrencyIcon currency={currency} isVirtual={true} />
+            <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
         ) : (
             <RealAccount3DGlassIcon currency={currency} />
         )}
@@ -564,7 +564,7 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                         }
                     }}
                 >
-                    {/* Currency / Avatar circle icon (3D Glass for Real, Currency for Demo) */}
+                    {/* Currency / Avatar circle icon (3D Glass for Real, Real Currency Icon for Demo) */}
                     <div
                         className={classNames('acc-chip__currency-icon', {
                             'acc-chip__currency-icon--demo': isVirtual,
@@ -572,7 +572,7 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                         })}
                     >
                         {isVirtual ? (
-                            <CurrencyIcon currency={currency} isVirtual={true} />
+                            <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
                         ) : (
                             <RealAccount3DGlassIcon currency={currency} />
                         )}
