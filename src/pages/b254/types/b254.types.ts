@@ -127,13 +127,17 @@ export interface B254SignalResult {
     marketExplanation: string;
 }
 
+export type ChallengeTimeUnit = 'DAYS' | 'HOURS' | 'MINUTES';
+
 export interface CompoundingConfig {
     startBalance: number;
     targetBalance: number;
-    days: number;
+    durationValue: number; // e.g. 30, 24, 60
+    timeUnit: ChallengeTimeUnit; // 'DAYS' | 'HOURS' | 'MINUTES'
+    days: number; // Backward-compatibility alias
     stakeType: 'FIXED' | 'PERCENTAGE' | 'COMPOUNDING';
-    baseStake: number;
-    stakePercentage: number;
+    baseStake: number; // User input stake amount
+    stakePercentage: number; // Capital % calculation
     enableMartingale: boolean;
     martingaleMultiplier: number;
     maxStake: number;
@@ -150,21 +154,29 @@ export interface CompoundingConfig {
 }
 
 export interface CompoundingProgress {
-    requiredDailyGrowthPct: number;
-    dailyTargetBalance: number;
+    requiredStepGrowthPct: number;
+    stepTargetBalance: number;
     actualBalance: number;
     differenceFromTarget: number;
     progressPct: number;
-    currentTradingDay: number;
+    currentStep: number;
+    totalSteps: number;
+    timeUnit: ChallengeTimeUnit;
+    unitLabel: string;
     remainingTarget: number;
     requiredFutureGrowthPct: number;
     schedule: Array<{
-        day: number;
+        step: number;
+        stepLabel: string;
         startBal: number;
         targetProfit: number;
         endBal: number;
         isCompleted: boolean;
     }>;
+    // Backward-compatibility aliases
+    requiredDailyGrowthPct: number;
+    dailyTargetBalance: number;
+    currentTradingDay: number;
 }
 
 export interface SessionState {

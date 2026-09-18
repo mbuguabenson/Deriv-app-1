@@ -54,10 +54,13 @@ const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
 }));
 
 const DEFAULT_COMPOUNDING_CONFIG: CompoundingConfig = {
+    challengeName: 'B254 30-Day Master Compounding',
     startBalance: 20,
     targetBalance: 8080,
+    durationValue: 30,
+    timeUnit: 'DAYS',
     days: 30,
-    stakeType: 'FIXED',
+    stakeType: 'PERCENTAGE',
     baseStake: 0.50,
     stakePercentage: 2.0,
     enableMartingale: true,
@@ -127,10 +130,11 @@ export const B254Page: React.FC = observer(() => {
         return calculateCompoundingPlan(
             config.startBalance,
             config.targetBalance,
-            config.days,
+            config.durationValue || config.days || 30,
+            config.timeUnit || 'DAYS',
             actualBalance
         );
-    }, [config.startBalance, config.targetBalance, config.days, actualBalance]);
+    }, [config.startBalance, config.targetBalance, config.durationValue, config.days, config.timeUnit, actualBalance]);
 
     // ── Market Data Streams ──
     const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
@@ -647,14 +651,16 @@ export const B254Page: React.FC = observer(() => {
         isExecutingTradeRef.current = true;
         setAutoState('TRADING');
 
-        // Determine Stake
+        // Determine Stake (Fixed, Percentage of Capital, or Compounding Step target)
         let tradeStake = config.baseStake;
         if (config.stakeType === 'PERCENTAGE') {
-            tradeStake = Number(((actualBalance * config.stakePercentage) / 100).toFixed(2));
+            tradeStake = Number(((actualBalance * (config.stakePercentage || 2.0)) / 100).toFixed(2));
         } else if (config.stakeType === 'COMPOUNDING') {
-            // Dynamic Compounding Stake based on current progress
-            const dailyTarget = compoundingProgress.dailyTargetBalance;
-            tradeStake = Number(Math.max(config.baseStake, (dailyTarget * 0.02)).toFixed(2));
+            // Dynamic Compounding Stake based on current step progress
+            const stepTarget = compoundingProgress.stepTargetBalance || compoundingProgress.dailyTargetBalance;
+            tradeStake = Number(Math.max(config.baseStake, (stepTarget * 0.02)).toFixed(2));
+        } else {
+            tradeStake = config.baseStake;
         }
 
         // Apply Martingale if active
@@ -972,6 +978,7 @@ export const B254Page: React.FC = observer(() => {
                         autoState={autoState}
                         targetStrategy={targetStrategy}
                         currency={currency}
+                        liveBalance={actualBalance}
                         onUpdateConfig={updateConfig}
                         onUpdateStrategy={setTargetStrategy}
                         onStartAutoTrading={handleStartAutoTrading}
@@ -1007,6 +1014,7 @@ export const B254Page: React.FC = observer(() => {
                 config={config}
                 onSave={updateConfig}
                 currency={currency}
+                liveBalance={actualBalance}
             />
 
             {/* ── Milestone TP/SL Modal ── */}

@@ -7,6 +7,7 @@ interface TradingControlPanelProps {
     autoState: B254AutoState;
     targetStrategy: TargetStrategyChoice;
     currency: string;
+    liveBalance?: number;
     onUpdateConfig: (partial: Partial<CompoundingConfig>) => void;
     onUpdateStrategy: (strat: TargetStrategyChoice) => void;
     onStartAutoTrading: () => void;
@@ -21,6 +22,7 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
     autoState,
     targetStrategy,
     currency,
+    liveBalance = 0,
     onUpdateConfig,
     onUpdateStrategy,
     onStartAutoTrading,
@@ -30,6 +32,11 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
     onEmergencyStop,
 }) => {
     const isRunning = autoState !== 'IDLE';
+    const effectiveBalance = liveBalance > 0 ? liveBalance : config.startBalance;
+    const calculatedPercentStake = Number(((effectiveBalance * (config.stakePercentage || 2.0)) / 100).toFixed(2));
+    const effectiveStake = config.stakeType === 'PERCENTAGE' 
+        ? Math.max(0.35, calculatedPercentStake) 
+        : config.baseStake;
 
     return (
         <section className='b254-glass b254-trading-panel'>
@@ -70,32 +77,52 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
 
             {/* Inputs Grid */}
             <div className='b254-inputs-grid'>
-                {/* Base Stake */}
+                {/* Stake Type Selection */}
                 <div className='input-box'>
-                    <label>Base Stake ({currency})</label>
-                    <input
-                        type='number'
-                        step='0.1'
-                        min='0.35'
-                        value={config.baseStake}
-                        onChange={e => onUpdateConfig({ baseStake: Math.max(0.35, parseFloat(e.target.value) || 0.35) })}
-                        disabled={isRunning}
-                    />
-                </div>
-
-                {/* Stake Type */}
-                <div className='input-box'>
-                    <label>Stake Sizing Mode</label>
+                    <label>Stake Sizing Method</label>
                     <select
                         value={config.stakeType}
                         onChange={e => onUpdateConfig({ stakeType: e.target.value as CompoundingConfig['stakeType'] })}
                         disabled={isRunning}
                     >
-                        <option value='FIXED'>Fixed Base Stake</option>
-                        <option value='PERCENTAGE'>Percentage of Balance</option>
-                        <option value='COMPOUNDING'>Daily Compounding Scaling</option>
+                        <option value='FIXED'>Direct Fixed Amount ($)</option>
+                        <option value='PERCENTAGE'>Calculated by Capital (%)</option>
+                        <option value='COMPOUNDING'>Step Compounding (Target %)</option>
                     </select>
                 </div>
+
+                {/* Stake Amount or Percentage Input */}
+                {config.stakeType === 'PERCENTAGE' ? (
+                    <div className='input-box'>
+                        <div className='label-with-toggle'>
+                            <label>Capital Risk %</label>
+                            <span className='preview-chip text-cyan'>
+                                Trade: ${effectiveStake.toFixed(2)} {currency}
+                            </span>
+                        </div>
+                        <input
+                            type='number'
+                            step='0.5'
+                            min='0.5'
+                            max='25'
+                            value={config.stakePercentage || 2.0}
+                            onChange={e => onUpdateConfig({ stakePercentage: Math.max(0.5, Math.min(25, parseFloat(e.target.value) || 2.0)) })}
+                            disabled={isRunning}
+                        />
+                    </div>
+                ) : (
+                    <div className='input-box'>
+                        <label>Base Stake ({currency})</label>
+                        <input
+                            type='number'
+                            step='0.1'
+                            min='0.35'
+                            value={config.baseStake}
+                            onChange={e => onUpdateConfig({ baseStake: Math.max(0.35, parseFloat(e.target.value) || 0.35) })}
+                            disabled={isRunning}
+                        />
+                    </div>
+                )}
 
                 {/* Martingale Multiplier */}
                 <div className='input-box'>

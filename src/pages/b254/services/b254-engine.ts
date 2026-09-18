@@ -462,8 +462,8 @@ export function evaluateB254Signal(
         ? multiHorizon.h50.under05 > multiHorizon.h50.over49 && multiHorizon.h50.under05 >= 27
         : multiHorizon.h50.over49 > multiHorizon.h50.under05 && multiHorizon.h50.over49 >= 27;
 
-    const cond3_micro10_ratio = isUnder ? last10Under >= 7 : last10Over >= 7;
-    const cond4_micro7_continuation = isUnder ? last7Under >= 5 : last7Over >= 5;
+    const cond3_micro10_ratio = isUnder ? last10Under >= 6 : last10Over >= 6;
+    const cond4_micro7_continuation = isUnder ? last7Under >= 4 : last7Over >= 4;
 
     const cond5_outlierSafety = isUnder ? digitPower.outliersUnder6Safe : digitPower.outliersOver3Safe;
 
@@ -494,12 +494,10 @@ export function evaluateB254Signal(
         scoreThreshold
     );
 
-    const isAutoPaused = regime.shiftDetected || !cond4_micro7_continuation;
+    const isAutoPaused = regime.shiftDetected;
     const pauseReason = regime.shiftDetected
         ? regime.recentShiftMessage
-        : !cond4_micro7_continuation
-          ? 'Last 7 ticks reversed momentum'
-          : undefined;
+        : undefined;
 
     // Why Not Trade Diagnostics
     const whyNotTradeReasons: string[] = [];
@@ -514,7 +512,7 @@ export function evaluateB254Signal(
     if (!cond2_stat2_dominance) whyNotTradeReasons.push('50-tick digit dominance not established');
     if (!cond3_micro10_ratio) {
         whyNotTradeReasons.push(
-            `Last 10 ticks (${isUnder ? last10Under : last10Over}/10) fails 7/10 rule`
+            `Last 10 ticks (${isUnder ? last10Under : last10Over}/10) fails 6/10 rule`
         );
     }
     if (!cond4_micro7_continuation) whyNotTradeReasons.push('Last 7 ticks reversed direction');
@@ -575,66 +573,78 @@ export function evaluateB254Signal(
 export function calculateCompoundingPlan(
     startBalance: number,
     targetBalance: number,
-    days: number,
-    actualBalance: number
+    durationValue: number = 30,
+    timeUnit: 'DAYS' | 'HOURS' | 'MINUTES' = 'DAYS',
+    actualBalance: number = startBalance
 ): CompoundingProgress {
-    const validStart = Math.max(1, startBalance);
+    const validStart = Math.max(0.5, startBalance);
     const validTarget = Math.max(validStart, targetBalance);
-    const validDays = Math.max(1, days);
+    const totalSteps = Math.max(1, durationValue || 30);
 
-    // Dynamic Compound Daily Rate formula: (Target / Start)^(1 / Days) - 1
-    const requiredDailyGrowthRate = Math.pow(validTarget / validStart, 1 / validDays) - 1;
-    const requiredDailyGrowthPct = Number((requiredDailyGrowthRate * 100).toFixed(2));
+    const unitSingular = timeUnit === 'DAYS' ? 'Day' : timeUnit === 'HOURS' ? 'Hour' : 'Min';
+    const unitLabel = timeUnit === 'DAYS' ? 'Daily' : timeUnit === 'HOURS' ? 'Hourly' : 'Minute';
+
+    // Dynamic Compound Growth Rate formula: (Target / Start)^(1 / Steps) - 1
+    const requiredStepGrowthRate = Math.pow(validTarget / validStart, 1 / totalSteps) - 1;
+    const requiredStepGrowthPct = Number((requiredStepGrowthRate * 100).toFixed(2));
 
     const schedule: CompoundingProgress['schedule'] = [];
-    let currentDayBal = validStart;
-    let currentTradingDay = 1;
+    let currentStepBal = validStart;
+    let currentStep = 1;
 
-    for (let day = 1; day <= validDays; day++) {
-        const targetProfit = Number((currentDayBal * requiredDailyGrowthRate).toFixed(2));
-        const endBal = Number((currentDayBal + targetProfit).toFixed(2));
+    for (let i = 1; i <= totalSteps; i++) {
+        const targetProfit = Number((currentStepBal * requiredStepGrowthRate).toFixed(2));
+        const endBal = Number((currentStepBal + targetProfit).toFixed(2));
         const isCompleted = actualBalance >= endBal;
 
-        if (isCompleted && day < validDays) {
-            currentTradingDay = day + 1;
+        if (isCompleted && i < totalSteps) {
+            currentStep = i + 1;
         }
 
         schedule.push({
-            day,
-            startBal: currentDayBal,
+            step: i,
+            stepLabel: `${unitSingular} ${i}`,
+            startBal: currentStepBal,
             targetProfit,
             endBal,
             isCompleted,
         });
 
-        currentDayBal = endBal;
+        currentStepBal = endBal;
     }
 
-    const currentScheduleItem = schedule[currentTradingDay - 1] || schedule[0];
-    const dailyTargetBalance = currentScheduleItem ? currentScheduleItem.endBal : validTarget;
+    const currentScheduleItem = schedule[currentStep - 1] || schedule[0];
+    const stepTargetBalance = currentScheduleItem ? currentScheduleItem.endBal : validTarget;
 
-    const differenceFromTarget = Number((actualBalance - dailyTargetBalance).toFixed(2));
+    const differenceFromTarget = Number((actualBalance - stepTargetBalance).toFixed(2));
     const totalTargetProfit = validTarget - validStart;
     const currentActualProfit = Math.max(0, actualBalance - validStart);
     const progressPct = Math.min(100, Number(((currentActualProfit / (totalTargetProfit || 1)) * 100).toFixed(2)));
 
     const remainingTarget = Math.max(0, Number((validTarget - actualBalance).toFixed(2)));
-    const remainingDays = Math.max(1, validDays - currentTradingDay + 1);
+    const remainingSteps = Math.max(1, totalSteps - currentStep + 1);
     const requiredFutureGrowthRate =
         actualBalance > 0 && remainingTarget > 0
-            ? Math.pow(validTarget / actualBalance, 1 / remainingDays) - 1
+            ? Math.pow(validTarget / actualBalance, 1 / remainingSteps) - 1
             : 0;
     const requiredFutureGrowthPct = Number((requiredFutureGrowthRate * 100).toFixed(2));
 
     return {
-        requiredDailyGrowthPct,
-        dailyTargetBalance,
+        requiredStepGrowthPct,
+        stepTargetBalance,
         actualBalance,
         differenceFromTarget,
         progressPct,
-        currentTradingDay,
+        currentStep,
+        totalSteps,
+        timeUnit,
+        unitLabel,
         remainingTarget,
         requiredFutureGrowthPct,
         schedule,
+        // Backward-compatibility aliases
+        requiredDailyGrowthPct: requiredStepGrowthPct,
+        dailyTargetBalance: stepTargetBalance,
+        currentTradingDay: currentStep,
     };
 }
