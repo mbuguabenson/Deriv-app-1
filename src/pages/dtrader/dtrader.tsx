@@ -8,7 +8,7 @@ const DTraderPage: React.FC = observer(() => {
         <div className='dtrader-page-wrapper'>
             <DTraderIframeContainer
                 height='100%'
-                showToolbar={true}
+                showToolbar={false}
             />
         </div>
     );

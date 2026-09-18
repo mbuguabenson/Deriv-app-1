@@ -742,12 +742,13 @@ const AppWrapper = observer(() => {
 
     if (!store) return null;
 
-    // 1. Remove run panel and drawer from dashboard and trading bots
+    // 1. Remove run panel and drawer from dashboard, trading bots, and dtrader
     const shouldHideRunPanelAndDrawer = [
         'dashboard',
         'trading_bots',
         'free_bots',
         'trading-bots',
+        'dtrader',
     ].includes(currentTabKey);
 
     return (

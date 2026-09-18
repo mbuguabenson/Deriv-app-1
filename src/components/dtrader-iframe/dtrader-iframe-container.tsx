@@ -42,7 +42,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     theme: propTheme,
     isMobileApp = false,
     height = 'calc(100vh - 56px)',
-    showToolbar = true,
+    showToolbar = false,
     className,
     onLoginClick,
     onIframeLoaded,
