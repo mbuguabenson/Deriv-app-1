@@ -105,7 +105,7 @@ export const RealAccount3DGlassIcon = ({ currency = 'USD' }: { currency?: string
     );
 };
 
-// ─── Account Avatar with Official Deriv Currency Icon ─────────────────────────
+// ─── Account Avatar with Official Deriv Currency Icon (Same for Demo & Real) ─
 const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?: boolean }) => (
     <div
         className={classNames('acc-icon', {
@@ -113,7 +113,7 @@ const AccountAvatar = ({ currency, isVirtual }: { currency?: string; isVirtual?:
             'acc-icon--real': !isVirtual,
         })}
     >
-        <CurrencyIcon currency={currency || 'usd'} isVirtual={isVirtual} />
+        <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
     </div>
 );
 
@@ -567,7 +567,7 @@ const AccountSwitcher = observer(({ activeAccount, forceDropdown = false }: TAcc
                             'acc-chip__currency-icon--real': !isVirtual,
                         })}
                     >
-                        <CurrencyIcon currency={currency || 'usd'} isVirtual={isVirtual} />
+                        <CurrencyIcon currency={currency || 'usd'} isVirtual={false} />
                         <span className='acc-chip__online-dot'></span>
                     </div>
 

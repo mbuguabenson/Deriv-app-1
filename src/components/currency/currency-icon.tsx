@@ -62,10 +62,10 @@ const CURRENCY_ICONS = {
     zec: lazy(() => import('@deriv/quill-icons/Currencies').then(module => ({ default: module.CurrencyZecIcon }))),
 };
 
-export const CurrencyIcon = ({ currency, isVirtual }: { currency?: string; isVirtual?: boolean }) => {
-    const Icon = isVirtual
-        ? CURRENCY_ICONS.virtual
-        : CURRENCY_ICONS[currency?.toLowerCase() as keyof typeof CURRENCY_ICONS] || CURRENCY_ICONS.unknown;
+export const CurrencyIcon = ({ currency }: { currency?: string; isVirtual?: boolean }) => {
+    // Both real and demo accounts use the same real currency icon (e.g. USD flag coin)
+    const key = (currency && currency.toLowerCase() !== 'virtual' ? currency : 'usd').toLowerCase();
+    const Icon = CURRENCY_ICONS[key as keyof typeof CURRENCY_ICONS] || CURRENCY_ICONS.usd || CURRENCY_ICONS.unknown;
 
     return (
         <Suspense fallback={null}>
