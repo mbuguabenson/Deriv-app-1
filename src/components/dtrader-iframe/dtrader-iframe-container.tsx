@@ -59,6 +59,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
@@ -219,7 +220,10 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp]);
 
     // Attach ParentBridgeClient to handle postMessage auth handshakes
+    // CRITICAL: Only attach AFTER the iframe has completed its load event (onLoad)
+    // to prevent origin mismatch DOMExceptions before the remote document loads!
     useEffect(() => {
+        if (!isIframeLoaded) return;
         const iframe = iframeRef.current;
         if (!iframe || !iframeSrc) return;
 
@@ -238,15 +242,17 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                 } catch {}
             }
         };
-    }, [baseUrl, iframeKey, iframeSrc]);
+    }, [baseUrl, iframeKey, iframeSrc, isIframeLoaded]);
 
     const handleIframeLoad = () => {
         setIsLoading(false);
+        setIsIframeLoaded(true);
         if (onIframeLoaded) onIframeLoaded();
     };
 
     const handleReload = () => {
         setIsLoading(true);
+        setIsIframeLoaded(false);
         setIframeKey(k => k + 1);
     };
 

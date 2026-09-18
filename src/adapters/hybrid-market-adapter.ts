@@ -34,6 +34,7 @@ class HybridMarketAdapter {
     private activeSubscriptions = new Set<string>();
     private failedSymbols = new Set<string>();
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    private reconnectAttempts: number = 0;
 
     constructor() {
         this.init();
@@ -57,6 +58,8 @@ class HybridMarketAdapter {
             this.fallbackWs = new WebSocket(wsUrl);
 
             this.fallbackWs.onopen = () => {
+                // Reset backoff on successful connection
+                this.reconnectAttempts = 0;
                 // Resubscribe active symbols on fallback WS
                 this.activeSubscriptions.forEach(symbol => this.sendSubscription(symbol));
             };
@@ -84,7 +87,10 @@ class HybridMarketAdapter {
 
     private scheduleReconnect() {
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = setTimeout(() => this.connectFallback(), 2500);
+        // Exponential backoff: 2.5s, 5s, 10s, 20s, max 30s
+        const delay = Math.min(2500 * Math.pow(2, this.reconnectAttempts), 30_000);
+        this.reconnectAttempts++;
+        this.reconnectTimer = setTimeout(() => this.connectFallback(), delay);
     }
 
     private listenPrimaryApi() {

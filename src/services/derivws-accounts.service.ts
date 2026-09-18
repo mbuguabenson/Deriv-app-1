@@ -81,6 +81,12 @@ export class DerivWSAccountsService {
     private static accountsFetchPromise: Promise<DerivAccount[]> | null = null;
     private static otpFetchPromises: Map<string, Promise<string>> = new Map();
 
+    // Circuit breaker to prevent infinite retry storms that trigger 429 rate limiting
+    private static _accountsFetchFailCount: number = 0;
+    private static _accountsFetchCooldownUntil: number = 0;
+    private static readonly MAX_ACCOUNTS_FETCH_COOLDOWN_MS = 300_000; // 5 min max
+    private static readonly BASE_ACCOUNTS_FETCH_COOLDOWN_MS = 30_000;  // 30s initial
+
     /**
      * Gets the DerivWS base URL based on environment.
      */
@@ -186,8 +192,19 @@ export class DerivWSAccountsService {
      * Fetches the Options account list from the current Deriv REST API.
      */
     static async fetchAccountsList(accessToken: string): Promise<DerivAccount[]> {
+        // Deduplicate in-flight requests
         if (this.accountsFetchPromise) {
             return this.accountsFetchPromise;
+        }
+
+        // Circuit breaker: if we recently failed, don't hammer the endpoint
+        if (this._accountsFetchCooldownUntil > Date.now()) {
+            const stored = this.getStoredAccounts();
+            if (stored && stored.length > 0) {
+                console.warn('[DerivWS] accounts fetch on cooldown – returning stored accounts');
+                return stored;
+            }
+            throw new Error('[DerivWS] accounts fetch on cooldown and no stored accounts');
         }
 
         this.accountsFetchPromise = (async () => {
@@ -213,15 +230,27 @@ export class DerivWSAccountsService {
                 }
 
                 this.storeAccounts(accounts);
+                // Reset circuit breaker on success
+                this._accountsFetchFailCount = 0;
+                this._accountsFetchCooldownUntil = 0;
                 return accounts;
             } catch (error) {
                 console.error('[DerivWS] Error fetching accounts:', error);
+                // Engage circuit breaker with exponential backoff
+                this._accountsFetchFailCount++;
+                const backoff = Math.min(
+                    this.BASE_ACCOUNTS_FETCH_COOLDOWN_MS * Math.pow(2, this._accountsFetchFailCount - 1),
+                    this.MAX_ACCOUNTS_FETCH_COOLDOWN_MS
+                );
+                this._accountsFetchCooldownUntil = Date.now() + backoff;
+                console.warn(`[DerivWS] accounts fetch circuit breaker: cooling down for ${backoff / 1000}s`);
                 this.accountsFetchPromise = null;
                 throw error;
             } finally {
+                // Keep the dedup promise cached for 30s to avoid rapid re-invocation
                 setTimeout(() => {
                     this.accountsFetchPromise = null;
-                }, 100);
+                }, 30_000);
             }
         })();
 

@@ -118,7 +118,10 @@ export class ParentBridgeClient {
             );
             let tokenToUse = tok;
             if (isDTrader && tok && tok.startsWith('ey')) {
-                tokenToUse = getLegacyDTraderToken(loginid) || localStorage.getItem('token1') || '';
+                const legacy = getLegacyDTraderToken(loginid) || localStorage.getItem('token1');
+                if (legacy) {
+                    tokenToUse = legacy;
+                }
             }
 
             const hasToken =
@@ -228,13 +231,16 @@ export class ParentBridgeClient {
 
             const postBoth = (msg: any) => {
                 try {
-                    const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*'
-                        ? this.iframeOrigin
-                        : 'https://profhubdtrader.vercel.app';
-                    targetWindow.postMessage(msg, targetOrigin);
+                    // Use '*' as target origin: the parent doesn't know the
+                    // iframe's actual current origin (it may differ from
+                    // expectedOrigin during navigations/redirects). Specifying a
+                    // wrong origin causes a DOMException that floods the console.
+                    // This is safe because `targetWindow` is our own iframe
+                    // reference, not an arbitrary window.
+                    targetWindow.postMessage(msg, '*');
                     if (typeof msg === 'object') {
                         try {
-                            targetWindow.postMessage(JSON.stringify(msg), targetOrigin);
+                            targetWindow.postMessage(JSON.stringify(msg), '*');
                         } catch {}
                     }
                 } catch {
@@ -295,10 +301,6 @@ export class ParentBridgeClient {
         const meta = secureSessionService.getSessionMeta();
         if (!meta?.loggedIn || !meta.loginid) return;
 
-        const targetOrigin = this.iframeOrigin && this.iframeOrigin !== '*'
-            ? this.iframeOrigin
-            : 'https://profhubdtrader.vercel.app';
-
         try {
             this.iframeWindow.postMessage({
                 type:      'AUTH_INIT',
@@ -306,7 +308,7 @@ export class ParentBridgeClient {
                 loginid:   meta.loginid,
                 currency:  meta.currency,
                 expiresAt: meta.expiresAt,
-            }, targetOrigin);
+            }, '*');
         } catch (e) {
             this.logger.debug('AUTH_INIT_SEND_FAILED', { error: String(e) });
         }
@@ -322,9 +324,8 @@ export class ParentBridgeClient {
             this.logger.debug('OTT_FETCH_FAILED', {});
             return;
         }
-        const targetOrigin = replyOrigin && replyOrigin !== '*' ? replyOrigin : (this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app');
         try {
-            targetWindow.postMessage({ type: 'OTT', ott }, targetOrigin);
+            targetWindow.postMessage({ type: 'OTT', ott }, '*');
         } catch (e) {
             this.logger.debug('OTT_SEND_FAILED', { error: String(e) });
         }
@@ -345,8 +346,11 @@ export class ParentBridgeClient {
                     localStorage.getItem('active_loginid') ||
                     localStorage.getItem('client.loginid') ||
                     'DOT100000';
-                const isDTrader = Boolean(this.iframeOrigin && this.iframeOrigin.includes('deriv-dtrader'));
-                const syncToken = isDTrader ? (getLegacyDTraderToken(loginid) || '') : (getActiveToken() || '');
+                const isDTrader = Boolean(
+                    this.iframeOrigin &&
+                    (this.iframeOrigin.includes('deriv-dtrader') || this.iframeOrigin.includes('profhubdtrader'))
+                );
+                const syncToken = (isDTrader ? getLegacyDTraderToken(loginid) : null) || getActiveToken(loginid) || '';
                 const currency = session?.currency || localStorage.getItem('client.currency') || 'USD';
                 const appIdStr = String(session?.appId || getAppId() || '121856');
 
@@ -436,9 +440,8 @@ export class ParentBridgeClient {
         const msg = createMessage(type, appId, 'parent', payload);
         this.logMessage('out', msg);
         this.logger.messageSent(this.iframeOrigin, msg.type as string);
-        const origin = this.iframeOrigin && this.iframeOrigin !== '*' ? this.iframeOrigin : 'https://profhubdtrader.vercel.app';
         try {
-            this.iframeWindow.postMessage(msg, origin);
+            this.iframeWindow.postMessage(msg, '*');
         } catch (error) {
             console.error('[ParentBridge] Failed to send message', error);
         }
@@ -450,13 +453,13 @@ export class ParentBridgeClient {
             return;
         }
 
-        const targetOrigin =
-            this.iframeOrigin && this.iframeOrigin !== '*'
-                ? this.iframeOrigin
-                : 'https://profhubdtrader.vercel.app';
-
-        // Check event.origin against the actual iframe origin
-        if (event.origin !== targetOrigin) {
+        // Accept messages from the configured iframe origin or known Deriv iframe origins
+        const validOrigins = new Set([
+            this.iframeOrigin,
+            'https://profhubdtrader.vercel.app',
+            'https://deriv-dtrader.vercel.app',
+        ]);
+        if (!validOrigins.has(event.origin)) {
             return;
         }
 

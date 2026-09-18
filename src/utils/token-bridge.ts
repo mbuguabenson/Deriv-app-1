@@ -92,6 +92,17 @@ export const getAccountsList = (): Record<string, string> => {
         if (activeId && directToken && !isInvalidBearerToken(directToken) && !map[activeId]) {
             map[activeId] = directToken;
         }
+
+        // 7. OAuth2 PKCE auth_info fallback if map is still empty
+        if (Object.keys(map).length === 0) {
+            try {
+                const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+                if (authInfo?.access_token && !isInvalidBearerToken(authInfo.access_token)) {
+                    const fallbackId = activeId || 'CR91841550';
+                    map[fallbackId] = authInfo.access_token;
+                }
+            } catch {}
+        }
     } catch {}
 
     return map;
@@ -233,10 +244,25 @@ export const getActiveToken = (specificLoginId?: string): string | null => {
             localStorage.getItem('authToken') ||
             localStorage.getItem('token1') ||
             localStorage.getItem('legacy_dtrader_token') ||
+            localStorage.getItem('bot_new_api_token') ||
             localStorage.getItem('deriv_api_token');
         if (storedToken && !isInvalidBearerToken(storedToken)) {
             return storedToken;
         }
+
+        try {
+            const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+            if (authInfo?.access_token && !isInvalidBearerToken(authInfo.access_token)) {
+                return authInfo.access_token;
+            }
+        } catch {}
+    } else {
+        try {
+            const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+            if (authInfo?.access_token && !isInvalidBearerToken(authInfo.access_token)) {
+                return authInfo.access_token;
+            }
+        } catch {}
     }
 
     return null;
