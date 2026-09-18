@@ -8,9 +8,9 @@ import {
     getActiveToken,
     getLegacyDTraderToken,
 } from '@/utils/token-bridge';
-import './dtrader.scss';
+import './xhub.scss';
 
-const DTraderPage: React.FC = observer(() => {
+const XHubPage: React.FC = observer(() => {
     const { client, ui } = useStore() ?? {};
 
     const activeLoginId = client?.loginid || getActiveLoginId();
@@ -22,8 +22,9 @@ const DTraderPage: React.FC = observer(() => {
     const theme = ui?.is_dark_mode_on ? 'dark' : 'light';
 
     return (
-        <div className='dtrader-page-wrapper'>
+        <div className='xhub-page-wrapper'>
             <DTraderIframeContainer
+                baseUrl='https://deriv-dtrader.vercel.app'
                 token={token || undefined}
                 loginId={activeLoginId || undefined}
                 theme={theme}
@@ -34,4 +35,4 @@ const DTraderPage: React.FC = observer(() => {
     );
 });
 
-export default DTraderPage;
+export default XHubPage;

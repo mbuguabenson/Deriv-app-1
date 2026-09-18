@@ -24,6 +24,7 @@ const TAB_ICONS: Record<string, TQuillIcon> = {
     signals: LabelPairedChartLineSmRegularIcon,
     scanner: LabelPairedBarsFilterSmRegularIcon,
     dtrader: LabelPairedChartLineSmRegularIcon,
+    xhub: LabelPairedChartLineSmRegularIcon,
     manual_trading: LabelPairedChartLineSmRegularIcon,
     easy_tool: LabelPairedBarsFilterSmRegularIcon,
     marketkiller: LabelPairedBarsFilterSmRegularIcon,
