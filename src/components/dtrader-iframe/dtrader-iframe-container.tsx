@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
+import { getLegacyDTraderToken, isInvalidBearerToken } from '@/utils/token-bridge';
 import './dtrader-iframe-container.scss';
 
 export interface DTraderIframeContainerProps {
@@ -53,17 +54,23 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Dynamic state with local storage fallback
-    const [currentToken, setCurrentToken] = useState<string>(() => {
-        if (propToken) return propToken;
-        return (
-            localStorage.getItem('authToken') ||
+    // Resolve clean token (filters out OAuth2 Bearer JWTs that break DTrader)
+    const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
+        if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
+        const legacy = getLegacyDTraderToken(loginid);
+        if (legacy && !isInvalidBearerToken(legacy)) return legacy;
+        const candidate =
+            localStorage.getItem('legacy_dtrader_token') ||
             localStorage.getItem('token') ||
             localStorage.getItem('active_token') ||
-            localStorage.getItem('legacy_dtrader_token') ||
-            ''
-        );
-    });
+            '';
+        if (candidate && !isInvalidBearerToken(candidate)) return candidate;
+        const auth = localStorage.getItem('authToken');
+        if (auth && !isInvalidBearerToken(auth)) return auth;
+        return '';
+    }, []);
+
+    const [currentToken, setCurrentToken] = useState<string>(() => resolveToken(propToken, propLoginId));
 
     const [currentLoginId, setCurrentLoginId] = useState<string>(() => {
         if (propLoginId) return propLoginId;
@@ -97,12 +104,16 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
 
     // Sync state when props change
     useEffect(() => {
-        if (propToken !== undefined) setCurrentToken(propToken);
-    }, [propToken]);
+        if (propToken !== undefined) setCurrentToken(resolveToken(propToken, currentLoginId));
+    }, [propToken, currentLoginId, resolveToken]);
 
     useEffect(() => {
-        if (propLoginId !== undefined) setCurrentLoginId(propLoginId);
-    }, [propLoginId]);
+        if (propLoginId !== undefined) {
+            setCurrentLoginId(propLoginId);
+            const resolved = resolveToken(propToken, propLoginId);
+            if (resolved) setCurrentToken(resolved);
+        }
+    }, [propLoginId, propToken, resolveToken]);
 
     useEffect(() => {
         if (propTheme !== undefined) setCurrentTheme(propTheme);
@@ -126,11 +137,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         const handleAccountUpdate = (e: Event) => {
             const customEvent = e as CustomEvent<{ loginid?: string; token?: string }>;
             const nextLoginId = customEvent.detail?.loginid || localStorage.getItem('active_loginid');
-            const nextToken =
-                customEvent.detail?.token ||
-                localStorage.getItem('authToken') ||
-                localStorage.getItem('token') ||
-                localStorage.getItem('active_token');
+            const nextToken = resolveToken(customEvent.detail?.token, nextLoginId || undefined);
 
             if (nextLoginId && nextLoginId !== currentLoginId) {
                 setIsLoading(true);
@@ -150,18 +157,18 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             window.removeEventListener('account_switched', handleAccountUpdate);
             window.removeEventListener('storage', handleAccountUpdate);
         };
-    }, [currentLoginId, currentToken]);
+    }, [currentLoginId, currentToken, resolveToken]);
 
     // Build the query parameter URL for Embedded Mode
     const iframeSrc = useMemo(() => {
-        if (!currentToken) return '';
-
         try {
             const url = new URL(baseUrl);
-            url.searchParams.set('token', currentToken);
 
-            if (currentLoginId) {
-                url.searchParams.set('account', currentLoginId);
+            if (currentToken && !isInvalidBearerToken(currentToken)) {
+                url.searchParams.set('token', currentToken);
+                if (currentLoginId) {
+                    url.searchParams.set('account', currentLoginId);
+                }
             }
 
             url.searchParams.set('theme', currentTheme);
@@ -172,7 +179,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
 
             return url.toString();
         } catch {
-            return '';
+            return baseUrl;
         }
     }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp]);
 
@@ -347,7 +354,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                             </div>
                         )}
 
-                        {/* 3. Secure Sandboxed Trading Iframe */}
+                        {/* 3. Embedded Trading Iframe (sandbox omitted to allow IndexedDB & Web Workers for market data) */}
                         <iframe
                             key={iframeKey}
                             ref={iframeRef}
@@ -356,8 +363,8 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                             className={classNames('dtrader-container__iframe', {
                                 'dtrader-container__iframe--visible': !isLoading,
                             })}
-                            allow='clipboard-write; fullscreen; camera; geolocation; microphone; display-capture'
-                            sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads'
+                            allow='clipboard-write; fullscreen; camera; geolocation; microphone; display-capture; autoplay; encrypted-media; web-share'
+                            referrerPolicy='no-referrer-when-downgrade'
                             loading='eager'
                             onLoad={handleIframeLoad}
                         />

@@ -252,9 +252,8 @@ const IframeWrapper: React.FC<IframeWrapperProps> = observer(({ src, title, clas
                 className='iframe-wrapper__frame'
                 frameBorder='0'
                 allowFullScreen
-                loading='eager'
-                allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen; display-capture'
-                sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads'
+                allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen; display-capture; camera; microphone; geolocation; web-share'
+                sandbox={src.includes('profhubdtrader') || src.includes('dtrader') ? undefined : 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads'}
                 referrerPolicy='no-referrer-when-downgrade'
                 style={{
                     display: 'block',
