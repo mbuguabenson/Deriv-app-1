@@ -291,15 +291,84 @@ export class OAuthTokenExchangeService {
 
                     if (accounts && accounts.length > 0) {
                         const firstAccount = accounts[0];
-                        localStorage.setItem('active_loginid', firstAccount.account_id);
-                        localStorage.setItem('client.loginid', firstAccount.account_id);
+                        const activeLoginId = firstAccount.account_id;
+                        localStorage.setItem('active_loginid', activeLoginId);
+                        localStorage.setItem('client.loginid', activeLoginId);
 
-                        const isDemo = isDemoAccount(firstAccount.account_id);
+                        const isDemo = isDemoAccount(activeLoginId);
                         localStorage.setItem('account_type', isDemo ? 'demo' : 'real');
 
-                        ErrorLogger.info('OAuth', 'Accounts established after token exchange', {
-                            loginid: firstAccount.account_id,
+                        // Save accounts mapping for token bridge and iframe sync
+                        const accountsMap: Record<string, string> = {};
+                        accounts.forEach((acc: any) => {
+                            accountsMap[acc.account_id] = data.access_token!;
                         });
+                        localStorage.setItem('accountsList', JSON.stringify(accountsMap));
+
+                        ErrorLogger.info('OAuth', 'Accounts established after token exchange', {
+                            loginid: activeLoginId,
+                        });
+
+                        // Set reactive auth observables so UI Header immediately shows active account
+                        const formattedAccountList = accounts.map((acc: any) => ({
+                            account_id: acc.account_id,
+                            loginid: acc.account_id,
+                            currency: acc.currency || 'USD',
+                            is_virtual: isDemoAccount(acc.account_id) ? 1 : 0,
+                            title: acc.account_id,
+                        }));
+
+                        try {
+                            const {
+                                setAuthData,
+                                setIsAuthorized,
+                                setIsAuthorizing,
+                                setAccountList,
+                            } = await import('@/external/bot-skeleton/services/api/observables/connection-status-stream');
+
+                            setAccountList(formattedAccountList);
+                            setAuthData({
+                                loginid: activeLoginId,
+                                currency: firstAccount.currency || 'USD',
+                                balance:
+                                    typeof firstAccount.balance === 'number'
+                                        ? firstAccount.balance.toFixed(2)
+                                        : String(firstAccount.balance || '10000.00'),
+                                account_list: formattedAccountList,
+                            });
+                            setIsAuthorized(true);
+                            setIsAuthorizing(false);
+                        } catch (obsErr) {
+                            console.warn('[OAuth] Reactive observables update notice:', obsErr);
+                        }
+
+                        // Update global client store
+                        try {
+                            const { observer: globalObserver } = await import('@/external/bot-skeleton/utils/observer');
+                            const clientStore = globalObserver.getState('client.store');
+                            if (clientStore) {
+                                clientStore.setLoginId(activeLoginId);
+                                clientStore.setAccountList(formattedAccountList);
+                                clientStore.setBalance(
+                                    typeof firstAccount.balance === 'number'
+                                        ? firstAccount.balance.toString()
+                                        : String(firstAccount.balance || '10000.00'),
+                                    activeLoginId
+                                );
+                                clientStore.setCurrency(firstAccount.currency || 'USD');
+                                clientStore.setIsLoggedIn(true);
+                            }
+                        } catch {}
+
+                        // Notify parent bridge and child iframes
+                        if (typeof window !== 'undefined') {
+                            window.dispatchEvent(new Event('storage'));
+                            window.dispatchEvent(
+                                new CustomEvent('deriv_auth_changed', {
+                                    detail: { loginid: activeLoginId, token: data.access_token },
+                                })
+                            );
+                        }
 
                         // Track real accounts in Deriv Analytics
                         try {

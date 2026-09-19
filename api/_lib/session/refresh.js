@@ -1,6 +1,6 @@
 'use strict';
 
-const DERIV_TOKEN_ENDPOINT = 'https://oauth.deriv.com/oauth2/token';
+const DERIV_TOKEN_ENDPOINT = 'https://auth.deriv.com/oauth2/token';
 const COOKIE_NAME_ACCESS = 'deriv_session';
 const COOKIE_NAME_REFRESH = 'deriv_refresh';
 const SESSION_TTL_S = 3600;

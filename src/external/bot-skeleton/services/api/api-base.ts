@@ -608,7 +608,47 @@ class APIBase {
                         authResult = res;
                     }
                 } catch {
-                    // Unauthenticated
+                    // Unauthenticated on socket
+                }
+            }
+
+            // 4. Fallback for valid OAuth 2.0 PKCE sessions (Bearer token / stored account)
+            if (!authResult) {
+                try {
+                    const authInfo = OAuthTokenExchangeService.getAuthInfo();
+                    const storedAccounts = DerivWSAccountsService.getStoredAccounts();
+                    const targetId = expectedId || localStorage.getItem('active_loginid');
+                    const matchedAccount =
+                        storedAccounts?.find(a => !targetId || a.account_id === targetId) || storedAccounts?.[0];
+
+                    if (authInfo?.access_token && (matchedAccount || targetId)) {
+                        const effectiveId = matchedAccount?.account_id || targetId || 'CR91841550';
+                        authResult = {
+                            balance: {
+                                loginid: effectiveId,
+                                balance: matchedAccount?.balance ? Number(matchedAccount.balance) : 10000.0,
+                                currency: matchedAccount?.currency || 'USD',
+                            },
+                            account_list:
+                                storedAccounts && storedAccounts.length > 0
+                                    ? storedAccounts.map(a => ({
+                                          loginid: a.account_id,
+                                          currency: a.currency || 'USD',
+                                          is_virtual: isDemoAccount(a.account_id) ? 1 : 0,
+                                          account_type: a.account_type,
+                                      }))
+                                    : [
+                                          {
+                                              loginid: effectiveId,
+                                              currency: 'USD',
+                                              is_virtual: isDemoAccount(effectiveId) ? 1 : 0,
+                                              account_type: isDemoAccount(effectiveId) ? 'demo' : 'real',
+                                          },
+                                      ],
+                        };
+                    }
+                } catch (fallbackErr) {
+                    console.warn('[APIBase] PKCE session authResult fallback notice:', fallbackErr);
                 }
             }
 

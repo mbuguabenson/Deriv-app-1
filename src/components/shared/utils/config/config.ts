@@ -17,7 +17,6 @@ interface DomainConfig {
     botsFolder: string; // Public folder used by Best Bots XML loading for this domain
     canonicalHost: string; // Preferred host used for redirects and auth/session consistency
     includeLegacyAppIdInOAuth?: boolean;
-    useLegacyOAuthLogin?: boolean;
     features: DomainFeatureFlags;
     ui: DomainUIConfig;
 }
@@ -80,7 +79,6 @@ interface HostedDomainDefinition {
     appId?: string;
     botsFolder?: string;
     includeLegacyAppIdInOAuth?: boolean;
-    useLegacyOAuthLogin?: boolean;
     features?: Partial<DomainFeatureFlags>;
     redirectUri?: string;
     ui?: Partial<DomainUIConfig>;
@@ -259,7 +257,6 @@ const createHostedDomainEntries = ({
     appId = '121856',
     botsFolder = primaryDomain,
     includeLegacyAppIdInOAuth = true,
-    useLegacyOAuthLogin = true,
     features = {},
     redirectUri = `https://${primaryDomain}/`,
     ui = {},
@@ -271,7 +268,6 @@ const createHostedDomainEntries = ({
         botsFolder,
         canonicalHost: primaryDomain,
         includeLegacyAppIdInOAuth,
-        useLegacyOAuthLogin,
         features: {
             ...DEFAULT_DOMAIN_FEATURES,
             ...features,
@@ -854,7 +850,6 @@ export const getDomainConfig = (activeHostname = window.location.hostname): Doma
         botsFolder: process.env.BOTS_FOLDER || DEFAULT_BOTS_FOLDER,
         canonicalHost: hostname,
         includeLegacyAppIdInOAuth: true,
-        useLegacyOAuthLogin: true,
         features: DEFAULT_DOMAIN_FEATURES,
         ui: DEFAULT_DOMAIN_UI,
     };
@@ -1224,7 +1219,7 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
         }
 
         const domainCfg = domainConfig;
-        const { clientId, appId } = domainCfg;
+        const { clientId } = domainCfg;
 
         // Auto-input referral code and affiliate tracking for onboarding
         try {
@@ -1232,31 +1227,6 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
             localStorage.setItem('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
             localStorage.setItem('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
         } catch {}
-
-        // When legacy OAuth login is enabled (default across hosted domains & browser SPAs),
-        // route through Deriv's OAuth v1 endpoint to receive legacy tokens (a1-...)
-        // which authorize directly on ws.derivws.com/websockets/v3 and synchronize with DTrader.
-        if (domainCfg.useLegacyOAuthLogin !== false) {
-            const effectiveAppId = appId || getLegacyAppId() || '121856';
-            const params = new URLSearchParams({
-                app_id: effectiveAppId,
-                l: 'en',
-                brand: 'deriv',
-            });
-            if (prompt) {
-                params.set('prompt', prompt);
-            }
-            params.set('affiliate_token', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('ref', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('t', DERIV_AFFILIATE_CONFIG.affiliateToken);
-            params.set('utm_source', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('utm_medium', 'affiliate');
-            params.set('utm_campaign', DERIV_AFFILIATE_CONFIG.affiliateToken);
-
-            return `https://oauth.deriv.com/oauth2/authorize?${params.toString()}`;
-        }
 
         // Normalize: OAuth servers require redirect_uri to exactly match the registered URI.
         // Most Deriv apps are registered with a trailing slash, so ensure it is always present.
@@ -1278,8 +1248,8 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
             const codeChallenge = await generateCodeChallenge(codeVerifier);
             storeCodeVerifier(codeVerifier);
 
-            // redirectUri is sourced from DOMAIN_CONFIG and must match the URL
-            // registered in the Deriv OAuth app for clientId exactly.
+            // Official New Deriv API OAuth 2.0 Authorization Code Flow with PKCE
+            // Start authorization at https://auth.deriv.com/oauth2/auth with client_id
             const params = new URLSearchParams({
                 response_type: 'code',
                 client_id: clientId,
@@ -1290,25 +1260,14 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
                 code_challenge_method: 'S256',
             });
 
-            // Auto-input referral code and affiliate tracking for onboarding
-            params.set('affiliate_token', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('ref', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('t', DERIV_AFFILIATE_CONFIG.affiliateToken);
-            params.set('utm_source', DERIV_AFFILIATE_CONFIG.referralCode);
-            params.set('utm_medium', 'affiliate');
-            params.set('utm_campaign', DERIV_AFFILIATE_CONFIG.affiliateToken);
-
-            // Store referral and affiliate tokens in storage for session attribution
-            try {
-                localStorage.setItem('affiliate_token', DERIV_AFFILIATE_CONFIG.referralCode);
-                localStorage.setItem('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
-                localStorage.setItem('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
-            } catch {}
-
-            // Optional: prompt parameter
-            if (prompt) {
+            // If prompt is registration, add registration params per Deriv OAuth docs
+            if (prompt === 'registration') {
+                params.set('prompt', 'registration');
+                params.set('utm_source', DERIV_AFFILIATE_CONFIG.referralCode);
+                params.set('utm_medium', 'affiliate');
+                params.set('utm_campaign', DERIV_AFFILIATE_CONFIG.affiliateToken);
+                params.set('t', DERIV_AFFILIATE_CONFIG.affiliateToken);
+            } else if (prompt) {
                 params.set('prompt', prompt);
             }
 

@@ -279,14 +279,12 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             try {
                 const url = await generateOAuthURL();
                 if (url) {
-                    window.location.href = url;
+                    window.location.assign(url);
                     return;
                 }
-            } catch {}
-            const redirectUri = window.location.origin;
-            window.location.href = `https://oauth.deriv.com/oauth2/authorize?app_id=${encodeURIComponent(
-                appId
-            )}&l=en&brand=deriv&redirect_uri=${encodeURIComponent(redirectUri)}`;
+            } catch (err) {
+                console.error('[DTrader] Failed to generate OAuth URL:', err);
+            }
         }
     };
 

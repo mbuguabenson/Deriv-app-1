@@ -21,8 +21,44 @@ module.exports = async function handler(req, res) {
         return res.status(400).json({ error: 'Missing token. Pass Authorization: Bearer <token> or ?token=<token>' });
     }
 
+    // For OAuth 2.0 JWT Bearer tokens, query the official New Deriv API options accounts endpoint
+    if (token.startsWith('ey')) {
+        try {
+            const resp = await fetch('https://api.derivws.com/trading/v1/options/accounts', {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+            if (resp.ok) {
+                const accountsData = await resp.json();
+                const accounts = accountsData?.data || [];
+                const first = accounts[0] || {};
+                return res.status(200).json({
+                    success: true,
+                    loginid: first.account_id || '',
+                    fullname: first.account_id || 'Profithub Trader',
+                    email: '',
+                    currency: first.currency || 'USD',
+                    balance: typeof first.balance === 'number' ? first.balance : parseFloat(first.balance || '0'),
+                    scopes: ['trade'],
+                    country: 'ke',
+                    isVirtual: first.account_type === 'demo',
+                    accountList: accounts.map(acc => ({
+                        loginid: acc.account_id,
+                        currency: acc.currency,
+                        isVirtual: acc.account_type === 'demo',
+                        isDisabled: acc.status !== 'active',
+                    })),
+                });
+            }
+        } catch (restErr) {
+            console.warn('[DerivAccountsAPI] REST accounts fetch error:', restErr);
+        }
+    }
+
     const appId = req.headers['deriv-app-id'] || req.query.app_id || '1089';
-    // Use official standard Deriv binaryws.com / derivws.com WebSocket gateway
+    // Use official standard Deriv binaryws.com / derivws.com WebSocket gateway for legacy tokens
     const wsUrl = `wss://ws.binaryws.com/websockets/v3?app_id=${encodeURIComponent(appId)}`;
 
     return new Promise(resolve => {

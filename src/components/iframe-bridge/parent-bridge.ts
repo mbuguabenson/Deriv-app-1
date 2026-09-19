@@ -187,7 +187,7 @@ export class ParentBridgeClient {
                 },
                 clientId: appIdStr || '121856',
                 apiBase: 'https://ws.derivws.com/websockets/v3',
-                authBase: 'https://oauth.deriv.com',
+                authBase: 'https://auth.deriv.com',
             };
 
             const legacyV2AuthMsg = {
