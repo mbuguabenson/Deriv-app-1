@@ -209,6 +209,28 @@ export class DerivWSAccountsService {
 
         this.accountsFetchPromise = (async () => {
             try {
+                // 1. Try local proxy first (avoids browser CORS on custom domains like hazelhub.vercel.app)
+                if (typeof window !== 'undefined') {
+                    try {
+                        const proxyResp = await fetch('/api/deriv-accounts', {
+                            method: 'GET',
+                            headers: this.getAuthenticatedHeaders(accessToken),
+                        });
+                        if (proxyResp.ok) {
+                            const proxyData = await proxyResp.json();
+                            const accounts = proxyData?.data || proxyData?.accounts || (Array.isArray(proxyData) ? proxyData : []);
+                            if (accounts && accounts.length > 0) {
+                                this.storeAccounts(accounts);
+                                this._accountsFetchFailCount = 0;
+                                this._accountsFetchCooldownUntil = 0;
+                                return accounts;
+                            }
+                        }
+                    } catch (proxyErr) {
+                        console.warn('[DerivWS] Accounts proxy notice, trying direct endpoint:', proxyErr);
+                    }
+                }
+
                 const baseURL = this.getDerivWSBaseURL();
                 const optionsDir = brandConfig.platform.derivws.directories.options;
                 const endpoint = `${baseURL}${optionsDir}accounts`;
@@ -315,6 +337,33 @@ export class DerivWSAccountsService {
             throw new Error('Deriv account id is required to request an authenticated WebSocket.');
         }
 
+        const authHeaders = this.getAuthenticatedHeaders(accessToken);
+
+        // 1. Try local serverless proxy first to bypass CORS on browser origins like hazelhub.vercel.app
+        if (typeof window !== 'undefined') {
+            try {
+                const proxyEndpoint = `/api/deriv-otp/${encodeURIComponent(accountId)}`;
+                const proxyResp = await fetch(proxyEndpoint, {
+                    method: 'POST',
+                    headers: authHeaders,
+                });
+
+                if (proxyResp.ok) {
+                    const otpResponse: OTPResponse = await proxyResp.json();
+                    const websocketURL = otpResponse?.data?.url;
+                    if (websocketURL) {
+                        console.log('[DerivWS] Successfully acquired OTP WebSocket URL via proxy');
+                        return websocketURL;
+                    }
+                } else {
+                    console.warn(`[DerivWS] OTP proxy returned status ${proxyResp.status}, falling back to direct endpoint`);
+                }
+            } catch (proxyErr) {
+                console.warn('[DerivWS] OTP proxy request error, falling back to direct endpoint:', proxyErr);
+            }
+        }
+
+        // 2. Direct endpoint
         try {
             const baseURL = this.getDerivWSBaseURL();
             const optionsDir = brandConfig.platform.derivws.directories.options;
@@ -322,7 +371,7 @@ export class DerivWSAccountsService {
 
             const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: this.getAuthenticatedHeaders(accessToken),
+                headers: authHeaders,
             });
 
             if (!response.ok) {

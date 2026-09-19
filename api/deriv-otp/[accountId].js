@@ -3,11 +3,11 @@
 const brandConfig = require('../../brand.config.json');
 
 const getDerivWSBaseURL = () => {
-    const environment = process.env.NODE_ENV === 'production' ? 'production' : 'staging';
-    return brandConfig.platform.derivws.url[environment];
+    // Both staging and production environments authenticate against production Deriv auth.deriv.com
+    return brandConfig.platform?.derivws?.url?.production || 'https://api.derivws.com/trading/v1/';
 };
 
-const getOptionsDir = () => brandConfig.platform.derivws.directories.options;
+const getOptionsDir = () => brandConfig.platform?.derivws?.directories?.options || 'options/';
 
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -25,16 +25,21 @@ module.exports = async function handler(req, res) {
         return res.status(401).json({ error: 'Missing or invalid Authorization header' });
     }
 
-    const appId = req.headers['deriv-app-id'] || '121856';
     const endpoint = `${getDerivWSBaseURL()}${getOptionsDir()}accounts/${encodeURIComponent(accountId)}/otp`;
 
     try {
+        const headers = {
+            Authorization: authorization,
+        };
+        // Per official Deriv documentation:
+        // Deriv-App-ID is required for Personal Access Token (PAT) authentication, but not required for OAuth Bearer tokens.
+        if (req.headers['deriv-app-id']) {
+            headers['Deriv-App-ID'] = req.headers['deriv-app-id'];
+        }
+
         const response = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-                Authorization: authorization,
-                'Deriv-App-ID': appId,
-            },
+            headers,
         });
 
         const contentType = response.headers.get('content-type') || 'application/json';
@@ -48,3 +53,4 @@ module.exports = async function handler(req, res) {
         return res.status(502).json({ error: 'Failed to forward Deriv OTP request' });
     }
 };
+

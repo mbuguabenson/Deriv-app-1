@@ -385,6 +385,8 @@ export class OAuthTokenExchangeService {
 
                         // Trigger WebSocket initialization
                         try {
+                            const { clearDerivApiInstance } = await import('@/external/bot-skeleton/services/api/appId');
+                            clearDerivApiInstance();
                             const { api_base } = await import('@/external/bot-skeleton');
                             await api_base.init(true); // Force new connection with the account
                         } catch (wsErr) {

@@ -71,10 +71,15 @@ export const tradeOptionToBuy = (contract_type, trade_option) => {
             symbol: trade_option.symbol,
         },
     };
-    if (trade_option.prediction !== undefined) {
+    const hasValidPrediction =
+        trade_option.prediction !== undefined &&
+        trade_option.prediction !== -1 &&
+        trade_option.prediction !== '-1';
+
+    if (hasValidPrediction) {
         buy.parameters.selected_tick = Number(trade_option.prediction);
     }
-    if (!['TICKLOW', 'TICKHIGH'].includes(contract_type) && trade_option.prediction !== undefined) {
+    if (!['TICKLOW', 'TICKHIGH'].includes(contract_type) && hasValidPrediction) {
         buy.parameters.barrier = String(trade_option.prediction);
     } else if (trade_option.barrierOffset !== undefined) {
         buy.parameters.barrier = String(trade_option.barrierOffset);

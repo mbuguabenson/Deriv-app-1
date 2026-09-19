@@ -36,6 +36,8 @@ module.exports = async function handler(req, res) {
                 const first = accounts[0] || {};
                 return res.status(200).json({
                     success: true,
+                    data: accounts,
+                    accounts: accounts,
                     loginid: first.account_id || '',
                     fullname: first.account_id || 'Profithub Trader',
                     email: '',

@@ -112,6 +112,8 @@ class APIBase {
     active_symbols_source: 'fallback' | 'cache' | 'live' = 'fallback';
     current_auth_subscriptions: SubscriptionPromise[] = [];
     is_authorized = false;
+    is_socket_authorized = false;
+    private _is_reauthorizing = false;
     active_symbols_promise: Promise<any[]> | null = null;
     common_store: CommonStore | undefined;
     reconnection_attempts: number = 0;
@@ -540,6 +542,7 @@ class APIBase {
 
         try {
             let authResult: any = null;
+            let socketIsAuthenticated = false;
             const expectedId = this.account_id || getAccountId();
 
             // 1. Check if the WebSocket is already authenticated via an OTP in the connection URL for the EXPECTED account
@@ -547,6 +550,7 @@ class APIBase {
                 const balanceRes = await (this.api as any).send({ balance: 1 });
                 if (balanceRes?.balance && (!expectedId || balanceRes.balance.loginid === expectedId)) {
                     authResult = balanceRes;
+                    socketIsAuthenticated = true;
                     console.log(
                         '[APIBase] WebSocket authorized via OTP connection URL for:',
                         balanceRes.balance.loginid
@@ -565,6 +569,7 @@ class APIBase {
                     try {
                         const res = await this.api.authorize(token);
                         if (res?.authorize) {
+                            socketIsAuthenticated = true;
                             if (!expectedId || res.authorize.loginid === expectedId) {
                                 authResult = { balance: res.authorize, account_list: res.authorize.account_list };
                             } else {
@@ -606,9 +611,29 @@ class APIBase {
                     const res = await (this.api as any).send({ balance: 1 });
                     if (res?.balance && (!expectedId || res.balance.loginid === expectedId)) {
                         authResult = res;
+                        socketIsAuthenticated = true;
                     }
                 } catch {
                     // Unauthenticated on socket
+                }
+            }
+
+            this.is_socket_authorized = socketIsAuthenticated;
+
+            // If the socket is NOT authenticated on Deriv, but the user has an active OAuth session,
+            // the socket was opened before OTP was acquired (e.g. public socket on initial load).
+            // Automatically upgrade to an OTP-authenticated connection immediately.
+            const currentAuthInfo = OAuthTokenExchangeService.getAuthInfo();
+            if (!socketIsAuthenticated && currentAuthInfo?.access_token && !this._is_reauthorizing) {
+                this._is_reauthorizing = true;
+                try {
+                    console.log('[APIBase] Socket is unauthenticated while OAuth token is active. Upgrading to OTP connection...');
+                    await this.init(true);
+                    return;
+                } catch (reauthErr) {
+                    console.warn('[APIBase] OTP connection upgrade notice:', reauthErr);
+                } finally {
+                    this._is_reauthorizing = false;
                 }
             }
 

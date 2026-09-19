@@ -12,6 +12,7 @@ import { forgetAccumulatorsProposalRequest } from './accumulators-proposal-handl
 import { loadBlockly } from './blockly';
 import DBotStore from './dbot-store';
 import { isAllRequiredBlocksEnabled, updateDisabledBlocks, validateErrorOnBlockDelete } from './utils';
+import { OAuthTokenExchangeService } from '@/services/oauth-token-exchange.service';
 
 class DBot {
     constructor() {
@@ -343,6 +344,20 @@ class DBot {
             if (!api_base.api || api_base.api?.connection?.readyState !== 1) {
                 await api_base.init();
                 console.log(`[BOT PERF] WebSocket init completed: ${(performance.now() - perfStart).toFixed(1)}ms`);
+            }
+
+            // CRITICAL: Ensure WebSocket has an active, verified authenticated session on Deriv before running bot.
+            // If the user is logged in (via OAuth PKCE token or stored account) but the socket is not yet authorized on Deriv,
+            // connect to the authenticated OTP WebSocket URL so trades are never rejected with "Please log in."
+            const hasAuthSession =
+                Boolean(OAuthTokenExchangeService.getAuthInfo()?.access_token) ||
+                Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('active_loginid'));
+
+            if (hasAuthSession && !api_base.is_socket_authorized) {
+                console.log('[DBot] WebSocket unauthenticated on Deriv. Connecting with OTP before trade execution...');
+                await api_base.init(true);
+                await api_base.authorizeAndSubscribe();
+                console.log(`[BOT PERF] Authenticated WebSocket established: ${(performance.now() - perfStart).toFixed(1)}ms`);
             }
 
             if (!this.interpreter || !this.interpreter.bot?.tradeEngine) {

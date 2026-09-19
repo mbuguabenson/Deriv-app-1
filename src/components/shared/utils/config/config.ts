@@ -994,46 +994,30 @@ export const getSocketURL = async (): Promise<string> => {
     // Always clear the legacy fallback flag
     try { sessionStorage.removeItem('use_legacy_deriv_ws'); } catch {}
 
-    // The api.derivws.com REST endpoints do NOT allow CORS from our deployment
-    // origins (hazelhub.vercel.app, etc.). Attempting the OTP flow from these
-    // origins always fails with CORS errors and cascading 429 rate limits.
-    // Use the legacy ws.derivws.com/websockets/v3 endpoint which works from
-    // ANY origin via app_id-based authentication.
-    const CORS_WHITELISTED_ORIGINS = [
-        'https://app.deriv.com',
-        'https://staging-app.deriv.com',
-    ];
+    try {
+        let authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
 
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const canUseOTP = CORS_WHITELISTED_ORIGINS.includes(currentOrigin);
-
-    if (canUseOTP) {
-        try {
-            let authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
-
-            const tokenNeedsRefresh =
-                !!authInfo?.refresh_token && !!authInfo.expires_at && Date.now() >= authInfo.expires_at - 300000;
-            if (tokenNeedsRefresh && authInfo?.refresh_token) {
-                const refreshedAuth = await OAuthTokenExchangeService.refreshAccessToken(authInfo.refresh_token);
-                if (refreshedAuth.access_token) {
-                    authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: false });
-                }
+        const tokenNeedsRefresh =
+            !!authInfo?.refresh_token && !!authInfo.expires_at && Date.now() >= authInfo.expires_at - 300000;
+        if (tokenNeedsRefresh && authInfo?.refresh_token) {
+            const refreshedAuth = await OAuthTokenExchangeService.refreshAccessToken(authInfo.refresh_token);
+            if (refreshedAuth.access_token) {
+                authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: false });
             }
-
-            if (authInfo?.access_token) {
-                const wsUrl = await DerivWSAccountsService.getAuthenticatedWebSocketURL(authInfo.access_token);
-                if (wsUrl) {
-                    console.log('[getSocketURL] Using OTP-authenticated Deriv WebSocket endpoint');
-                    return wsUrl;
-                }
-            }
-        } catch (error) {
-            console.warn('[getSocketURL] OTP flow failed, using legacy endpoint:', error);
         }
+
+        if (authInfo?.access_token) {
+            const wsUrl = await DerivWSAccountsService.getAuthenticatedWebSocketURL(authInfo.access_token);
+            if (wsUrl) {
+                console.log('[getSocketURL] Using OTP-authenticated Deriv WebSocket endpoint');
+                return wsUrl;
+            }
+        }
+    } catch (error) {
+        console.warn('[getSocketURL] OTP flow failed, using legacy endpoint:', error);
     }
 
-    // Use the legacy WebSocket endpoint — works from any origin, supports
-    // authorize() call for authenticated sessions after connection
+    // Use the legacy WebSocket endpoint — works for public market data or API token auth
     console.log('[getSocketURL] Using legacy Deriv WebSocket endpoint');
     return getDefaultServerURL();
 };
