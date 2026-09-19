@@ -208,7 +208,7 @@ export default Engine =>
                 growth_rate: this?.tradeOptions?.growth_rate,
                 proposal: 1,
                 subscribe: 1,
-                underlying_symbol: this?.tradeOptions?.symbol,
+                symbol: this?.tradeOptions?.symbol,
             };
             if (!subscription_id && !is_proposal_requested) {
                 this.is_proposal_requested_for_accumulators = true;

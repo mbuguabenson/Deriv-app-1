@@ -9,7 +9,7 @@ export const tradeOptionToProposal = (trade_option, purchase_reference) =>
     trade_option.contractTypes.map(type => {
         const proposal = {
             amount: trade_option.amount,
-            basis: trade_option.basis,
+            basis: trade_option.basis || 'stake',
             contract_type: type,
             currency: trade_option.currency,
             duration: trade_option.duration,
@@ -20,26 +20,39 @@ export const tradeOptionToProposal = (trade_option, purchase_reference) =>
                 purchase_reference,
             },
             proposal: 1,
-            underlying_symbol: trade_option.symbol,
+            symbol: trade_option.symbol,
         };
-        if (trade_option.prediction !== undefined) {
-            proposal.selected_tick = trade_option.prediction;
+        const hasValidPrediction =
+            trade_option.prediction !== undefined &&
+            trade_option.prediction !== -1 &&
+            trade_option.prediction !== '-1';
+
+        if (hasValidPrediction) {
+            proposal.selected_tick = Number(trade_option.prediction);
         }
-        if (!['TICKLOW', 'TICKHIGH'].includes(type) && trade_option.prediction !== undefined) {
-            proposal.barrier = trade_option.prediction;
+        if (!['TICKLOW', 'TICKHIGH'].includes(type) && hasValidPrediction) {
+            proposal.barrier = String(trade_option.prediction);
         } else if (trade_option.barrierOffset !== undefined) {
-            proposal.barrier = trade_option.barrierOffset;
+            proposal.barrier = String(trade_option.barrierOffset);
         }
         if (trade_option.secondBarrierOffset !== undefined) {
-            proposal.barrier2 = trade_option.secondBarrierOffset;
+            proposal.barrier2 = String(trade_option.secondBarrierOffset);
         }
         if (['MULTUP', 'MULTDOWN'].includes(type)) {
-            proposal.duration = undefined;
-            proposal.duration_unit = undefined;
+            delete proposal.duration;
+            delete proposal.duration_unit;
         }
         if (!isEmptyObject(trade_option.limit_order)) {
             proposal.limit_order = trade_option.limit_order;
         }
+
+        // Remove any undefined keys to avoid schema validation errors
+        Object.keys(proposal).forEach(key => {
+            if (proposal[key] === undefined) {
+                delete proposal[key];
+            }
+        });
+
         return proposal;
     });
 
