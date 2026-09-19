@@ -8,3 +8,4 @@ import './total_profit';
 import './total_runs';
 import './useless_block';
 import './console';
+import './profithub_bot_lock';

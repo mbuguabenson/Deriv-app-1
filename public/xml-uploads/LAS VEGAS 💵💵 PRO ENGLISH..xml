@@ -14,6 +14,7 @@
     <variable type="" id="LN}r@t3f(x%mM[7-P|ft" islocal="false" iscloud="false">text2</variable>
     <variable type="" id="^3d~6DUQ!o8XQTn.XB!c" islocal="false" iscloud="false">text3</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="|,wpfgCRK_O,JHE[$xte" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="dqYC5Hzv(BU~|R.^0oBf" deletable="false" movable="false">

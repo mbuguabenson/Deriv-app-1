@@ -96,5 +96,24 @@ list.sort((a, b) => {
     return a.name.localeCompare(b.name);
 });
 
+// Ensure all platform bots are locked with profithub_bot_lock so external sites fail to import them
+const LOCK_BLOCK_STRING = '<block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>';
+xmlFiles.forEach(file => {
+    const fullPath = path.join(uploadDir, file);
+    try {
+        let content = fs.readFileSync(fullPath, 'utf8');
+        if (!content.includes('type="profithub_bot_lock"') && !content.includes("type='profithub_bot_lock'")) {
+            if (content.includes('</variables>')) {
+                content = content.replace('</variables>', `</variables>\n  ${LOCK_BLOCK_STRING}`);
+            } else if (content.includes('<xml')) {
+                content = content.replace(/(<xml[^>]*>)/i, `$1\n  ${LOCK_BLOCK_STRING}`);
+            }
+            fs.writeFileSync(fullPath, content, 'utf8');
+        }
+    } catch (err) {
+        console.warn(`Could not lock ${file}:`, err.message);
+    }
+});
+
 fs.writeFileSync(manifestPath, JSON.stringify(list, null, 2), 'utf8');
-console.log(`Successfully generated manifest with ${list.length} bots.`);
+console.log(`Successfully generated manifest with ${list.length} bots and ensured bot locks.`);

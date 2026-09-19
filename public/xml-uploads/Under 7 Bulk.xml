@@ -28,6 +28,7 @@
     <variable id="2nM]yqb6LwXJ5P^`E8fA">text7</variable>
     <variable id="$p]weWnGMW))cG5~F7Ky">text8</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="cO/$eY;j:u~1d)px=T@%" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="7P!fK2V#7`fbwoIRR;tX" deletable="false" movable="false">

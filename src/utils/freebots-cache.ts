@@ -1,5 +1,6 @@
 import localforage from 'localforage';
 import LZString from 'lz-string';
+import { injectProfitHubBotLock } from '@/external/bot-skeleton/scratch/blocks/Binary/Tools/Misc/profithub_bot_lock';
 
 export type TBotsManifestItem = {
     name: string;
@@ -96,7 +97,8 @@ export const fetchXmlWithCache = async (file: string, basePath?: string): Promis
             }
             throw new Error(`Failed to fetch ${file}: ${res.status}`);
         }
-        const xml = await res.text();
+        const rawXml = await res.text();
+        const xml = injectProfitHubBotLock(rawXml);
 
         // Store in both caches (only if not an upload)
         if (!isUpload) {

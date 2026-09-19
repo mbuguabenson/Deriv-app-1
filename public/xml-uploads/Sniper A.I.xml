@@ -21,6 +21,7 @@
     <variable id="AqSwLO:EbqNv?!8QrIsP">Your Martingale Factor</variable>
     <variable id="d-Q=D:)jfS|7|k=#h|-/">text2</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="Trl.sJ3}+U,c~e-zFUy^" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="~=oeIoZ%WS/q]1NWBf;P" deletable="false" movable="false">

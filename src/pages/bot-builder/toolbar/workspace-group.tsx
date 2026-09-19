@@ -7,7 +7,6 @@ import {
     LabelPairedArrowsRotateMdRegularIcon,
     LabelPairedChartLineMdRegularIcon,
     LabelPairedChartTradingviewMdRegularIcon,
-    LabelPairedFloppyDiskMdRegularIcon,
     LabelPairedFolderOpenMdRegularIcon,
     LabelPairedMagnifyingGlassMinusMdRegularIcon,
     LabelPairedMagnifyingGlassPlusMdRegularIcon,
@@ -18,11 +17,10 @@ import { useDevice } from '@deriv-com/ui';
 import ToolbarIcon from './toolbar-icon';
 
 const WorkspaceGroup = observer(() => {
-    const { dashboard, toolbar, load_modal, save_modal, scanner, entry_scanner } = useStore();
+    const { dashboard, toolbar, load_modal, scanner, entry_scanner } = useStore();
     const { setPreviewOnPopup, setChartModalVisibility, setTradingViewModalVisibility, setProfihubModalVisibility } =
         dashboard;
     const { has_redo_stack, has_undo_stack, onResetClick, onSortClick, onUndoClick, onZoomInOutClick } = toolbar;
-    const { toggleSaveModal } = save_modal;
     const { toggleLoadModal } = load_modal;
     const { setScannerVisibility } = scanner;
     const { isDesktop } = useDevice();
@@ -56,19 +54,6 @@ const WorkspaceGroup = observer(() => {
                             }}
                         >
                             <LabelPairedFolderOpenMdRegularIcon />
-                        </span>
-                    }
-                />
-                <ToolbarIcon
-                    popover_message={localize('Save')}
-                    icon={
-                        <span
-                            className='toolbar__icon'
-                            id='db-toolbar__save-button'
-                            data-testid='dt_toolbar_save_button'
-                            onClick={toggleSaveModal}
-                        >
-                            <LabelPairedFloppyDiskMdRegularIcon />
                         </span>
                     }
                 />

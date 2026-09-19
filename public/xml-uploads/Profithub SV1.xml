@@ -18,6 +18,7 @@
     <variable id="w-^araH_xBwGU:z4_aG5">sma1</variable>
     <variable id="2B0Q_}W]o/P.GdpoR1hE">rsi1</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="7()P*OE~Dsf2pKUAcgKc" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="lGM3.FPqJ}^]SWtw;w%h" deletable="false" movable="false">

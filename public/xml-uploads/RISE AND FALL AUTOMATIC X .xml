@@ -13,6 +13,7 @@
     <variable id="ozbIcP+=l~bvcIg4X}{/">Movements to Analyze</variable>
     <variable id="Cxmi|K::$B^71aIMd,9b">text</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="oF%2Hzk}.7C$3kAiw9BY" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="PU+6XBZ^P(7gCKj^oI++" deletable="false" movable="false">

@@ -10,6 +10,7 @@
     <variable id="#y%VAcg*5u?EZM)V%_$m">Martingale</variable>
     <variable id="{wIlF.lR,1WLJ[l]@7/-">MartingaleLevel</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="{6PR+r*1@?erwl6l=c~w" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="$UV:%l$9{EM(F8L+0$eP" deletable="false" movable="false">

@@ -818,6 +818,7 @@ export const ToolboxItems = () =>
                 </Category>
 
                 <Category name={localize('Miscellaneous')} id='misc'>
+                    <Block type='profithub_bot_lock' />
                     <Block type='loader' />
                     <Block type='block_holder' />
                     <Block type='console'>

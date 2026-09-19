@@ -9,6 +9,7 @@
     <variable id="%L?;380E6Lr^3b.%}t5Q">stake 2</variable>
     <variable id="1Au``*:jqrtvs.EH8;.y">text3</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id=".Ap1C68tn||^/W{CwfDN" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="@8WWhteAen-@3VcN6F5b" deletable="false" movable="false">

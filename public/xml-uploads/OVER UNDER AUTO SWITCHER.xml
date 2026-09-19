@@ -12,6 +12,7 @@
     <variable id="4h85.40)u.M6PH@*Ts?k">StopLoss</variable>
     <variable id="X/U@{7.cc5j|?xy5^Z`Y">OverDigit</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="after_purchase" id="[++%g!$`IL#P9!=*iuHT" collapsed="true" x="1034" y="-69">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="SD4Y+Aih+`gENx.~9L=%">

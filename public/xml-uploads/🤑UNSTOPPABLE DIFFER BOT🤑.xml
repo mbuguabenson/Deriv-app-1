@@ -17,6 +17,7 @@
     <variable type="" id="b:)jy0vtlK0J}rn?a3Ax">STEP""1""</variable>
     <variable type="" id="ZfmVgQrXw0?6:Y$FM1KV">STEP""2""</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade" id="xgH69|xFn9=70w.*3Vo@" x="0" y="0">
     <field name="MARKET_LIST">synthetic_index</field>
     <field name="SUBMARKET_LIST">random_index</field>

@@ -7,7 +7,6 @@ import { useStore } from '@/hooks/useStore';
 import { localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 import LoadModal from '../../components/load-modal';
-import SaveModal from '../dashboard/bot-list/save-modal';
 import VirtualHookModal from '@/components/virtual-hook-modal/virtual-hook-modal';
 import BotBuilderTourHandler from '../tutorials/dbot-tours/bot-builder-tour';
 import QuickStrategy1 from './quick-strategy';
@@ -261,7 +260,6 @@ const BotBuilder = observer(() => {
             {active_tab === DBOT_TABS.BOT_BUILDER && <BotBuilderTourHandler is_mobile={!isDesktop} />}
             {/* removed this outside from toolbar becuase it needs to loaded seperately without dependency */}
             <LoadModal />
-            <SaveModal />
             <VirtualHookModal />
             {is_open && <QuickStrategy1 />}
             {showSidebar && !isDesktop && (

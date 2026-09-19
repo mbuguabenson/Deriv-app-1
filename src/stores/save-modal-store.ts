@@ -151,7 +151,8 @@ export default class SaveModalStore implements ISaveModalStore {
         xml.setAttribute('collection', save_as_collection ? 'true' : 'false');
 
         if (is_local) {
-            save(bot_name, save_as_collection, xml);
+            // Downloading bots locally is disabled for platform security and intellectual property protection
+            this.setButtonStatus(button_status.COMPLETED);
         } else {
             await saveFile({
                 name: bot_name,

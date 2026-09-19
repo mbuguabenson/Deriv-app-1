@@ -12,6 +12,7 @@
     <variable id="4h85.40)u.M6PH@*Ts?k">StopLoss</variable>
     <variable id="X/U@{7.cc5j|?xy5^Z`Y">OverDigit</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="tXv9t@P%0d{I*v|(z=YB" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="4oKUTA8%f-#N76WXA[J|" deletable="false" movable="false">

@@ -10,6 +10,7 @@
     <variable id="!mQjsA[]viO$7Gu~UzUn">Martingale Split</variable>
     <variable id="VK7:nSRSXJ=|#p(oAU9v">Payout %</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="U-H]0jBTpMoI:-1]S^WY" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="+09c|r;DY]j`oaG@kR;Q" deletable="false" movable="false">

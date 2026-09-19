@@ -16,6 +16,7 @@
     <variable id="ep_var_text_stop">text3</variable>
     <variable id="ep_var_text_target">text4</variable>
   </variables>
+  <block type="profithub_bot_lock" id="profithub_security_shield_root" deletable="false" movable="true" x="0" y="-120"></block>
   <block type="trade_definition" id="ep_trade_def_root" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="ep_market_opt" deletable="false" movable="false">
