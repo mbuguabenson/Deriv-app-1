@@ -6,6 +6,7 @@ import {
     getActiveToken,
     getLegacyDTraderToken,
     isInvalidBearerToken,
+    isLegacyToken,
 } from '@/utils/token-bridge';
 import { ParentBridgeClient } from '../iframe-bridge';
 import { generateOAuthURL } from '@/components/shared';
@@ -43,7 +44,7 @@ export interface DTraderIframeContainerProps {
  * loading skeleton, and graceful unauthenticated fallback.
  */
 export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
-    baseUrl = 'https://profhubdtrader.vercel.app',
+    baseUrl = 'https://deriv-dtrader.vercel.app',
     appId = '121856',
     token: propToken,
     loginId: propLoginId,
@@ -63,9 +64,9 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Robust token resolver checking all local storage sources and account maps (prioritizing legacy tokens for DTrader)
+    // Robust token resolver checking all local storage sources for legacy tokens compatible with DTrader
     const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
-        if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
+        if (explicitToken && isLegacyToken(explicitToken)) return explicitToken;
         const targetId =
             loginid ||
             localStorage.getItem('active_loginid') ||
@@ -73,35 +74,20 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             getActiveLoginId() ||
             '';
         const legacy = getLegacyDTraderToken(targetId);
-        if (legacy && !isInvalidBearerToken(legacy) && !legacy.startsWith('ey')) return legacy;
+        if (legacy && isLegacyToken(legacy)) return legacy;
         const active = getActiveToken(targetId);
-        if (active && !isInvalidBearerToken(active) && !active.startsWith('ey')) return active;
+        if (active && isLegacyToken(active)) return active;
         const accounts = getAccountsList();
-        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId]) && !accounts[targetId].startsWith('ey')) {
+        if (targetId && accounts[targetId] && isLegacyToken(accounts[targetId])) {
             return accounts[targetId];
         }
         for (const k in accounts) {
-            if (accounts[k] && !isInvalidBearerToken(accounts[k]) && !accounts[k].startsWith('ey')) return accounts[k];
+            if (accounts[k] && isLegacyToken(accounts[k])) return accounts[k];
         }
         const candidate =
             localStorage.getItem('legacy_dtrader_token') ||
-            localStorage.getItem('token') ||
-            localStorage.getItem('token1') ||
-            localStorage.getItem('active_token') ||
-            '';
-        if (candidate && !isInvalidBearerToken(candidate) && !candidate.startsWith('ey')) return candidate;
-        const auth = localStorage.getItem('authToken');
-        if (auth && !isInvalidBearerToken(auth) && !auth.startsWith('ey')) return auth;
-        try {
-            const authInfoStr = localStorage.getItem('auth_info') || sessionStorage.getItem('auth_info');
-            if (authInfoStr) {
-                const parsed = JSON.parse(authInfoStr);
-                if (parsed?.access_token && !isInvalidBearerToken(parsed.access_token)) {
-                    return parsed.access_token;
-                }
-            }
-        } catch {}
-        if (active && !isInvalidBearerToken(active)) return active;
+            localStorage.getItem('token1');
+        if (candidate && isLegacyToken(candidate)) return candidate;
         return '';
     }, []);
 
@@ -201,11 +187,10 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         try {
             const url = new URL(baseUrl);
 
-            if (currentToken && !isInvalidBearerToken(currentToken)) {
-                url.searchParams.set('token', currentToken);
-                if (currentLoginId) {
-                    url.searchParams.set('account', currentLoginId);
-                }
+            if (currentToken && isLegacyToken(currentToken)) {
+                url.searchParams.set('acct1', currentLoginId || 'CR100000');
+                url.searchParams.set('token1', currentToken);
+                url.searchParams.set('cur1', 'USD');
             }
 
             url.searchParams.set('theme', currentTheme);
@@ -219,6 +204,15 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             return baseUrl;
         }
     }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp]);
+
+    // Safety fallback timeout: ensure loading overlay clears even if iframe onLoad is delayed
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setIsLoading(false);
+            setIsIframeLoaded(true);
+        }, 2500);
+        return () => clearTimeout(timer);
+    }, [iframeKey, iframeSrc]);
 
     // Attach ParentBridgeClient to handle postMessage auth handshakes
     // CRITICAL: Only attach AFTER the iframe has completed its load event (onLoad)
@@ -265,12 +259,6 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             document.exitFullscreen().then(() => setIsFullscreen(false)).catch(console.error);
         }
     }, []);
-
-    const openInNewTab = () => {
-        if (iframeSrc) {
-            window.open(iframeSrc, '_blank', 'noopener,noreferrer');
-        }
-    };
 
     const handleInitiateLogin = async () => {
         if (onLoginClick) {
@@ -355,90 +343,45 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                                 </svg>
                             )}
                         </button>
-
-                        <button
-                            type='button'
-                            className='action-btn'
-                            onClick={openInNewTab}
-                            title='Open in Standalone Tab'
-                        >
-                            <svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
-                                <path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' />
-                                <polyline points='15 3 21 3 21 9' />
-                                <line x1='10' y1='14' x2='21' y2='3' />
-                            </svg>
-                        </button>
                     </div>
                 </div>
             )}
 
             {/* Trading Stage */}
             <div className='dtrader-container__stage'>
-                {/* 1. Unauthenticated Fallback State */}
-                {!currentToken ? (
-                    <div className='dtrader-fallback'>
-                        <div className='dtrader-fallback__card'>
-                            <div className='dtrader-fallback__icon-box'>
-                                <svg width='36' height='36' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8'>
-                                    <rect x='3' y='11' width='18' height='11' rx='2' ry='2' />
-                                    <path d='M7 11V7a5 5 0 0 1 10 0v4' />
-                                </svg>
-                            </div>
-                            <h3>Authentication Required</h3>
-                            <p>
-                                Connect your Deriv account to launch the embedded <strong>ProfHub DTrader</strong> terminal with direct session authorization.
-                            </p>
-                            <button
-                                type='button'
-                                className='dtrader-fallback__btn'
-                                onClick={handleInitiateLogin}
-                            >
-                                <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
-                                    <path d='M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4' />
-                                    <polyline points='10 17 15 12 10 7' />
-                                    <line x1='15' y1='12' x2='3' y2='12' />
-                                </svg>
-                                <span>Connect Deriv Account</span>
-                            </button>
+                {/* 1. Loading Skeleton & Glow Spinner */}
+                {isLoading && (
+                    <div className='dtrader-loader'>
+                        <div className='dtrader-loader__spinner'>
+                            <div className='spinner-ring' />
+                            <div className='spinner-core' />
+                        </div>
+                        <div className='dtrader-loader__info'>
+                            <span className='title'>Opening DTrader</span>
+                            <span className='subtitle'>
+                                {currentLoginId ? `Connecting account ${currentLoginId} & charts...` : 'Connecting live trading terminal & charts...'}
+                            </span>
+                        </div>
+                        <div className='dtrader-loader__progress-bar'>
+                            <div className='indicator' />
                         </div>
                     </div>
-                ) : (
-                    <>
-                        {/* 2. Loading Skeleton & Glow Spinner */}
-                        {isLoading && (
-                            <div className='dtrader-loader'>
-                                <div className='dtrader-loader__spinner'>
-                                    <div className='spinner-ring' />
-                                    <div className='spinner-core' />
-                                </div>
-                                <div className='dtrader-loader__info'>
-                                    <span className='title'>Initializing ProfHub DTrader</span>
-                                    <span className='subtitle'>
-                                        Authorizing {currentLoginId ? `account ${currentLoginId}` : 'session'} and syncing market feeds...
-                                    </span>
-                                </div>
-                                <div className='dtrader-loader__progress-bar'>
-                                    <div className='indicator' />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 3. Embedded Trading Iframe (sandbox omitted to allow IndexedDB & Web Workers for market data) */}
-                        <iframe
-                            key={iframeKey}
-                            ref={iframeRef}
-                            src={iframeSrc}
-                            title='ProfHub DTrader Embedded Terminal'
-                            className={classNames('dtrader-container__iframe', {
-                                'dtrader-container__iframe--visible': !isLoading,
-                            })}
-                            allow='clipboard-write; fullscreen; camera; geolocation; microphone; display-capture; autoplay; encrypted-media; web-share'
-                            referrerPolicy='no-referrer-when-downgrade'
-                            loading='eager'
-                            onLoad={handleIframeLoad}
-                        />
-                    </>
                 )}
+
+                {/* 2. Embedded Trading Iframe (sandbox omitted to allow IndexedDB & Web Workers for market data) */}
+                <iframe
+                    key={iframeKey}
+                    ref={iframeRef}
+                    src={iframeSrc}
+                    title='DTrader Embedded Terminal'
+                    className={classNames('dtrader-container__iframe', {
+                        'dtrader-container__iframe--visible': !isLoading,
+                    })}
+                    allow='clipboard-write; fullscreen; camera; geolocation; microphone; display-capture; autoplay; encrypted-media; web-share'
+                    referrerPolicy='no-referrer-when-downgrade'
+                    loading='eager'
+                    onLoad={handleIframeLoad}
+                />
             </div>
         </div>
     );
