@@ -560,8 +560,8 @@ class APIBase {
             if (!authResult) {
                 const token = await resolveValidDerivWSToken(expectedId || '');
 
-                // 2. Only invoke WebSocket authorize with legacy or OTP tokens, never raw OAuth2 JWTs
-                if (token && !token.startsWith('ey')) {
+                // 2. Only invoke WebSocket authorize with valid Deriv API tokens (matching ^[\w\-]{1,128}$), never raw OAuth2 JWTs or invalid strings
+                if (token && /^[\w\-]{1,128}$/.test(token) && !token.startsWith('ey')) {
                     try {
                         const res = await this.api.authorize(token);
                         if (res?.authorize) {

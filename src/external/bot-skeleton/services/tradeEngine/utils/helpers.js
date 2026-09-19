@@ -49,25 +49,25 @@ export const tradeOptionToBuy = (contract_type, trade_option) => {
         price: trade_option.amount,
         parameters: {
             amount: trade_option.amount,
-            basis: trade_option.basis,
+            basis: trade_option.basis || 'stake',
             contract_type,
             currency: trade_option.currency,
             duration: trade_option.duration,
             duration_unit: trade_option.duration_unit,
             multiplier: trade_option.multiplier,
-            underlying_symbol: trade_option.symbol,
+            symbol: trade_option.symbol,
         },
     };
     if (trade_option.prediction !== undefined) {
-        buy.parameters.selected_tick = trade_option.prediction;
+        buy.parameters.selected_tick = Number(trade_option.prediction);
     }
     if (!['TICKLOW', 'TICKHIGH'].includes(contract_type) && trade_option.prediction !== undefined) {
-        buy.parameters.barrier = trade_option.prediction;
+        buy.parameters.barrier = String(trade_option.prediction);
     } else if (trade_option.barrierOffset !== undefined) {
-        buy.parameters.barrier = trade_option.barrierOffset;
+        buy.parameters.barrier = String(trade_option.barrierOffset);
     }
     if (trade_option.secondBarrierOffset !== undefined) {
-        buy.parameters.barrier2 = trade_option.secondBarrierOffset;
+        buy.parameters.barrier2 = String(trade_option.secondBarrierOffset);
     }
     if (!isEmptyObject(trade_option.app_markup_percentage)) {
         buy.parameters.app_markup_percentage = trade_option.app_markup_percentage;
@@ -93,17 +93,24 @@ export const tradeOptionToBuy = (contract_type, trade_option) => {
     }
     // This will be required only in the case of multiplier contracts
     if (['MULTUP', 'MULTDOWN'].includes(contract_type)) {
-        buy.parameters.duration = undefined;
-        buy.parameters.duration_unit = undefined;
-
+        delete buy.parameters.duration;
+        delete buy.parameters.duration_unit;
         buy.parameters.multiplier = trade_option.multiplier;
     }
     // This will be required only in the case of accumulator contracts
     if (['ACCU'].includes(contract_type)) {
-        buy.parameters.duration = undefined;
-        buy.parameters.duration_unit = undefined;
+        delete buy.parameters.duration;
+        delete buy.parameters.duration_unit;
         buy.parameters.growth_rate = trade_option.growth_rate;
     }
+
+    // Remove any undefined keys to avoid schema validation errors
+    Object.keys(buy.parameters).forEach(key => {
+        if (buy.parameters[key] === undefined) {
+            delete buy.parameters[key];
+        }
+    });
+
     return buy;
 };
 
