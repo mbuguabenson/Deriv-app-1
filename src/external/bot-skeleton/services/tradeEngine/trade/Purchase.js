@@ -382,14 +382,14 @@ export default Engine =>
                 try {
                     globalObserver.emit('replicator.purchase', {
                         mode: 'proposal_id',
-                        request: { buy: id, price: askPrice },
+                        request: { buy: id, price: Number(askPrice) },
                         tradeOptions: this.tradeOptions,
                         contract_type,
                         account_id: this.accountInfo?.loginid,
                     });
                 } catch {}
 
-                const action = () => api_base.api.send({ buy: id, price: askPrice });
+                const action = () => api_base.api.send({ buy: id, price: Number(askPrice) });
                 this.isSold = false;
 
                 contractStatus({

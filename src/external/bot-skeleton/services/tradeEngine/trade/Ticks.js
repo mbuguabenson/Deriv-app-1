@@ -201,15 +201,16 @@ export default Engine =>
             const is_proposal_requested = this.is_proposal_requested_for_accumulators;
             const proposal_request = {
                 ...window.Blockly.accumulators_request,
-                amount: this?.tradeOptions?.amount,
-                basis: this?.tradeOptions?.basis,
+                amount: Number(this?.tradeOptions?.amount || 1),
+                basis: this?.tradeOptions?.basis || 'stake',
                 contract_type: 'ACCU',
-                currency: this?.tradeOptions?.currency,
-                growth_rate: this?.tradeOptions?.growth_rate,
+                currency: this?.tradeOptions?.currency || 'USD',
+                growth_rate: Number(this?.tradeOptions?.growth_rate || 0.01),
                 proposal: 1,
                 subscribe: 1,
-                symbol: this?.tradeOptions?.symbol,
+                underlying_symbol: this?.tradeOptions?.underlying_symbol || this?.tradeOptions?.symbol || 'R_100',
             };
+            delete proposal_request.symbol;
             if (!subscription_id && !is_proposal_requested) {
                 this.is_proposal_requested_for_accumulators = true;
                 if (proposal_request) {

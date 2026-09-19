@@ -41,7 +41,7 @@ export default Engine =>
                     resolve();
                 };
 
-                const contract_id = this.contractId;
+                const contract_id = Number(this.contractId);
 
                 const sellContractAndGetContractInfo = () => {
                     return doUntilDone(() => api_base.api.send({ sell: contract_id, price: 0 }))

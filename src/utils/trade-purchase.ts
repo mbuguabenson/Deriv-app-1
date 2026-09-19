@@ -33,16 +33,29 @@ const removeUndefinedFields = <T extends Record<string, any>>(fields: T): T =>
 
 export const normalizeTradeParameters = (parameters: TTradeParameters) => {
     const { symbol, underlying_symbol, barrier, barrier2, prediction, ...rest } = parameters;
-    const normalized_symbol = (symbol || underlying_symbol)?.toString().trim() || 'R_100';
-    const symbol_field = { symbol: normalized_symbol };
+    const normalized_symbol = (underlying_symbol || symbol)?.toString().trim() || 'R_100';
+    const symbol_field = { underlying_symbol: normalized_symbol };
     const barrier_field: Record<string, string> = {};
 
     const rawBarrier = barrier !== undefined && barrier !== null ? barrier : prediction;
-    if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '') {
+    if (rawBarrier !== undefined && rawBarrier !== null && rawBarrier !== '' && rawBarrier !== -1 && rawBarrier !== '-1') {
         barrier_field.barrier = String(rawBarrier);
     }
     if (barrier2 !== undefined && barrier2 !== null && barrier2 !== '') {
         barrier_field.barrier2 = String(barrier2);
+    }
+
+    if (rest.amount !== undefined && rest.amount !== null && !isNaN(Number(rest.amount))) {
+        rest.amount = Number(rest.amount);
+    }
+    if (rest.duration !== undefined && rest.duration !== null && !isNaN(Number(rest.duration))) {
+        rest.duration = Math.round(Number(rest.duration));
+    }
+    if (rest.multiplier !== undefined && rest.multiplier !== null && !isNaN(Number(rest.multiplier))) {
+        rest.multiplier = Number(rest.multiplier);
+    }
+    if (rest.selected_tick !== undefined && rest.selected_tick !== null && !isNaN(Number(rest.selected_tick))) {
+        rest.selected_tick = Math.round(Number(rest.selected_tick));
     }
 
     return removeUndefinedFields({ ...rest, ...symbol_field, ...barrier_field });
@@ -101,7 +114,6 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
     try {
         const proposal_response = await (api_base.api as any).send({
             proposal: 1,
-            subscribe: 0,
             ...normalized_parameters,
         });
         throwApiError(proposal_response, source);

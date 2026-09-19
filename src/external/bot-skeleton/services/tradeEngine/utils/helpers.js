@@ -5,43 +5,101 @@ import { localize } from '@deriv-com/translations';
 import { observer as globalObserver } from '../../../utils/observer';
 import { error as logError } from './broadcast';
 
+const CONTRACTS_WITH_PREDICTION = ['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'];
+const CONTRACTS_WITH_BARRIER = [
+    'HIGHER',
+    'LOWER',
+    'ONETOUCH',
+    'NOTOUCH',
+    'RANGE',
+    'UPORDOWN',
+    'EXPIRYRANGE',
+    'EXPIRYMISS',
+    'EXPIRYRANGEE',
+    'EXPIRYMISSE',
+    'VANILLALONGCALL',
+    'VANILLALONGPUT',
+    'TURBOSLONG',
+    'TURBOSSHORT',
+];
+const CONTRACTS_WITH_TWO_BARRIERS = [
+    'RANGE',
+    'UPORDOWN',
+    'EXPIRYRANGE',
+    'EXPIRYMISS',
+    'EXPIRYRANGEE',
+    'EXPIRYMISSE',
+];
+
 export const tradeOptionToProposal = (trade_option, purchase_reference) =>
     trade_option.contractTypes.map(type => {
+        const symbolCode = trade_option.underlying_symbol || trade_option.symbol || 'R_100';
+        const amountNum = !isNaN(Number(trade_option.amount)) ? Number(trade_option.amount) : 1;
+        const activeCurrency =
+            (trade_option.currency && trade_option.currency !== 'undefined' && trade_option.currency !== 'null' ? trade_option.currency : '') ||
+            DBotStore.instance?.client?.currency ||
+            (typeof localStorage !== 'undefined' && (localStorage.getItem('currency') || localStorage.getItem('active_currency'))) ||
+            'USD';
+
         const proposal = {
-            amount: trade_option.amount,
+            amount: amountNum,
             basis: trade_option.basis || 'stake',
             contract_type: type,
-            currency: trade_option.currency,
-            duration: trade_option.duration,
-            duration_unit: trade_option.duration_unit,
-            multiplier: trade_option.multiplier,
+            currency: activeCurrency,
+            duration: Math.round(Number(trade_option.duration || 1)),
+            duration_unit: trade_option.duration_unit || 't',
             passthrough: {
                 contract_type: type,
                 purchase_reference,
             },
             proposal: 1,
-            symbol: trade_option.symbol,
+            underlying_symbol: symbolCode,
         };
-        const hasValidPrediction =
-            trade_option.prediction !== undefined &&
-            trade_option.prediction !== -1 &&
-            trade_option.prediction !== '-1';
 
-        if (hasValidPrediction) {
-            proposal.selected_tick = Number(trade_option.prediction);
+        if (['TICKLOW', 'TICKHIGH'].includes(type)) {
+            const hasValidTick =
+                trade_option.prediction !== undefined &&
+                trade_option.prediction !== null &&
+                trade_option.prediction !== -1 &&
+                trade_option.prediction !== '-1' &&
+                trade_option.prediction !== '';
+            if (hasValidTick) {
+                proposal.selected_tick = Number(trade_option.prediction);
+            }
+        } else if (CONTRACTS_WITH_PREDICTION.includes(type)) {
+            const hasValidPrediction =
+                trade_option.prediction !== undefined &&
+                trade_option.prediction !== null &&
+                trade_option.prediction !== -1 &&
+                trade_option.prediction !== '-1' &&
+                trade_option.prediction !== '';
+            if (hasValidPrediction) {
+                proposal.barrier = String(trade_option.prediction);
+            }
+        } else if (CONTRACTS_WITH_BARRIER.includes(type)) {
+            if (trade_option.barrierOffset !== undefined && trade_option.barrierOffset !== null && trade_option.barrierOffset !== '') {
+                proposal.barrier = String(trade_option.barrierOffset);
+            }
         }
-        if (!['TICKLOW', 'TICKHIGH'].includes(type) && hasValidPrediction) {
-            proposal.barrier = String(trade_option.prediction);
-        } else if (trade_option.barrierOffset !== undefined) {
-            proposal.barrier = String(trade_option.barrierOffset);
+
+        if (CONTRACTS_WITH_TWO_BARRIERS.includes(type)) {
+            if (trade_option.secondBarrierOffset !== undefined && trade_option.secondBarrierOffset !== null && trade_option.secondBarrierOffset !== '') {
+                proposal.barrier2 = String(trade_option.secondBarrierOffset);
+            }
         }
-        if (trade_option.secondBarrierOffset !== undefined) {
-            proposal.barrier2 = String(trade_option.secondBarrierOffset);
-        }
+
         if (['MULTUP', 'MULTDOWN'].includes(type)) {
             delete proposal.duration;
             delete proposal.duration_unit;
+            proposal.multiplier = Number(trade_option.multiplier || 10);
         }
+
+        if (['ACCU'].includes(type)) {
+            delete proposal.duration;
+            delete proposal.duration_unit;
+            proposal.growth_rate = Number(trade_option.growth_rate || 0.01);
+        }
+
         if (!isEmptyObject(trade_option.limit_order)) {
             proposal.limit_order = trade_option.limit_order;
         }
@@ -57,69 +115,79 @@ export const tradeOptionToProposal = (trade_option, purchase_reference) =>
     });
 
 export const tradeOptionToBuy = (contract_type, trade_option) => {
+    const symbolCode = trade_option.underlying_symbol || trade_option.symbol || 'R_100';
+    const amountNum = !isNaN(Number(trade_option.amount)) ? Number(trade_option.amount) : 1;
+    const activeCurrency =
+        (trade_option.currency && trade_option.currency !== 'undefined' && trade_option.currency !== 'null' ? trade_option.currency : '') ||
+        DBotStore.instance?.client?.currency ||
+        (typeof localStorage !== 'undefined' && (localStorage.getItem('currency') || localStorage.getItem('active_currency'))) ||
+        'USD';
+
     const buy = {
         buy: '1',
-        price: trade_option.amount,
+        price: amountNum,
         parameters: {
-            amount: trade_option.amount,
+            amount: amountNum,
             basis: trade_option.basis || 'stake',
             contract_type,
-            currency: trade_option.currency,
-            duration: trade_option.duration,
-            duration_unit: trade_option.duration_unit,
-            multiplier: trade_option.multiplier,
-            symbol: trade_option.symbol,
+            currency: activeCurrency,
+            duration: Math.round(Number(trade_option.duration || 1)),
+            duration_unit: trade_option.duration_unit || 't',
+            underlying_symbol: symbolCode,
         },
     };
-    const hasValidPrediction =
-        trade_option.prediction !== undefined &&
-        trade_option.prediction !== -1 &&
-        trade_option.prediction !== '-1';
 
-    if (hasValidPrediction) {
-        buy.parameters.selected_tick = Number(trade_option.prediction);
+    if (['TICKLOW', 'TICKHIGH'].includes(contract_type)) {
+        const hasValidTick =
+            trade_option.prediction !== undefined &&
+            trade_option.prediction !== null &&
+            trade_option.prediction !== -1 &&
+            trade_option.prediction !== '-1' &&
+            trade_option.prediction !== '';
+        if (hasValidTick) {
+            buy.parameters.selected_tick = Number(trade_option.prediction);
+        }
+    } else if (CONTRACTS_WITH_PREDICTION.includes(contract_type)) {
+        const hasValidPrediction =
+            trade_option.prediction !== undefined &&
+            trade_option.prediction !== null &&
+            trade_option.prediction !== -1 &&
+            trade_option.prediction !== '-1' &&
+            trade_option.prediction !== '';
+        if (hasValidPrediction) {
+            buy.parameters.barrier = String(trade_option.prediction);
+        }
+    } else if (CONTRACTS_WITH_BARRIER.includes(contract_type)) {
+        if (trade_option.barrierOffset !== undefined && trade_option.barrierOffset !== null && trade_option.barrierOffset !== '') {
+            buy.parameters.barrier = String(trade_option.barrierOffset);
+        }
     }
-    if (!['TICKLOW', 'TICKHIGH'].includes(contract_type) && hasValidPrediction) {
-        buy.parameters.barrier = String(trade_option.prediction);
-    } else if (trade_option.barrierOffset !== undefined) {
-        buy.parameters.barrier = String(trade_option.barrierOffset);
+
+    if (CONTRACTS_WITH_TWO_BARRIERS.includes(contract_type)) {
+        if (trade_option.secondBarrierOffset !== undefined && trade_option.secondBarrierOffset !== null && trade_option.secondBarrierOffset !== '') {
+            buy.parameters.barrier2 = String(trade_option.secondBarrierOffset);
+        }
     }
-    if (trade_option.secondBarrierOffset !== undefined) {
-        buy.parameters.barrier2 = String(trade_option.secondBarrierOffset);
-    }
-    if (!isEmptyObject(trade_option.app_markup_percentage)) {
+
+    if (typeof trade_option.app_markup_percentage === 'number') {
         buy.parameters.app_markup_percentage = trade_option.app_markup_percentage;
     }
-    if (!isEmptyObject(trade_option.barrier_range)) {
-        buy.parameters.barrier_range = trade_option.barrier_range;
-    }
-    if (!isEmptyObject(trade_option.date_expiry)) {
-        buy.parameters.date_expiry = trade_option.date_expiry;
-    }
-    if (!isEmptyObject(trade_option.date_start)) {
-        buy.parameters.date_start = trade_option.date_start;
-    }
-    if (!isEmptyObject(trade_option.product_type)) {
-        buy.parameters.product_type = trade_option.product_type;
-    }
-    if (!isEmptyObject(trade_option.trading_period_start)) {
-        buy.parameters.trading_period_start = trade_option.trading_period_start;
-    }
-    // This will be required only in the case of multiplier & accumulator contracts
+
     if (!isEmptyObject(trade_option.limit_order)) {
         buy.parameters.limit_order = trade_option.limit_order;
     }
+
     // This will be required only in the case of multiplier contracts
     if (['MULTUP', 'MULTDOWN'].includes(contract_type)) {
         delete buy.parameters.duration;
         delete buy.parameters.duration_unit;
-        buy.parameters.multiplier = trade_option.multiplier;
+        buy.parameters.multiplier = Number(trade_option.multiplier || 10);
     }
     // This will be required only in the case of accumulator contracts
     if (['ACCU'].includes(contract_type)) {
         delete buy.parameters.duration;
         delete buy.parameters.duration_unit;
-        buy.parameters.growth_rate = trade_option.growth_rate;
+        buy.parameters.growth_rate = Number(trade_option.growth_rate || 0.01);
     }
 
     // Remove any undefined keys to avoid schema validation errors
