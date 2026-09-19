@@ -1224,7 +1224,40 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
         }
 
         const domainCfg = domainConfig;
-        const { clientId } = domainCfg;
+        const { clientId, appId } = domainCfg;
+
+        // Auto-input referral code and affiliate tracking for onboarding
+        try {
+            localStorage.setItem('affiliate_token', DERIV_AFFILIATE_CONFIG.referralCode);
+            localStorage.setItem('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
+            localStorage.setItem('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
+        } catch {}
+
+        // When legacy OAuth login is enabled (default across hosted domains & browser SPAs),
+        // route through Deriv's OAuth v1 endpoint to receive legacy tokens (a1-...)
+        // which authorize directly on ws.derivws.com/websockets/v3 and synchronize with DTrader.
+        if (domainCfg.useLegacyOAuthLogin !== false) {
+            const effectiveAppId = appId || getLegacyAppId() || '121856';
+            const params = new URLSearchParams({
+                app_id: effectiveAppId,
+                l: 'en',
+                brand: 'deriv',
+            });
+            if (prompt) {
+                params.set('prompt', prompt);
+            }
+            params.set('affiliate_token', DERIV_AFFILIATE_CONFIG.referralCode);
+            params.set('affiliate_tracking', DERIV_AFFILIATE_CONFIG.referralCode);
+            params.set('referral_code', DERIV_AFFILIATE_CONFIG.referralCode);
+            params.set('ref', DERIV_AFFILIATE_CONFIG.referralCode);
+            params.set('t', DERIV_AFFILIATE_CONFIG.affiliateToken);
+            params.set('utm_source', DERIV_AFFILIATE_CONFIG.referralCode);
+            params.set('utm_medium', 'affiliate');
+            params.set('utm_campaign', DERIV_AFFILIATE_CONFIG.affiliateToken);
+
+            return `https://oauth.deriv.com/oauth2/authorize?${params.toString()}`;
+        }
+
         // Normalize: OAuth servers require redirect_uri to exactly match the registered URI.
         // Most Deriv apps are registered with a trailing slash, so ensure it is always present.
         const redirectUri = domainCfg.redirectUri.endsWith('/')

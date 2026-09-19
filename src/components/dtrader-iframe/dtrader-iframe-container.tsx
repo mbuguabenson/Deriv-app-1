@@ -44,7 +44,7 @@ export interface DTraderIframeContainerProps {
  */
 export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     baseUrl = 'https://profhubdtrader.vercel.app',
-    appId = '34qV9FtmeYPRVWVJXIxr2',
+    appId = '121856',
     token: propToken,
     loginId: propLoginId,
     theme: propTheme,
@@ -63,7 +63,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Robust token resolver checking all local storage sources and account maps
+    // Robust token resolver checking all local storage sources and account maps (prioritizing legacy tokens for DTrader)
     const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
         if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
         const targetId =
@@ -72,17 +72,26 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
             localStorage.getItem('client.loginid') ||
             getActiveLoginId() ||
             '';
-        const active = getActiveToken(targetId);
-        if (active && !isInvalidBearerToken(active)) return active;
         const legacy = getLegacyDTraderToken(targetId);
-        if (legacy && !isInvalidBearerToken(legacy)) return legacy;
+        if (legacy && !isInvalidBearerToken(legacy) && !legacy.startsWith('ey')) return legacy;
+        const active = getActiveToken(targetId);
+        if (active && !isInvalidBearerToken(active) && !active.startsWith('ey')) return active;
         const accounts = getAccountsList();
-        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId])) {
+        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId]) && !accounts[targetId].startsWith('ey')) {
             return accounts[targetId];
         }
         for (const k in accounts) {
-            if (accounts[k] && !isInvalidBearerToken(accounts[k])) return accounts[k];
+            if (accounts[k] && !isInvalidBearerToken(accounts[k]) && !accounts[k].startsWith('ey')) return accounts[k];
         }
+        const candidate =
+            localStorage.getItem('legacy_dtrader_token') ||
+            localStorage.getItem('token') ||
+            localStorage.getItem('token1') ||
+            localStorage.getItem('active_token') ||
+            '';
+        if (candidate && !isInvalidBearerToken(candidate) && !candidate.startsWith('ey')) return candidate;
+        const auth = localStorage.getItem('authToken');
+        if (auth && !isInvalidBearerToken(auth) && !auth.startsWith('ey')) return auth;
         try {
             const authInfoStr = localStorage.getItem('auth_info') || sessionStorage.getItem('auth_info');
             if (authInfoStr) {
@@ -92,15 +101,7 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
                 }
             }
         } catch {}
-        const candidate =
-            localStorage.getItem('legacy_dtrader_token') ||
-            localStorage.getItem('token') ||
-            localStorage.getItem('token1') ||
-            localStorage.getItem('active_token') ||
-            '';
-        if (candidate && !isInvalidBearerToken(candidate)) return candidate;
-        const auth = localStorage.getItem('authToken');
-        if (auth && !isInvalidBearerToken(auth)) return auth;
+        if (active && !isInvalidBearerToken(active)) return active;
         return '';
     }, []);
 

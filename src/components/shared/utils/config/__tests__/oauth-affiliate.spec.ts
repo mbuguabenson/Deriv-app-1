@@ -31,7 +31,7 @@ describe('OAuth Affiliate & Referral Tracking', () => {
 
     it('attaches referral code and affiliate tracking parameters to the login OAuth URL', async () => {
         const url = await generateOAuthURL();
-        expect(url).toContain('https://auth.deriv.com/oauth2/auth');
+        expect(url).toMatch(/https:\/\/(oauth|auth)\.deriv\.com\/oauth2\/(authorize|auth)/);
         expect(url).toContain(`affiliate_token=${DERIV_AFFILIATE_CONFIG.referralCode}`);
         expect(url).toContain(`referral_code=${DERIV_AFFILIATE_CONFIG.referralCode}`);
         expect(url).toContain(`t=${DERIV_AFFILIATE_CONFIG.affiliateToken}`);

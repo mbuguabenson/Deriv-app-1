@@ -93,11 +93,11 @@ export const getAccountsList = (): Record<string, string> => {
             map[activeId] = directToken;
         }
 
-        // 7. OAuth2 PKCE auth_info fallback if map is still empty
+        // 7. OAuth2 PKCE auth_info fallback if map is still empty (only if non-JWT token)
         if (Object.keys(map).length === 0) {
             try {
                 const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
-                if (authInfo?.access_token && !isInvalidBearerToken(authInfo.access_token)) {
+                if (authInfo?.access_token && isLegacyToken(authInfo.access_token)) {
                     const fallbackId = activeId || 'CR91841550';
                     map[fallbackId] = authInfo.access_token;
                 }
@@ -273,18 +273,24 @@ export const getActiveToken = (specificLoginId?: string): string | null => {
  * Fast-paths synchronous storage checks so postMessage handshakes are never delayed.
  */
 export const resolveValidDerivWSToken = async (loginid?: string): Promise<string> => {
-    // 1. Fast synchronous check from storage / URL for target loginid
+    // 1. Check legacy token specifically for WebSocket authorize
+    const legacyToken = getLegacyDTraderToken(loginid);
+    if (legacyToken && isLegacyToken(legacyToken)) {
+        return legacyToken;
+    }
+
+    // 2. Synchronous check from storage / URL for target loginid (ensure valid legacy token)
     const syncToken = getActiveToken(loginid);
-    if (syncToken && !isInvalidBearerToken(syncToken)) {
+    if (syncToken && isLegacyToken(syncToken)) {
         return syncToken;
     }
 
-    // 2. Check URL query parameters (e.g., ?token1=a1-xxx or ?token=a1-xxx)
+    // 3. Check URL query parameters (e.g., ?token1=a1-xxx or ?token=a1-xxx)
     try {
         if (typeof window !== 'undefined') {
             const urlParams = new URLSearchParams(window.location.search);
             const tokenFromUrl = urlParams.get('token1') || urlParams.get('token');
-            if (tokenFromUrl && !isInvalidBearerToken(tokenFromUrl)) {
+            if (tokenFromUrl && isLegacyToken(tokenFromUrl)) {
                 return tokenFromUrl;
             }
         }
@@ -292,8 +298,7 @@ export const resolveValidDerivWSToken = async (loginid?: string): Promise<string
         // noop
     }
 
-    // 3. Fetch OTP WebSocket token for PKCE OAuth2 session.
-    // Two sequential REST calls are needed (accounts list + OTP), so allow 10s.
+    // 4. Fetch OTP WebSocket token for PKCE OAuth2 session (only if OTP service is available)
     try {
         const authInfo = OAuthTokenExchangeService.getAuthInfo();
         if (authInfo?.access_token) {
@@ -313,6 +318,11 @@ export const resolveValidDerivWSToken = async (loginid?: string): Promise<string
     } catch (e) {
         // OTP backend unreachable or timed out
         console.warn('[tokenBridge] OTP fetch failed:', e);
+    }
+
+    // 5. Fallback to syncToken if non-empty and not invalid
+    if (syncToken && !isInvalidBearerToken(syncToken)) {
+        return syncToken;
     }
 
     return '';
