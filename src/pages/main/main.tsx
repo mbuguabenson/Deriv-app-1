@@ -66,7 +66,6 @@ const OverlordAiPage = lazyRetry(() => import('../overlord-ai'), 'overlord_ai');
 const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 const DTraderPage = lazyRetry(() => import('../dtrader'), 'dtrader');
-const XHubPage = lazyRetry(() => import('../xhub'), 'xhub');
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
 import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';
@@ -139,7 +138,6 @@ const AppWrapper = observer(() => {
         'b254',
         'copy_trading',
         'dtrader',
-        'xhub',
     ];
     const { isDesktop } = useDevice();
     const location = useLocation();
@@ -681,18 +679,6 @@ const AppWrapper = observer(() => {
                     </TabErrorBoundary>
                 ),
             },
-            {
-                key: 'xhub',
-                id: 'id-xhub',
-                label: <TabIcon iconKey='xhub' label='XHub' />,
-                content: (
-                    <TabErrorBoundary tabId='id-xhub' tabName='XHub'>
-                        <Suspense fallback={<ChunkLoader message={localize('Please wait, loading XHub...')} />}>
-                            <XHubPage />
-                        </Suspense>
-                    </TabErrorBoundary>
-                ),
-            },
         ],
         [is_chart_modal_visible, is_trading_view_modal_visible, handleTabChange]
     );
@@ -763,7 +749,6 @@ const AppWrapper = observer(() => {
         'free_bots',
         'trading-bots',
         'dtrader',
-        'xhub',
     ].includes(currentTabKey);
 
     return (

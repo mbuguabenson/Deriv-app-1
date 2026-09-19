@@ -44,7 +44,7 @@ export interface DTraderIframeContainerProps {
  * loading skeleton, and graceful unauthenticated fallback.
  */
 export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
-    baseUrl = 'https://deriv-dtrader.vercel.app',
+    baseUrl = 'https://profhubdtrader.vercel.app',
     appId = '121856',
     token: propToken,
     loginId: propLoginId,

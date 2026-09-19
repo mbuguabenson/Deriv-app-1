@@ -24,7 +24,7 @@ const DTraderPage: React.FC = observer(() => {
     return (
         <div className='dtrader-page-wrapper'>
             <DTraderIframeContainer
-                baseUrl='https://deriv-dtrader.vercel.app'
+                baseUrl='https://profhubdtrader.vercel.app'
                 token={token || undefined}
                 loginId={activeLoginId || undefined}
                 theme={theme}
