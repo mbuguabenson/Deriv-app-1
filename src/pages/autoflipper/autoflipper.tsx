@@ -43,6 +43,7 @@ const CHART_DIGITS = 50;
 const MIN_ANALYSIS_DWELL_TICKS = 8;
 const MIN_ANALYSIS_DWELL_MS = 4000;
 const SMART_SWITCH_COOLDOWN_MS = 12000; // min ms between market switches
+const MARKET_DWELL_LIMIT_MS = 10 * 60 * 1000; // 10 minutes dwell for scheduled market rotation
 const PERSIST_KEY = 'af2_engine_state';
 const PING_INTERVAL_MS = 25000; // keep-alive WebSocket ping
 
@@ -397,12 +398,12 @@ function computeAnalysis(digits: number[]): ComprehensiveAnalysis {
     const hp = (arr: number[], d: number) => arr.filter(x => x === d).length / (arr.length || 1) * 100;
     const o7P = pct1000[7]||0, o8P = pct1000[8]||0, o9P = pct1000[9]||0;
     const o0P = pct1000[0]||0, o1P = pct1000[1]||0, o2P = pct1000[2]||0;
-    const o7I = hp(h2,7) > hp(h1,7)+0.5, o8I = hp(h2,8) > hp(h1,8)+0.5, o9I = hp(h2,9) > hp(h1,9)+0.5;
-    const o0I = hp(h2,0) > hp(h1,0)+0.5, o1I = hp(h2,1) > hp(h1,1)+0.5, o2I = hp(h2,2) > hp(h1,2)+0.5;
-    const outliersUnder6Safe = o7P < 10 && o8P < 10 && o9P < 10 && !o7I && !o8I && !o9I;
-    const outliersOver3Safe  = o0P < 10 && o1P < 10 && o2P < 10 && !o0I && !o1I && !o2I;
-    const macroUnder6Dominant = (most1000 <= 5 && second1000 <= 5 && least1000 <= 5) || (outliersUnder6Safe && pct1000.slice(0,6).reduce((a,b) => a+b,0) >= 58);
-    const macroOver3Dominant  = (most1000 >= 4 && second1000 >= 4 && least1000 >= 4) || (outliersOver3Safe  && pct1000.slice(4,10).reduce((a,b) => a+b,0) >= 58);
+    const o7I = hp(h2,7) > hp(h1,7)+0.8, o8I = hp(h2,8) > hp(h1,8)+0.8, o9I = hp(h2,9) > hp(h1,9)+0.8;
+    const o0I = hp(h2,0) > hp(h1,0)+0.8, o1I = hp(h2,1) > hp(h1,1)+0.8, o2I = hp(h2,2) > hp(h1,2)+0.8;
+    const outliersUnder6Safe = o7P < 14 && o8P < 14 && o9P < 14 && !o7I && !o8I && !o9I;
+    const outliersOver3Safe  = o0P < 14 && o0P < 14 && o2P < 14 && !o0I && !o1I && !o2I;
+    const macroUnder6Dominant = (most1000 <= 5 && second1000 <= 5) || (outliersUnder6Safe && pct1000.slice(0,6).reduce((a,b) => a+b,0) >= 54);
+    const macroOver3Dominant  = (most1000 >= 4 && second1000 >= 4) || (outliersOver3Safe  && pct1000.slice(4,10).reduce((a,b) => a+b,0) >= 54);
 
     const slice50 = digits.slice(-50);
     const total50 = slice50.length || 1;
@@ -432,10 +433,10 @@ function computeAnalysis(digits: number[]): ComprehensiveAnalysis {
     const cycleUnder05 = slice15.filter(d => d <= 5).length;
     const cycleOver49  = slice15.filter(d => d >= 4).length;
     const pctCycleUnder05 = (cycleUnder05/total15)*100, pctCycleOver49 = (cycleOver49/total15)*100;
-    const isRegimeShiftUnder = cycleOver49 >= 9, isRegimeShiftOver = cycleUnder05 >= 9;
+    const isRegimeShiftUnder = cycleOver49 >= 10, isRegimeShiftOver = cycleUnder05 >= 10;
     let stabilityStatus: 'STABLE_UNDER' | 'STABLE_OVER' | 'SHIFTING' | 'NEUTRAL' = 'NEUTRAL';
-    if (cycleUnder05 >= 10 && !isRegimeShiftUnder) stabilityStatus = 'STABLE_UNDER';
-    else if (cycleOver49 >= 10 && !isRegimeShiftOver) stabilityStatus = 'STABLE_OVER';
+    if (cycleUnder05 >= 9 && !isRegimeShiftUnder) stabilityStatus = 'STABLE_UNDER';
+    else if (cycleOver49 >= 9 && !isRegimeShiftOver) stabilityStatus = 'STABLE_OVER';
     else if (isRegimeShiftUnder || isRegimeShiftOver) stabilityStatus = 'SHIFTING';
 
     const slice10 = digits.slice(-10);
@@ -447,54 +448,54 @@ function computeAnalysis(digits: number[]): ComprehensiveAnalysis {
 
     let bias: 'under' | 'over' | 'shifting' | 'neutral' = 'neutral';
     if (stabilityStatus === 'SHIFTING') bias = 'shifting';
-    else if ((pctUnder05 >= 56 || (pctUnder04 >= 55 && underIncreasing)) && under05 > over49) bias = 'under';
-    else if ((pctOver49  >= 56 || (pctOver59  >= 55 && overIncreasing))  && over49  > under05) bias = 'over';
+    else if (pctUnder05 >= 50 && under05 >= over49) bias = 'under';
+    else if (pctOver49  >= 50 && over49  >= under05) bias = 'over';
 
     let qualityScore = 50;
     if (bias === 'under')
-        qualityScore = Math.round((pctUnder05*0.4) + ((last10UnderCount/10)*100*0.3) + (outliersUnder6Safe?20:0) + (macroUnder6Dominant?10:0));
+        qualityScore = Math.round((pctUnder05*0.45) + ((last10UnderCount/10)*100*0.35) + (outliersUnder6Safe?15:0) + (macroUnder6Dominant?5:0));
     else if (bias === 'over')
-        qualityScore = Math.round((pctOver49*0.4) + ((last10OverCount/10)*100*0.3) + (outliersOver3Safe?20:0) + (macroOver3Dominant?10:0));
+        qualityScore = Math.round((pctOver49*0.45) + ((last10OverCount/10)*100*0.35) + (outliersOver3Safe?15:0) + (macroOver3Dominant?5:0));
     else
-        qualityScore = Math.round(Math.max(pctUnder05, pctOver49) * 0.8);
+        qualityScore = Math.round(Math.max(pctUnder05, pctOver49) * 0.85);
     qualityScore = Math.min(100, Math.max(0, qualityScore));
 
-    const isAvoidMarket = (bias==='under' && !outliersUnder6Safe) || (bias==='over' && !outliersOver3Safe) || stabilityStatus==='SHIFTING' || qualityScore<45;
+    const isAvoidMarket = (bias==='under' && !outliersUnder6Safe) || (bias==='over' && !outliersOver3Safe) || stabilityStatus==='SHIFTING' || qualityScore<40;
 
     // Condition assessment
     const reasons: string[] = [];
     const isSampleSufficient = totalTicks >= 15;
     const maxDomPct = Math.max(pctUnder05, pctOver49);
-    const hasNoDominance = maxDomPct < 54 && totalTicks >= 20;
+    const hasNoDominance = maxDomPct < 48 && totalTicks >= 20;
     const isNeutralChoppy = (bias==='neutral'||bias==='shifting') && totalTicks >= 20;
     const dominantMicroCount = bias==='under' ? last10UnderCount : last10OverCount;
-    const isWeakMicro = dominantMicroCount <= 5 && totalTicks >= 15;
+    const isWeakMicro = dominantMicroCount <= 3 && totalTicks >= 15;
     let unbalancedDigits = false, unidentifiedPattern = false, conditionsNotMet = false;
     const maxOutlierUnder = Math.max(o7P,o8P,o9P), maxOutlierOver = Math.max(o0P,o1P,o2P);
-    const hasOutlierSurgeUnder = o7P>=11.5 || o8P>=11.5 || o9P>=11.5 || (o7P>=10&&o7I) || (o8P>=10&&o8I) || (o9P>=10&&o9I);
-    const hasOutlierSurgeOver  = o0P>=11.5 || o1P>=11.5 || o2P>=11.5 || (o0P>=10&&o0I) || (o1P>=10&&o1I) || (o2P>=10&&o2I);
+    const hasOutlierSurgeUnder = o7P>=14.5 || o8P>=14.5 || o9P>=14.5 || (o7P>=13&&o7I) || (o8P>=13&&o8I) || (o9P>=13&&o9I);
+    const hasOutlierSurgeOver  = o0P>=14.5 || o1P>=14.5 || o2P>=14.5 || (o0P>=13&&o0I) || (o1P>=13&&o1I) || (o2P>=13&&o2I);
     const isDeadlocked = Math.abs(under05-over49) <= 1 && totalTicks >= 25;
-    if ((bias==='under'||under05>=over49) && hasOutlierSurgeUnder) { unbalancedDigits=true; reasons.push(`Outlier Risk: Digits 7,8,9 at ${maxOutlierUnder.toFixed(1)}% (ceiling 10%)`); }
-    else if ((bias==='over'||over49>under05) && hasOutlierSurgeOver) { unbalancedDigits=true; reasons.push(`Outlier Risk: Digits 0,1,2 at ${maxOutlierOver.toFixed(1)}% (ceiling 10%)`); }
+    if ((bias==='under'||under05>=over49) && hasOutlierSurgeUnder) { unbalancedDigits=true; reasons.push(`Outlier Spike: Digits 7,8,9 at ${maxOutlierUnder.toFixed(1)}%`); }
+    else if ((bias==='over'||over49>under05) && hasOutlierSurgeOver) { unbalancedDigits=true; reasons.push(`Outlier Spike: Digits 0,1,2 at ${maxOutlierOver.toFixed(1)}%`); }
     else if (isDeadlocked && (hasOutlierSurgeUnder||hasOutlierSurgeOver)) { unbalancedDigits=true; reasons.push('Deadlocked ratio with unstable outliers'); }
-    if (hasNoDominance || (isNeutralChoppy && stabilityStatus!=='STABLE_UNDER' && stabilityStatus!=='STABLE_OVER')) { unidentifiedPattern=true; reasons.push(`Choppy neutral (${maxDomPct.toFixed(0)}% edge, no trend)`); }
+    if (hasNoDominance || (isNeutralChoppy && stabilityStatus!=='STABLE_UNDER' && stabilityStatus!=='STABLE_OVER')) { unidentifiedPattern=true; reasons.push(`Consolidating (${maxDomPct.toFixed(0)}% edge)`); }
     else if (isWeakMicro && !unidentifiedPattern) { unidentifiedPattern=true; reasons.push(`Weak micro (${dominantMicroCount}/10 ratio)`); }
     const hasRegimeShift = isRegimeShiftUnder || isRegimeShiftOver;
-    const isLowQuality = qualityScore < 50 && totalTicks >= 25;
+    const isLowQuality = qualityScore < 45 && totalTicks >= 25;
     const isMacroMismatch = (bias==='under' && !macroUnder6Dominant && macroOver3Dominant) || (bias==='over' && !macroOver3Dominant && macroUnder6Dominant);
     if (hasRegimeShift) { conditionsNotMet=true; reasons.push(`15t Regime Shift (${isRegimeShiftUnder?cycleOver49:cycleUnder05}/15 counter digits)`); }
     else if (isMacroMismatch) { conditionsNotMet=true; reasons.push('Macro vs. 50t direction mismatch'); }
     else if (isLowQuality && !conditionsNotMet) { conditionsNotMet=true; reasons.push(`Low quality score (${qualityScore}/100)`); }
 
     const isNotGood = (unbalancedDigits||unidentifiedPattern||conditionsNotMet||isAvoidMarket) && isSampleSufficient;
-    const isGood = !isNotGood && isSampleSufficient && qualityScore>=60 && !hasRegimeShift && ((bias==='under'&&outliersUnder6Safe&&pctUnder05>=55)||(bias==='over'&&outliersOver3Safe&&pctOver49>=55));
+    const isGood = !isNotGood && isSampleSufficient && qualityScore>=55 && !hasRegimeShift && ((bias==='under'&&pctUnder05>=50)||(bias==='over'&&pctOver49>=50));
     let status: 'GOOD'|'ANALYZING'|'NOT_GOOD' = 'ANALYZING';
     let alertTitle = '🔍 ANALYZING', alertMessage = `Collecting data (${totalTicks}/20 ticks)…`;
     let alertSeverity: 'danger'|'warning'|'success'|'info' = 'info';
     if (!isSampleSufficient) { status='ANALYZING'; alertSeverity='info'; }
     else if (isNotGood) { status='NOT_GOOD'; alertTitle='⚠️ MARKET NOT GOOD'; alertSeverity='danger'; alertMessage=reasons.length>0?reasons.join(' • '):'Conditions not met'; }
     else if (isGood) { status='GOOD'; alertTitle='✅ CONDITIONS OPTIMAL'; alertSeverity='success'; alertMessage=`${bias==='under'?'Under 6':'Over 3'} momentum (${maxDomPct.toFixed(0)}% dom, Score: ${qualityScore}/100)`; }
-    else { status='ANALYZING'; alertTitle='⚖️ CONSOLIDATING'; alertSeverity='warning'; alertMessage=`No breakout yet (U:${under05} vs O:${over49}, Score: ${qualityScore}/100)`; }
+    else { status='ANALYZING'; alertTitle='⚖️ CONSOLIDATING'; alertSeverity='warning'; alertMessage=`Building momentum (U:${under05} vs O:${over49}, Score: ${qualityScore}/100)`; }
 
     return {
         macro: { total1000, pct1000, most1000, second1000, least1000, outlier7Pct:o7P, outlier8Pct:o8P, outlier9Pct:o9P, outlier0Pct:o0P, outlier1Pct:o1P, outlier2Pct:o2P, outlier7Increasing:o7I, outlier8Increasing:o8I, outlier9Increasing:o9I, outlier0Increasing:o0I, outlier1Increasing:o1I, outlier2Increasing:o2I, outliersUnder6Safe, outliersOver3Safe, macroUnder6Dominant, macroOver3Dominant },
@@ -514,38 +515,80 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
 
     if (dir === 'UNDER_6') {
         const hasHist = a.macro.total1000 >= 30;
-        const macroCondition = !hasHist || (a.macro.macroUnder6Dominant && a.macro.outliersUnder6Safe);
-        const stat1Condition = (a.mid.pctUnder04>=55 || (a.mid.pctUnder04>=53 && a.mid.under05Increasing)) && (a.mid.under05Increasing || a.mid.underIncreasing);
-        const stat2Condition = a.mid.under05 >= 27 && a.mid.under05 > a.mid.over49;
-        const micro10Condition = a.micro.last10UnderCount >= 7;
+        const macroCondition = !hasHist || (a.macro.macroUnder6Dominant || a.macro.outliersUnder6Safe);
+        // 50-tick dominance condition: Under 6 digits (0-5) have >= 50% frequency and exceed over49
+        const stat1Condition = a.mid.pctUnder05 >= 50;
+        const stat2Condition = a.mid.under05 >= a.mid.over49;
+        // 10-tick micro trend: at least 5 of last 10 ticks are Under 6
+        const micro10Condition = a.micro.last10UnderCount >= 5;
+        // 15-tick cycle: no strong regime shift against under
         const cycleCondition = !a.cycle.isRegimeShiftUnder;
-        const triggerDigitCondition = cur === a.mid.highestUnderDigit;
+        // Winning digit range for Under 6 is 0, 1, 2, 3, 4, 5
+        const triggerDigitCondition = cur <= 5;
         const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition;
         const isTriggered = all && triggerDigitCondition && !a.cycle.isRegimeShiftUnder;
         const isAutoPaused = a.cycle.isRegimeShiftUnder;
+
         let reason = '';
-        if (isAutoPaused) reason = `⏸ 15t Regime Shift (${a.cycle.cycleOver49}/15 Over). Auto-paused.`;
-        else if (isTriggered) reason = `🎯 UNDER 6 FIRED! Digit [${cur}] matched dominant [${a.mid.highestUnderDigit}]`;
-        else if (all) reason = `⏳ Signal clear! Waiting trigger digit [${a.mid.highestUnderDigit}] (current: ${cur})`;
-        else reason = `Consolidating — U04: ${a.mid.pctUnder04.toFixed(0)}%, U05: ${a.mid.under05} vs O49: ${a.mid.over49}, 10t: ${a.micro.last10UnderCount}/10`;
-        return { direction:'UNDER', prediction:6, triggerDigit:a.mid.highestUnderDigit, reason, status:isTriggered?'TRIGGERED':'WAITING', isAutoPaused, qualityScore:a.qualityScore, conditions:{macroCondition,stat1Condition,stat2Condition,micro10Condition,cycleCondition,triggerDigitCondition} };
+        if (isAutoPaused) {
+            reason = `⏸ 15t Regime Shift (${a.cycle.cycleOver49}/15 Over). Auto-paused.`;
+        } else if (isTriggered) {
+            const isPrime = cur === a.mid.highestUnderDigit || cur <= 3;
+            reason = `🎯 UNDER 6 FIRED! Digit [${cur}] (50t: ${a.mid.pctUnder05.toFixed(0)}%, 10t: ${a.micro.last10UnderCount}/10${isPrime ? ' ★ High Confluence' : ''})`;
+        } else if (all) {
+            reason = `⏳ Signal clear! Waiting under digit [0-5] (current: ${cur})`;
+        } else {
+            reason = `Consolidating — U05: ${a.mid.pctUnder05.toFixed(0)}% (${a.mid.under05} vs O49: ${a.mid.over49}), 10t: ${a.micro.last10UnderCount}/10`;
+        }
+
+        return {
+            direction: 'UNDER',
+            prediction: 6,
+            triggerDigit: a.mid.highestUnderDigit,
+            reason,
+            status: isTriggered ? 'TRIGGERED' : 'WAITING',
+            isAutoPaused,
+            qualityScore: a.qualityScore,
+            conditions: { macroCondition, stat1Condition, stat2Condition, micro10Condition, cycleCondition, triggerDigitCondition }
+        };
     } else {
         const hasHist = a.macro.total1000 >= 30;
-        const macroCondition = !hasHist || (a.macro.macroOver3Dominant && a.macro.outliersOver3Safe);
-        const stat1Condition = (a.mid.pctOver59>=55 || (a.mid.pctOver59>=53 && a.mid.over49Increasing)) && (a.mid.over49Increasing || a.mid.overIncreasing);
-        const stat2Condition = a.mid.over49 >= 27 && a.mid.over49 > a.mid.under05;
-        const micro10Condition = a.micro.last10OverCount >= 7;
+        const macroCondition = !hasHist || (a.macro.macroOver3Dominant || a.macro.outliersOver3Safe);
+        // 50-tick dominance condition: Over 3 digits (4-9) have >= 50% frequency and exceed under05
+        const stat1Condition = a.mid.pctOver49 >= 50;
+        const stat2Condition = a.mid.over49 >= a.mid.under05;
+        // 10-tick micro trend: at least 5 of last 10 ticks are Over 3
+        const micro10Condition = a.micro.last10OverCount >= 5;
+        // 15-tick cycle: no strong regime shift against over
         const cycleCondition = !a.cycle.isRegimeShiftOver;
-        const triggerDigitCondition = cur === a.mid.highestOverDigit;
+        // Winning digit range for Over 3 is 4, 5, 6, 7, 8, 9
+        const triggerDigitCondition = cur >= 4;
         const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition;
         const isTriggered = all && triggerDigitCondition && !a.cycle.isRegimeShiftOver;
         const isAutoPaused = a.cycle.isRegimeShiftOver;
+
         let reason = '';
-        if (isAutoPaused) reason = `⏸ 15t Regime Shift (${a.cycle.cycleUnder05}/15 Under). Auto-paused.`;
-        else if (isTriggered) reason = `🎯 OVER 3 FIRED! Digit [${cur}] matched dominant [${a.mid.highestOverDigit}]`;
-        else if (all) reason = `⏳ Signal clear! Waiting trigger digit [${a.mid.highestOverDigit}] (current: ${cur})`;
-        else reason = `Consolidating — O59: ${a.mid.pctOver59.toFixed(0)}%, O49: ${a.mid.over49} vs U05: ${a.mid.under05}, 10t: ${a.micro.last10OverCount}/10`;
-        return { direction:'OVER', prediction:3, triggerDigit:a.mid.highestOverDigit, reason, status:isTriggered?'TRIGGERED':'WAITING', isAutoPaused, qualityScore:a.qualityScore, conditions:{macroCondition,stat1Condition,stat2Condition,micro10Condition,cycleCondition,triggerDigitCondition} };
+        if (isAutoPaused) {
+            reason = `⏸ 15t Regime Shift (${a.cycle.cycleUnder05}/15 Under). Auto-paused.`;
+        } else if (isTriggered) {
+            const isPrime = cur === a.mid.highestOverDigit || cur >= 6;
+            reason = `🎯 OVER 3 FIRED! Digit [${cur}] (50t: ${a.mid.pctOver49.toFixed(0)}%, 10t: ${a.micro.last10OverCount}/10${isPrime ? ' ★ High Confluence' : ''})`;
+        } else if (all) {
+            reason = `⏳ Signal clear! Waiting over digit [4-9] (current: ${cur})`;
+        } else {
+            reason = `Consolidating — O49: ${a.mid.pctOver49.toFixed(0)}% (${a.mid.over49} vs U05: ${a.mid.under05}), 10t: ${a.micro.last10OverCount}/10`;
+        }
+
+        return {
+            direction: 'OVER',
+            prediction: 3,
+            triggerDigit: a.mid.highestOverDigit,
+            reason,
+            status: isTriggered ? 'TRIGGERED' : 'WAITING',
+            isAutoPaused,
+            qualityScore: a.qualityScore,
+            conditions: { macroCondition, stat1Condition, stat2Condition, micro10Condition, cycleCondition, triggerDigitCondition }
+        };
     }
 }
 
@@ -553,7 +596,7 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
 
 const Autoflipper: React.FC = observer(() => {
     const store = useStore();
-    const { client } = store || {};
+    const { client, transactions, journal } = store || {};
     const currency = client?.currency || 'USD';
     const loggedIn = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
@@ -569,6 +612,17 @@ const Autoflipper: React.FC = observer(() => {
     const [selectedSymbol, setSelectedSymbol] = useState<string>(_ps?.selectedSymbol ?? '1HZ10V');
     const [scanAll, setScanAll] = useState<boolean>(true);
     const [autoSwitch, setAutoSwitch] = useState<boolean>(true);
+
+    // ── 10-Minute Dwell & Auto-Switch ──
+    const marketStartTimeRef = useRef<number>(Date.now());
+    const [dwellRemainingSec, setDwellRemainingSec] = useState<number>(600);
+
+    const switchSelectedSymbol = useCallback((sym: string) => {
+        setSelectedSymbol(sym);
+        selectedSymbolRef.current = sym;
+        marketStartTimeRef.current = Date.now();
+        setDwellRemainingSec(600);
+    }, []);
 
     // ── WS Status ──
     const [wsReady, setWsReady] = useState<boolean>(Boolean(api_base?.is_authorized));
@@ -588,9 +642,27 @@ const Autoflipper: React.FC = observer(() => {
     const [txns, setTxns] = useState<TxnRecord[]>([]);
     const [activeTab, setActiveTab] = useState<'TRADES' | 'JOURNAL'>('TRADES');
 
+    // ── 5-Run Batch Tracking ──
+    const runsInBatchRef = useRef<number>(0);
+    const [runsInBatch, setRunsInBatch] = useState<number>(0);
+
     // ── Modals ──
     const [milestone, setMilestone] = useState<{ isOpen: boolean; type: MilestoneType }>({ isOpen: false, type: null });
     const [isAiOpen, setIsAiOpen] = useState<boolean>(false);
+
+    // ── 10-Minute Dwell Countdown Timer ──
+    useEffect(() => {
+        if (autoState === 'IDLE') {
+            setDwellRemainingSec(600);
+            return;
+        }
+        const dwellInterval = setInterval(() => {
+            const elapsed = Date.now() - marketStartTimeRef.current;
+            const rem = Math.max(0, Math.ceil((MARKET_DWELL_LIMIT_MS - elapsed) / 1000));
+            setDwellRemainingSec(rem);
+        }, 1000);
+        return () => clearInterval(dwellInterval);
+    }, [autoState]);
 
     // ── Refs ──
     const marketsRef = useRef<Map<string, MarketData>>(createMarketsMap());
@@ -860,15 +932,67 @@ const Autoflipper: React.FC = observer(() => {
         const openTxn: TxnRecord = { id:tempId, time:timeStr, market:label, contractType:direction==='UNDER'?'Under 6':'Over 3', stake, profit:0, result:'OPEN', status:'open' };
         setTxns(prev => [openTxn, ...prev].slice(0, 100));
 
-        const buy = await buyContractForUi({ parameters: { amount:stake, basis:'stake', contract_type:contractType, currency:currency||'USD', duration:dur, duration_unit:'t', symbol, barrier:String(prediction) }, price:stake, source:'Autoflipper' });
+        // Direct buy execution with instantBuy: true for real-time tick synchronization
+        const buy = await buyContractForUi({
+            parameters: {
+                amount: stake,
+                basis: 'stake',
+                contract_type: contractType,
+                currency: currency || 'USD',
+                duration: dur,
+                duration_unit: 't',
+                symbol,
+                barrier: String(prediction),
+            },
+            price: stake,
+            source: 'Autoflipper',
+            instantBuy: true,
+        });
         const { contract_id, buy_price, transaction_id } = buy;
 
-        const init = { buy_price, contract_id, transaction_ids:{buy:transaction_id}, date_start:Math.floor(Date.now()/1000), display_name:label, underlying_symbol:symbol, shortcode:`AF_${contractType}_${symbol}`, contract_type:contractType, currency:currency||'USD', barrier:String(prediction) };
-        try { globalObserver.emit('bot.contract', init); } catch {}
+        const init = {
+            buy_price,
+            contract_id,
+            transaction_ids: { buy: transaction_id },
+            date_start: Math.floor(Date.now() / 1000),
+            display_name: label,
+            underlying_symbol: symbol,
+            shortcode: `AF_${contractType}_${symbol}`,
+            contract_type: contractType,
+            currency: currency || 'USD',
+            barrier: String(prediction),
+            status: 'open',
+            is_sold: false,
+        };
+
+        // Broadcast open contract to Run Panel Transactions & global observer
+        try {
+            transactions?.onBotContractEvent?.(init as any);
+            globalObserver.emit('bot.contract', init);
+        } catch {}
+
+        try {
+            const openMsg = `[AutoFlipper] Purchased ${direction === 'UNDER' ? 'Under 6' : 'Over 3'} on ${label} @ $${stake.toFixed(2)}`;
+            journal?.pushMessage?.(openMsg, 'notify', '');
+            globalObserver.emit('ui.log.notify', { message: openMsg, sound: 'silent' });
+        } catch {}
 
         const abort = new AbortController();
         contractAbortsRef.current.add(abort);
-        const settled = await streamContractUntilSettled({ contractId:contract_id, fallback:init, onUpdate:snap => { if (!unmountedRef.current) { try { globalObserver.emit('bot.contract', snap); } catch {} } }, signal:abort.signal, source:'Autoflipper' });
+        const settled = await streamContractUntilSettled({
+            contractId: contract_id,
+            fallback: init,
+            onUpdate: snap => {
+                if (!unmountedRef.current) {
+                    try {
+                        transactions?.onBotContractEvent?.(snap as any);
+                        globalObserver.emit('bot.contract', snap);
+                    } catch {}
+                }
+            },
+            signal: abort.signal,
+            source: 'Autoflipper',
+        });
         contractAbortsRef.current.delete(abort);
 
         const profit = Number(settled?.profit ?? 0);
@@ -876,16 +1000,56 @@ const Autoflipper: React.FC = observer(() => {
         const entrySpot = settled?.entry_tick_display_value ?? settled?.entry_tick ?? '—';
         const exitSpot  = settled?.exit_tick_display_value  ?? settled?.exit_tick  ?? '—';
 
+        // Broadcast settled contract to Run Panel Transactions & Journal
+        const settledContract = {
+            ...init,
+            ...settled,
+            buy_price,
+            contract_id,
+            transaction_ids: { buy: transaction_id, sell: settled?.transaction_ids?.sell || settled?.sell_id },
+            display_name: label,
+            underlying_symbol: symbol,
+            shortcode: `AF_${contractType}_${symbol}`,
+            contract_type: contractType,
+            currency: currency || 'USD',
+            barrier: String(prediction),
+            entry_spot: entrySpot,
+            exit_spot: exitSpot,
+            profit,
+            sell_price: settled?.sell_price ?? (isWin ? buy_price + profit : 0),
+            payout: settled?.payout ?? (isWin ? buy_price + profit : 0),
+            status: isWin ? 'won' : 'lost',
+            is_sold: true,
+        };
+
+        try {
+            transactions?.onBotContractEvent?.(settledContract as any);
+            globalObserver.emit('bot.contract', settledContract);
+        } catch {}
+
+        try {
+            const resMsg = `[AutoFlipper] ${isWin ? 'WON (+$' + profit.toFixed(2) + ')' : 'LOST (-$' + Math.abs(profit).toFixed(2) + ')'} on ${label} [${direction === 'UNDER' ? 'Under 6' : 'Over 3'}] | Exit Spot: ${exitSpot}`;
+            journal?.pushMessage?.(resMsg, isWin ? 'success' : 'error', '');
+            globalObserver.emit('ui.log.notify', { message: resMsg, sound: 'silent' });
+        } catch {}
+
         setTxns(prev => prev.map(t => t.id === tempId ? { ...t, contractId:contract_id, profit, result:isWin?'WIN':'LOSS', status:'settled', entrySpot, exitSpot } : t));
         aiContinuousLearningService.recordBotTrade({ botName:'AUTOFLIPPER', strategy:`DIGIT${direction}_${prediction}`, market:symbol, contractType, barrier:String(prediction), prediction, isWin, profit, stake });
         return profit;
-    }, [tickDuration, currency]);
+    }, [tickDuration, currency, transactions, journal]);
 
     // ── Log helpers ──
     const addLog = useCallback((type: string, market: string, result: TradeLog['result'], profit: number, details?: string) => {
         const entry: TradeLog = { id:`AL-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, time:new Date().toLocaleTimeString(), type, market, result, profit, details };
         setTradeLogs(prev => [entry, ...prev].slice(0, 100));
-    }, []);
+
+        try {
+            const jType = result === 'WIN' ? 'success' : result === 'LOSS' ? 'error' : 'notify';
+            const jMsg = `[AutoFlipper] ${type} | ${market}${details ? ' — ' + details : ''}`;
+            journal?.pushMessage?.(jMsg, jType, '');
+            globalObserver.emit('ui.log.notify', { message: jMsg, sound: 'silent' });
+        } catch {}
+    }, [journal]);
 
     // ── Main auto trading loop ──
     const startAutoTrading = useCallback(async () => {
@@ -904,11 +1068,17 @@ const Autoflipper: React.FC = observer(() => {
         lossesRef.current = 0;
         consecutiveLossRef.current = 0;
         currentHourRef.current = 1;
+        runsInBatchRef.current = 0;
         setTotalProfit(0);
         setHourProfit(0);
         setWins(0);
         setLosses(0);
         setCurrentHour(1);
+        setRunsInBatch(0);
+
+        // Reset dwell timer for current market
+        marketStartTimeRef.current = Date.now();
+        setDwellRemainingSec(600);
 
         const sched = scheduleRef.current;
         if (!sched.length) { addLog('ERROR', 'Engine', 'ABORTED', 0, 'No schedule generated. Adjust start/target.'); return; }
@@ -932,19 +1102,37 @@ const Autoflipper: React.FC = observer(() => {
             while (!abortSig.aborted && autoStateRef.current !== 'IDLE') {
                 if (autoStateRef.current === 'PAUSED') { await new Promise(r => setTimeout(r, 400)); continue; }
 
-                // Check stop-loss
+                // 1. Check Stop Loss Auto-Stop
                 if (totalProfitRef.current <= -sl) {
-                    addLog('STOP LOSS HIT', '⚠️ Stop Loss Limit Reached', 'PENDING', 0);
-                    setAutoState('IDLE'); autoStateRef.current = 'IDLE';
-                    setMilestone({ isOpen:true, type:'sl' }); break;
+                    const msg = `⚠️ Stop Loss Limit (-$${sl}) reached. Engine Auto-Stopped.`;
+                    addLog('STOP LOSS HIT', selectedSymbolRef.current, 'LOSS', totalProfitRef.current, msg);
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('loss');
+                    setMilestone({ isOpen: true, type: 'sl' });
+                    break;
                 }
 
-                // Check if all 45 hours done
+                // 2. Check 45-Hour Completion Auto-Stop
                 const hour = currentHourRef.current;
                 if (hour > FLIP_HOURS) {
-                    addLog('🏆 COMPLETED', 'All 45 Hours Done!', 'PENDING', 0, `Total profit: $${totalProfitRef.current.toFixed(2)}`);
-                    setAutoState('IDLE'); autoStateRef.current = 'IDLE';
-                    setMilestone({ isOpen:true, type:'tp' }); break;
+                    const msg = `🏆 45-Hour Compounding Plan Completed! Total Profit: +$${totalProfitRef.current.toFixed(2)}. Engine Auto-Stopped.`;
+                    addLog('GOAL COMPLETED', selectedSymbolRef.current, 'WIN', totalProfitRef.current, msg);
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('win');
+                    setMilestone({ isOpen: true, type: 'tp' });
+                    break;
+                }
+
+                // 3. Check Consecutive Loss Safety Auto-Stop (5 consecutive losses)
+                if (consecutiveLossRef.current >= 5) {
+                    const msg = `🛑 Safety Limit: 5 Consecutive Losses reached. Engine Auto-Stopped to protect capital.`;
+                    addLog('SAFETY AUTO-STOP', selectedSymbolRef.current, 'LOSS', 0, msg);
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('loss');
+                    break;
                 }
 
                 // Current hour target
@@ -982,20 +1170,31 @@ const Autoflipper: React.FC = observer(() => {
                 const isMarketBad = a.condition.isNotGood || Boolean(sig?.isAutoPaused) || a.condition.unbalancedDigits || a.condition.unidentifiedPattern;
                 if (isMarketBad) badMarketCycles++; else badMarketCycles = 0;
 
-                // Auto-switch if needed
+                // 4. Auto-Switch: 10-Minute Dwell Rotation OR Market Degradation (when not in Martingale recovery)
+                const dwellElapsed = Date.now() - marketStartTimeRef.current;
+                const isTenMinuteDwellReached = dwellElapsed >= MARKET_DWELL_LIMIT_MS;
+
                 if (autoSwitch && currentStakeRef.current <= getHourStake(hour)) {
                     const isCritical = Boolean(sig?.isAutoPaused) || a.condition.unbalancedDigits;
-                    if ((isMarketBad && (isDwellOk || isCritical)) || noPatternCycles >= 15) {
+                    const shouldRotate = isTenMinuteDwellReached || (isMarketBad && (isDwellOk || isCritical)) || noPatternCycles >= 15;
+
+                    if (shouldRotate) {
                         const ranked = getLiveRanked();
-                        const alt = ranked.find(m => m.symbol !== targetSym && m.condStatus === 'GOOD' && m.qualityScore >= 60 && !m.isAutoPaused);
+                        const alt = ranked.find(m => m.symbol !== targetSym && m.condStatus === 'GOOD' && m.qualityScore >= 55 && !m.isAutoPaused) ||
+                                    (isTenMinuteDwellReached ? ranked.find(m => m.symbol !== targetSym && !m.isAutoPaused) : null);
                         if (alt) {
                             const oldLabel = data.label;
-                            setSelectedSymbol(alt.symbol); selectedSymbolRef.current = alt.symbol;
-                            currentMarketDwellTicks = 0; lastProcessedTickCount = marketsRef.current.get(alt.symbol)?.tickCount || 0;
-                            lastSwitchTime = Date.now(); badMarketCycles = 0; noPatternCycles = 0;
-                            addLog('MARKET ROTATE', alt.label, 'PENDING', 0, `⚠️ [${oldLabel}] bad → Auto-switched to ${alt.label} (Score: ${alt.qualityScore})`);
+                            switchSelectedSymbol(alt.symbol);
+                            currentMarketDwellTicks = 0;
+                            lastProcessedTickCount = marketsRef.current.get(alt.symbol)?.tickCount || 0;
+                            lastSwitchTime = Date.now();
+                            badMarketCycles = 0;
+                            noPatternCycles = 0;
+                            const reasonDesc = isTenMinuteDwellReached ? '10-minute scheduled rotation' : `[${oldLabel}] bad conditions`;
+                            addLog('MARKET ROTATE', alt.label, 'PENDING', 0, `🔄 ${reasonDesc} → Auto-switched to ${alt.label} (Score: ${alt.qualityScore})`);
                             throttleRender();
-                            await new Promise(r => setTimeout(r, 600)); continue;
+                            await new Promise(r => setTimeout(r, 600));
+                            continue;
                         }
                     }
                 }
@@ -1050,6 +1249,23 @@ const Autoflipper: React.FC = observer(() => {
                         await new Promise(r => setTimeout(r, 1200));
                     }
 
+                    // ── Batch pause: every 5 completed trades, pause for reanalysis ──
+                    runsInBatchRef.current++;
+                    setRunsInBatch(runsInBatchRef.current);
+                    if (runsInBatchRef.current >= 5) {
+                        runsInBatchRef.current = 0;
+                        setRunsInBatch(0);
+                        addLog('BATCH REANALYSIS', data.label, 'PENDING', 0,
+                            `⏸ 5-trade batch complete. Pausing 8s for market reanalysis before next batch…`);
+                        setAutoState('PAUSED'); autoStateRef.current = 'PAUSED';
+                        // Auto-resume after 8 seconds of reanalysis
+                        await new Promise(r => setTimeout(r, 8000));
+                        if ((autoStateRef.current as AutoState) === 'PAUSED') {
+                            addLog('BATCH RESUME', data.label, 'PENDING', 0, '▶ Reanalysis complete. Resuming engine…');
+                            setAutoState('SCANNING'); autoStateRef.current = 'SCANNING';
+                        }
+                    }
+
                     if ((autoStateRef.current as AutoState) !== 'IDLE') { setAutoState('SCANNING'); autoStateRef.current = 'SCANNING'; }
                     await new Promise(r => setTimeout(r, 350));
                 } catch (err) {
@@ -1064,7 +1280,7 @@ const Autoflipper: React.FC = observer(() => {
         };
 
         void loop();
-    }, [loggedIn, stopLoss, martingale, selectedSymbol, getLiveRanked, executeTrade, addLog, throttleRender, autoSwitch, startBalance, targetBalance, currency]);
+    }, [loggedIn, stopLoss, martingale, selectedSymbol, getLiveRanked, executeTrade, addLog, throttleRender, autoSwitch, startBalance, targetBalance, currency, switchSelectedSymbol]);
 
     const pauseBot = useCallback(() => {
         setAutoState('PAUSED'); autoStateRef.current = 'PAUSED';
@@ -1159,6 +1375,21 @@ const Autoflipper: React.FC = observer(() => {
                             ${currentStakeRef.current.toFixed(2)} {currency}
                         </span>
                     </div>
+                    <div className='af2__stat-pill' title='5-trade batch: auto-pauses after 5 runs for reanalysis'>
+                        <span className='af2__stat-label'>Batch Run</span>
+                        <span className='af2__stat-val' style={{ color: autoState === 'PAUSED' ? '#f59e0b' : '#34d399' }}>
+                            {isRunning ? `${runsInBatch}/5` : '—'}
+                        </span>
+                    </div>
+                    <div className='af2__stat-pill af2__dwell-badge' title='Automated 10-minute market rotation countdown'>
+                        <span className='af2__stat-label'>10m Rotation</span>
+                        <span className='af2__stat-val' style={{ color: '#a5b4fc', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <RefreshCw size={11} className={isRunning ? 'af2-spin-slow' : ''} />
+                            {isRunning
+                                ? `${Math.floor(dwellRemainingSec / 60)}:${(dwellRemainingSec % 60).toString().padStart(2, '0')}`
+                                : '10:00'}
+                        </span>
+                    </div>
                     <button className='af2__ai-btn' onClick={() => setIsAiOpen(true)}>
                         <Sparkles size={14} /> AI Lab
                     </button>
@@ -1193,7 +1424,7 @@ const Autoflipper: React.FC = observer(() => {
                                 <div
                                     key={m.symbol}
                                     className={`af2__market-card ${isSelected ? 'af2__market-card--active' : ''} ${m.isTriggered ? 'af2__market-card--triggered' : ''} af2__market-card--${m.condStatus.toLowerCase()}`}
-                                    onClick={() => { setSelectedSymbol(m.symbol); selectedSymbolRef.current = m.symbol; }}
+                                    onClick={() => switchSelectedSymbol(m.symbol)}
                                 >
                                     <div className='af2__mc-top'>
                                         <span className='af2__mc-label'>{m.label}</span>
@@ -1238,7 +1469,7 @@ const Autoflipper: React.FC = observer(() => {
                                 </div>
                             </div>
                             {analysis.condition.isNotGood && allMarkets[0] && allMarkets[0].symbol !== selectedSymbol && (
-                                <button className='af2__switch-btn' onClick={() => { setSelectedSymbol(allMarkets[0].symbol); selectedSymbolRef.current = allMarkets[0].symbol; }}>
+                                <button className='af2__switch-btn' onClick={() => switchSelectedSymbol(allMarkets[0].symbol)}>
                                     <RefreshCw size={13} /> Switch to {allMarkets[0].label}
                                 </button>
                             )}
@@ -1415,7 +1646,7 @@ const Autoflipper: React.FC = observer(() => {
                                 </div>
                                 <div className='af2__input-group'>
                                     <label>Active Market</label>
-                                    <select value={selectedSymbol} onChange={e => { setSelectedSymbol(e.target.value); selectedSymbolRef.current = e.target.value; }} disabled={isRunning}>
+                                    <select value={selectedSymbol} onChange={e => switchSelectedSymbol(e.target.value)} disabled={isRunning}>
                                         {MARKETS.map(m => <option key={m.symbol} value={m.symbol}>{m.label} ({m.symbol})</option>)}
                                     </select>
                                 </div>
@@ -1432,7 +1663,7 @@ const Autoflipper: React.FC = observer(() => {
                             <div className='af2__btn-row'>
                                 {autoState === 'IDLE' ? (
                                     <button className='af2__btn af2__btn--start' onClick={startAutoTrading}>
-                                        <Play size={16} /> START ENGINE
+                                        <Play size={16} fill='currentColor' /> START ENGINE
                                     </button>
                                 ) : (
                                     <>

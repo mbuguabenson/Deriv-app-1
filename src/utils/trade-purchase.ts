@@ -10,6 +10,7 @@ type TBuyContractArgs = {
     parameters: TTradeParameters;
     price: number;
     source: string;
+    instantBuy?: boolean;
 };
 
 class InsufficientDemoBalanceError extends Error {
@@ -102,7 +103,7 @@ const assertSufficientDemoBalance = (required_amount: number, source: string) =>
     }
 };
 
-export const buyContractForUi = async ({ parameters, price, source }: TBuyContractArgs): Promise<Buy> => {
+export const buyContractForUi = async ({ parameters, price, source, instantBuy = false }: TBuyContractArgs): Promise<Buy> => {
     await ensureAuthorizedForTrading();
     assertApiTokenScope('trade');
 
@@ -111,11 +112,13 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
 
     const normalized_parameters = normalizeTradeParameters(parameters);
 
-    try {
-        const proposal_response = await (api_base.api as any).send({
-            proposal: 1,
-            ...normalized_parameters,
-        });
+    // If instantBuy is disabled, attempt the 2-step proposal roundtrip first
+    if (!instantBuy) {
+        try {
+            const proposal_response = await (api_base.api as any).send({
+                proposal: 1,
+                ...normalized_parameters,
+            });
         throwApiError(proposal_response, source);
 
         const proposal = proposal_response?.proposal;
@@ -196,6 +199,7 @@ export const buyContractForUi = async ({ parameters, price, source }: TBuyContra
             throw proposal_error;
         }
         console.info(`[${source}] Proposal buy notice, using direct buy fallback.`);
+    }
     }
 
     assertSufficientDemoBalance(price, source);
