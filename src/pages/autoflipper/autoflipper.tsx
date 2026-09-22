@@ -1246,7 +1246,74 @@ const Autoflipper: React.FC = observer(() => {
                             addLog('MARTINGALE RESET', data.label, 'PENDING', 0, `Max recovery steps (${maxSteps}) reached. Reset to hour stake.`);
                         }
                         playSound('loss');
-                        await new Promise(r => setTimeout(r, 1200));
+
+                        // ── Post-loss re-analysis guard ─────────────────────────────────────
+                        // After every loss (especially the 1st and 2nd consecutive) pause the
+                        // engine and wait for a genuinely fresh TRIGGERED signal before the
+                        // next trade.  Market may be shifting — don't enter blindly.
+                        if (!abortSig.aborted && (autoStateRef.current as AutoState) !== 'IDLE') {
+                            const lossCount = consecutiveLossRef.current;
+                            const cooldownMs = lossCount >= 2 ? 4000 : 2000;
+                            const emoji = lossCount >= 2 ? '🛑' : '⚠️';
+
+                            addLog(
+                                'LOSS GUARD',
+                                data.label,
+                                'PENDING',
+                                0,
+                                `${emoji} ${lossCount} consecutive loss${lossCount > 1 ? 'es' : ''}. Re-analysing market before next entry (may be shifting)…`
+                            );
+                            setAutoState('PAUSED'); autoStateRef.current = 'PAUSED';
+
+                            // Initial cooldown — let the market settle
+                            await new Promise(r => setTimeout(r, cooldownMs));
+
+                            // Poll until a fresh TRIGGERED signal appears (max 60 s)
+                            const pollStart = Date.now();
+                            const maxWait = 60_000;
+                            const pollInterval = 3_000;
+                            let foundSignal = false;
+
+                            while (
+                                !abortSig.aborted &&
+                                (autoStateRef.current as AutoState) === 'PAUSED' &&
+                                Date.now() - pollStart < maxWait
+                            ) {
+                                const liveData = marketsRef.current.get(selectedSymbolRef.current);
+                                if (liveData && liveData.digits.length >= 15) {
+                                    const freshSig = checkEntrySignal(liveData.digits, 'AUTO');
+                                    if (freshSig && freshSig.status === 'TRIGGERED' && !freshSig.isAutoPaused && freshSig.qualityScore >= 55) {
+                                        foundSignal = true;
+                                        addLog(
+                                            'LOSS GUARD CLEARED',
+                                            data.label,
+                                            'PENDING',
+                                            0,
+                                            `✅ High-confidence entry found (Q:${freshSig.qualityScore}). Resuming engine…`
+                                        );
+                                        break;
+                                    }
+                                }
+                                await new Promise(r => setTimeout(r, pollInterval));
+                            }
+
+                            if (!foundSignal && !abortSig.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
+                                addLog(
+                                    'LOSS GUARD TIMEOUT',
+                                    data.label,
+                                    'PENDING',
+                                    0,
+                                    '⏸️ No high-confidence entry after 60 s. Resuming scan — will wait for trigger naturally.'
+                                );
+                            }
+
+                            if (!abortSig.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
+                                setAutoState('SCANNING'); autoStateRef.current = 'SCANNING';
+                            }
+                        } else {
+                            await new Promise(r => setTimeout(r, 1200));
+                        }
+                        // ── End post-loss re-analysis guard ────────────────────────────────
                     }
 
                     // ── Batch pause: every 5 completed trades, pause for reanalysis ──
