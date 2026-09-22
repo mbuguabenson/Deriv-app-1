@@ -214,6 +214,15 @@ export default class ScannerStore implements IScannerStore {
     private candle_cache: Map<string, { direction: 'up' | 'down' | 'neutral'; timestamp: number }> = new Map();
     private is_bot_loading = false;
 
+    // ── Post-loss re-analysis guard ──────────────────────────────────────────
+    // After 1-2 losses the bot pauses and waits for a fresh high-confidence
+    // signal before executing the next trade.  This prevents over-trading into
+    // a shifting market.
+    private _loss_reanalysis_pending = false;
+    private _loss_reanalysis_timer: ReturnType<typeof setTimeout> | null = null;
+    // Minimum signal confidence required to re-enter after a loss streak
+    readonly LOSS_REANALYSIS_MIN_CONFIDENCE = 0.70;
+
     constructor(root_store: RootStore) {
         makeObservable(this, {
             is_open: observable,
@@ -1502,9 +1511,25 @@ export default class ScannerStore implements IScannerStore {
         if (isWin) {
             this.consecutive_losses = 0;
             this.last_trade_result = 'WIN';
+            // Clear any pending re-analysis lock so the bot runs freely after a win
+            this._loss_reanalysis_pending = false;
+            if (this._loss_reanalysis_timer) {
+                clearTimeout(this._loss_reanalysis_timer);
+                this._loss_reanalysis_timer = null;
+            }
         } else {
             this.consecutive_losses += 1;
             this.last_trade_result = 'LOSS';
+
+            // ── Post-loss re-analysis guard ──────────────────────────────────
+            // After the 1st OR 2nd consecutive loss, pause the bot immediately
+            // and re-analyse the market.  Only resume when a fresh high-confidence
+            // signal (≥ LOSS_REANALYSIS_MIN_CONFIDENCE) is confirmed, because the
+            // market may be shifting direction.
+            if (this.consecutive_losses >= 1 && !this._loss_reanalysis_pending) {
+                this._loss_reanalysis_pending = true;
+                await this.triggerPostLossReanalysis(this.consecutive_losses);
+            }
 
             if (this.alternate_after_losses && this.consecutive_losses >= this.switch_strategy_after_losses) {
                 console.log(
@@ -1528,6 +1553,127 @@ export default class ScannerStore implements IScannerStore {
                 this.rotateStrategy();
             }
         }
+    };
+
+    /**
+     * Pause the bot, run a fresh market re-analysis, then wait for a high-
+     * confidence signal before resuming.  Called on the 1st and 2nd consecutive
+     * loss so the bot never blindly continues into a shifting market.
+     */
+    triggerPostLossReanalysis = async (lossCount: number) => {
+        const { run_panel } = this.root_store;
+
+        // 1. Pause the bot immediately so no new trade fires during re-analysis
+        if (run_panel?.is_running && !run_panel?.is_paused) {
+            run_panel.onPauseButtonClick?.();
+        }
+
+        // 2. Log the pause reason to the Journal so the user knows what's happening
+        try {
+            const journal = this.root_store.journal;
+            if (journal?.pushMessage) {
+                const emoji = lossCount >= 2 ? '🛑' : '⚠️';
+                journal.pushMessage(
+                    `${emoji} [LOSS GUARD] ${lossCount} consecutive loss${lossCount > 1 ? 'es' : ''}. ` +
+                        `Bot paused — re-analysing market before next entry. ` +
+                        `Market may be shifting. Waiting for signal ≥ ${(this.LOSS_REANALYSIS_MIN_CONFIDENCE * 100).toFixed(0)}% confidence...`,
+                    'warn',
+                    'journal__text--warn'
+                );
+            }
+        } catch (_) { /* ignore */ }
+
+        // 3. Wait a brief moment for the market to settle (2s on 1st loss, 4s on 2nd+)
+        const cooldownMs = lossCount >= 2 ? 4000 : 2000;
+        await new Promise(resolve => setTimeout(resolve, cooldownMs));
+
+        // 4. Run a full fresh market analysis
+        try {
+            await this.analyzeMarkets();
+        } catch (e) {
+            console.warn('[ScannerStore] Post-loss re-analysis failed:', e);
+        }
+
+        // 5. Poll every 3 s (up to 90 s) until a high-confidence signal is confirmed
+        const maxWaitMs = 90_000;
+        const pollIntervalMs = 3_000;
+        const startTime = Date.now();
+
+        const waitForHighEntry = async (): Promise<void> => {
+            // Abort if the bot was stopped manually or re-analysis was cleared by a win
+            if (!this._loss_reanalysis_pending || this.$scope?.stopped) return;
+            if (run_panel?.is_running && !run_panel?.is_paused) {
+                // Bot already resumed externally — release the lock
+                this._loss_reanalysis_pending = false;
+                return;
+            }
+
+            // Re-analyse on each poll so the signal is truly fresh
+            try { await this.analyzeMarkets(); } catch (_) { /* ignore */ }
+
+            const bestSignal = this.signals.length > 0 ? this.signals[0] : null;
+            const signalConfidence = bestSignal?.confidence ?? 0;
+            const signalStatus = bestSignal?.details?.status;
+
+            if (
+                bestSignal &&
+                signalStatus === 'TRADE NOW' &&
+                signalConfidence >= this.LOSS_REANALYSIS_MIN_CONFIDENCE
+            ) {
+                // High-confidence signal confirmed — resume trading
+                this._loss_reanalysis_pending = false;
+                this._loss_reanalysis_timer = null;
+
+                try {
+                    const journal = this.root_store.journal;
+                    if (journal?.pushMessage) {
+                        journal.pushMessage(
+                            `✅ [LOSS GUARD] High-confidence entry found: ${bestSignal.strategy.toUpperCase()} on ` +
+                                `${bestSignal.symbol} at ${(signalConfidence * 100).toFixed(1)}% confidence. ` +
+                                `Resuming bot now...`,
+                            'success',
+                            'journal__text--success'
+                        );
+                    }
+                } catch (_) { /* ignore */ }
+
+                // Load the freshly confirmed strategy then resume
+                this.current_signal = bestSignal;
+                try { await this.loadBotWithStrategy(); } catch (_) { /* ignore */ }
+                setTimeout(() => {
+                    if (run_panel?.is_running && run_panel?.is_paused) {
+                        run_panel.onResumeFromPause?.();
+                    } else if (!run_panel?.is_running) {
+                        run_panel.onRunButtonClick?.();
+                    }
+                }, 1000);
+                return;
+            }
+
+            // Timed out — log and stay paused; don't force a bad trade
+            if (Date.now() - startTime >= maxWaitMs) {
+                this._loss_reanalysis_pending = false;
+                this._loss_reanalysis_timer = null;
+                try {
+                    const journal = this.root_store.journal;
+                    if (journal?.pushMessage) {
+                        journal.pushMessage(
+                            `⏸️ [LOSS GUARD] No high-confidence entry found after 90 s. ` +
+                                `Bot remains paused. Resume manually when conditions improve.`,
+                            'warn',
+                            'journal__text--warn'
+                        );
+                    }
+                } catch (_) { /* ignore */ }
+                return;
+            }
+
+            // Schedule the next poll
+            this._loss_reanalysis_timer = setTimeout(waitForHighEntry, pollIntervalMs);
+        };
+
+        // Kick off the first poll
+        await waitForHighEntry();
     };
 
     rotateStrategy = async () => {
