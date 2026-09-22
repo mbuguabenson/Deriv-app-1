@@ -112,8 +112,8 @@ class DerivTickManager {
                 const observable = api.onMessage();
                 if (observable && typeof observable.subscribe === 'function') {
                     this.messageSubscription = observable.subscribe(
-                        ({ data }: { data: Record<string, any> }) => {
-                            this.handleIncomingSocketMessage(data);
+                        (msg: any) => {
+                            this.handleIncomingSocketMessage(msg);
                         },
                         (err: unknown) => {
                             console.warn('[DerivTickManager] onMessage error notice:', err);
@@ -129,8 +129,9 @@ class DerivTickManager {
         }
     }
 
-    private handleIncomingSocketMessage(data: Record<string, any>) {
-        if (!data) return;
+    private handleIncomingSocketMessage(incoming: Record<string, any>) {
+        if (!incoming) return;
+        const data = incoming.data || incoming;
 
         if (data.msg_type === 'tick' && data.tick) {
             const sym = (data.tick.symbol || data.echo_req?.ticks) as string;
@@ -261,7 +262,16 @@ class DerivTickManager {
      */
     private async dispatchDerivSubscription(symbol: string) {
         const api = api_base.api;
-        if (!api || typeof api.send !== 'function') return;
+        if (!api || typeof api.send !== 'function' || api?.connection?.readyState !== 1) {
+            // Socket not connected yet — keep in queue and retry shortly
+            if (!this.subscriptionQueue.includes(symbol)) {
+                this.subscriptionQueue.push(symbol);
+            }
+            setTimeout(() => {
+                void this.processSubscriptionQueue();
+            }, 400);
+            return;
+        }
 
         const record = this.streams.get(symbol);
         if (!record || record.listeners.size === 0) return;
@@ -383,7 +393,8 @@ class DerivTickManager {
             this.streams.forEach((record, symbol) => {
                 if (record && record.listeners && record.listeners.size > 0) {
                     const elapsed = now - (record.lastTickEpoch || 0);
-                    if (elapsed > 4500) {
+                    if (elapsed > 3500 || record.lastTickEpoch === 0) {
+                        record.isSubscribedInDeriv = false;
                         this.enqueueDerivSubscription(symbol);
                     }
                 }

@@ -42,6 +42,9 @@ const MAX_DIGITS_BUFFER = 1000;
 const CHART_DIGITS = 50;
 const MIN_ANALYSIS_DWELL_TICKS = 8;
 const MIN_ANALYSIS_DWELL_MS = 4000;
+const SMART_SWITCH_COOLDOWN_MS = 12000; // min ms between market switches
+const PERSIST_KEY = 'af2_engine_state';
+const PING_INTERVAL_MS = 25000; // keep-alive WebSocket ping
 
 const MARKETS = [
     { symbol: 'R_10', label: 'Vol 10' },
@@ -55,6 +58,69 @@ const MARKETS = [
     { symbol: '1HZ75V', label: 'Vol 75 (1s)' },
     { symbol: '1HZ100V', label: 'Vol 100 (1s)' },
 ];
+
+// ─── Persistence helpers ──────────────────────────────────────────────────────
+
+type PersistedState = {
+    totalProfit: number;
+    hourProfit: number;
+    wins: number;
+    losses: number;
+    currentHour: number;
+    currentStake: number;
+    consecutiveLoss: number;
+    selectedSymbol: string;
+    startBalance: string;
+    targetBalance: string;
+    martingale: string;
+    stopLoss: string;
+    tickDuration: string;
+    savedAt: number;
+};
+
+const loadPersistedState = (): PersistedState | null => {
+    try {
+        const raw = localStorage.getItem(PERSIST_KEY);
+        if (!raw) return null;
+        const s: PersistedState = JSON.parse(raw);
+        // Discard stale saves older than 12 hours
+        if (!s.savedAt || Date.now() - s.savedAt > 12 * 60 * 60 * 1000) return null;
+        return s;
+    } catch { return null; }
+};
+
+const savePersistedState = (s: PersistedState): void => {
+    try { localStorage.setItem(PERSIST_KEY, JSON.stringify({ ...s, savedAt: Date.now() })); } catch {}
+};
+
+const clearPersistedState = (): void => {
+    try { localStorage.removeItem(PERSIST_KEY); } catch {}
+};
+
+// ─── WebSocket readiness helper ───────────────────────────────────────────────
+
+/** Waits until api_base WebSocket is open (readyState === 1), up to maxWait ms */
+const waitForSocketReady = (maxWait = 8000): Promise<boolean> => {
+    return new Promise(resolve => {
+        if (api_base?.api?.connection?.readyState === 1) {
+            resolve(true);
+            return;
+        }
+        const deadline = Date.now() + maxWait;
+        const check = () => {
+            if (api_base?.api?.connection?.readyState === 1) {
+                resolve(true);
+                return;
+            }
+            if (Date.now() >= deadline) {
+                resolve(false);
+                return;
+            }
+            setTimeout(check, 150);
+        };
+        check();
+    });
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────────
 
@@ -491,25 +557,29 @@ const Autoflipper: React.FC = observer(() => {
     const currency = client?.currency || 'USD';
     const loggedIn = Boolean(client?.is_logged_in || isLoggedIn() || api_base.is_authorized);
 
-    // ── Config State ──
-    const [startBalance, setStartBalance] = useState<string>(String(FLIP_START_DEFAULT));
-    const [targetBalance, setTargetBalance] = useState<string>(String(FLIP_TARGET_DEFAULT));
-    const [martingale, setMartingale] = useState<string>('2.6');
-    const [stopLoss, setStopLoss] = useState<string>('50');
-    const [tickDuration, setTickDuration] = useState<string>('1');
+    // ── Config State (restored from persistence if available) ──
+    const _ps = React.useMemo(() => loadPersistedState(), []);
+    const [startBalance, setStartBalance] = useState<string>(_ps?.startBalance ?? String(FLIP_START_DEFAULT));
+    const [targetBalance, setTargetBalance] = useState<string>(_ps?.targetBalance ?? String(FLIP_TARGET_DEFAULT));
+    const [martingale, setMartingale] = useState<string>(_ps?.martingale ?? '2.6');
+    const [stopLoss, setStopLoss] = useState<string>(_ps?.stopLoss ?? '50');
+    const [tickDuration, setTickDuration] = useState<string>(_ps?.tickDuration ?? '1');
 
     // ── Market State ──
-    const [selectedSymbol, setSelectedSymbol] = useState<string>('1HZ10V');
+    const [selectedSymbol, setSelectedSymbol] = useState<string>(_ps?.selectedSymbol ?? '1HZ10V');
     const [scanAll, setScanAll] = useState<boolean>(true);
     const [autoSwitch, setAutoSwitch] = useState<boolean>(true);
 
-    // ── Engine State ──
+    // ── WS Status ──
+    const [wsReady, setWsReady] = useState<boolean>(Boolean(api_base?.is_authorized));
+
+    // ── Engine State (restored from persistence) ──
     const [autoState, setAutoState] = useState<AutoState>('IDLE');
-    const [totalProfit, setTotalProfit] = useState<number>(0);
-    const [hourProfit, setHourProfit] = useState<number>(0);
-    const [wins, setWins] = useState<number>(0);
-    const [losses, setLosses] = useState<number>(0);
-    const [currentHour, setCurrentHour] = useState<number>(1);
+    const [totalProfit, setTotalProfit] = useState<number>(_ps?.totalProfit ?? 0);
+    const [hourProfit, setHourProfit] = useState<number>(_ps?.hourProfit ?? 0);
+    const [wins, setWins] = useState<number>(_ps?.wins ?? 0);
+    const [losses, setLosses] = useState<number>(_ps?.losses ?? 0);
+    const [currentHour, setCurrentHour] = useState<number>(_ps?.currentHour ?? 1);
     const [schedule, setSchedule] = useState<HourStage[]>([]);
     const [showSchedule, setShowSchedule] = useState<boolean>(false);
 
@@ -532,15 +602,16 @@ const Autoflipper: React.FC = observer(() => {
     const autoStateRef = useRef<AutoState>('IDLE');
     const autoAbortRef = useRef<AbortController | null>(null);
     const contractAbortsRef = useRef<Set<AbortController>>(new Set());
-    const currentStakeRef = useRef<number>(0.35);
-    const totalProfitRef = useRef<number>(0);
-    const hourProfitRef = useRef<number>(0);
-    const winsRef = useRef<number>(0);
-    const lossesRef = useRef<number>(0);
-    const consecutiveLossRef = useRef<number>(0);
+    const currentStakeRef = useRef<number>(_ps?.currentStake ?? 0.35);
+    const totalProfitRef = useRef<number>(_ps?.totalProfit ?? 0);
+    const hourProfitRef = useRef<number>(_ps?.hourProfit ?? 0);
+    const winsRef = useRef<number>(_ps?.wins ?? 0);
+    const lossesRef = useRef<number>(_ps?.losses ?? 0);
+    const consecutiveLossRef = useRef<number>(_ps?.consecutiveLoss ?? 0);
     const selectedSymbolRef = useRef<string>(selectedSymbol);
-    const currentHourRef = useRef<number>(1);
+    const currentHourRef = useRef<number>(_ps?.currentHour ?? 1);
     const scheduleRef = useRef<HourStage[]>([]);
+    const smartSwitchLastRef = useRef<number>(0); // timestamp of last market switch
     const [, forceRender] = useState<number>(0);
     const [streamKey, setStreamKey] = useState<number>(0);
 
@@ -548,6 +619,26 @@ const Autoflipper: React.FC = observer(() => {
     useEffect(() => { selectedSymbolRef.current = selectedSymbol; }, [selectedSymbol]);
     useEffect(() => { autoStateRef.current = autoState; }, [autoState]);
     useEffect(() => { currentHourRef.current = currentHour; }, [currentHour]);
+
+    // Periodic persistence save (every 5 s while running)
+    useEffect(() => {
+        const saveInterval = setInterval(() => {
+            if (autoStateRef.current === 'IDLE') return;
+            savePersistedState({
+                totalProfit: totalProfitRef.current,
+                hourProfit: hourProfitRef.current,
+                wins: winsRef.current,
+                losses: lossesRef.current,
+                currentHour: currentHourRef.current,
+                currentStake: currentStakeRef.current,
+                consecutiveLoss: consecutiveLossRef.current,
+                selectedSymbol: selectedSymbolRef.current,
+                startBalance, targetBalance, martingale, stopLoss, tickDuration,
+                savedAt: Date.now(),
+            });
+        }, 5000);
+        return () => clearInterval(saveInterval);
+    }, [startBalance, targetBalance, martingale, stopLoss, tickDuration]);
 
     // Throttled render
     const throttleRender = useCallback(() => {
@@ -593,14 +684,17 @@ const Autoflipper: React.FC = observer(() => {
         return result;
     }, []);
 
-    // ── 1000-tick history fetch ──
+    // ── 1000-tick history fetch (fast non-blocking, retries if socket connecting) ──
     const fetchHistory = useCallback(async (sym: string) => {
         if (histFetchedRef.current.has(sym)) return;
         histFetchedRef.current.add(sym);
         try {
+            await waitForSocketReady(6000);
             if (api_base?.api?.connection?.readyState === 1) {
-                const res = await (api_base.api.send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' }).catch(() => null)) as { history?: { prices?: (number|string)[] } } | null;
-                if (res?.history?.prices && res.history.prices.length > 0) {
+                const res = (await api_base.api
+                    .send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' })
+                    .catch(() => null)) as { history?: { prices?: (number | string)[] } } | null;
+                if (res?.history?.prices && Array.isArray(res.history.prices) && res.history.prices.length > 0) {
                     const m = marketsRef.current.get(sym);
                     if (m) {
                         m.digits = res.history.prices.map(p => extractDigit(p)).slice(-MAX_DIGITS_BUFFER);
@@ -610,11 +704,73 @@ const Autoflipper: React.FC = observer(() => {
                         throttleRender();
                     }
                 }
+            } else {
+                histFetchedRef.current.delete(sym);
             }
-        } catch { /* ignore */ }
+        } catch {
+            histFetchedRef.current.delete(sym);
+        }
     }, [throttleRender]);
 
-    // ── Stream setup ──
+    // ── WebSocket assurance & reconnect listeners ──
+    useEffect(() => {
+        if (!api_base.api || api_base.api?.connection?.readyState !== 1) {
+            api_base.init().catch(() => {});
+        }
+        if (api_base?.api?.connection?.readyState === 1) {
+            setWsReady(true);
+        }
+        const onWsOpen = () => {
+            setWsReady(true);
+            histFetchedRef.current.clear();
+            derivTickManager.resubscribeAll('ws.opened');
+            setStreamKey(k => k + 1);
+        };
+        const onAuth = () => {
+            setWsReady(true);
+            histFetchedRef.current.clear();
+            derivTickManager.resubscribeAll('api.authorize');
+            setStreamKey(k => k + 1);
+        };
+        globalObserver.register('ws.opened', onWsOpen);
+        globalObserver.register('api.authorize', onAuth);
+        return () => {
+            globalObserver.unregister('ws.opened', onWsOpen);
+            globalObserver.unregister('api.authorize', onAuth);
+        };
+    }, []);
+
+    // ── Keep-alive ping + Wake Lock ──
+    useEffect(() => {
+        let wakeLock: WakeLockSentinel | null = null;
+        const acquireWakeLock = async () => {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await (navigator as any).wakeLock.request('screen');
+                }
+            } catch { /* wake lock denied — fallback to ping */ }
+        };
+        void acquireWakeLock();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') void acquireWakeLock();
+        });
+        // WebSocket keep-alive ping every 25 s
+        const pingInterval = setInterval(() => {
+            try {
+                if (api_base?.api?.connection?.readyState === 1) {
+                    api_base.api.send({ ping: 1 }).catch(() => {});
+                } else {
+                    derivTickManager.healStalledStreams();
+                }
+            } catch {}
+        }, PING_INTERVAL_MS);
+        return () => {
+            clearInterval(pingInterval);
+            if (wakeLock) { try { wakeLock.release(); } catch {} }
+        };
+    }, []);
+
+    // ── Stream event listeners (account switch / online / visibility / watchdog) ──
     useEffect(() => {
         const handleRefresh = () => {
             subsRef.current.forEach(s => { try { s.unsubscribe(); } catch {} });
@@ -623,24 +779,35 @@ const Autoflipper: React.FC = observer(() => {
             derivTickManager.healStalledStreams();
             setStreamKey(k => k + 1);
         };
-        const handleVisibility = () => { if (!document.hidden) { derivTickManager.healStalledStreams(); setStreamKey(k => k + 1); } };
+        const handleVisibility = () => {
+            if (!document.hidden) {
+                derivTickManager.healStalledStreams();
+                setStreamKey(k => k + 1);
+            }
+        };
         window.addEventListener('account_switched', handleRefresh);
         window.addEventListener('online', handleRefresh);
         document.addEventListener('visibilitychange', handleVisibility);
-        globalObserver.register('api.authorize', handleRefresh);
+
         const watchdog = setInterval(() => {
             if (unmountedRef.current || document.hidden) return;
             const cur = marketsRef.current.get(selectedSymbolRef.current);
-            if (cur && cur.lastTickTime > 0 && Date.now() - cur.lastTickTime > 4000) derivTickManager.healStalledStreams();
+            const now = Date.now();
+            const isStale = !cur || cur.lastTickTime === 0 || now - cur.lastTickTime > 3500;
+            if (isStale) {
+                derivTickManager.healStalledStreams();
+                histFetchedRef.current.delete(selectedSymbolRef.current);
+                void fetchHistory(selectedSymbolRef.current);
+            }
         }, 3000);
+
         return () => {
             window.removeEventListener('account_switched', handleRefresh);
             window.removeEventListener('online', handleRefresh);
             document.removeEventListener('visibilitychange', handleVisibility);
-            globalObserver.unregister('api.authorize', handleRefresh);
             clearInterval(watchdog);
         };
-    }, []);
+    }, [fetchHistory]);
 
     useEffect(() => {
         const syms = scanAll ? MARKETS.map(m => m.symbol) : [selectedSymbol];
@@ -657,8 +824,8 @@ const Autoflipper: React.FC = observer(() => {
                 if (unmountedRef.current) return;
                 const m = marketsRef.current.get(sym);
                 if (!m) return;
-                const tickData = data?.tick as { quote?: number | string } | undefined;
-                const quote = tickData?.quote;
+                const tickObj = (data?.tick || data) as { quote?: number | string; symbol?: string } | undefined;
+                const quote = tickObj?.quote;
                 if (quote !== undefined && quote !== null) {
                     const digit = extractDigit(quote);
                     aiContinuousLearningService.ingestMarketTick(sym, digit);
@@ -913,6 +1080,7 @@ const Autoflipper: React.FC = observer(() => {
         autoAbortRef.current?.abort(); autoAbortRef.current = null;
         contractAbortsRef.current.forEach(c => c.abort()); contractAbortsRef.current.clear();
         addLog('BOT STOPPED', selectedSymbolRef.current, 'PENDING', 0);
+        clearPersistedState();
     }, [addLog]);
 
     // ── Derived UI data ──
@@ -1083,7 +1251,7 @@ const Autoflipper: React.FC = observer(() => {
                             <span className='af2__hero-label'>LIVE PRICE</span>
                             <div className='af2__price-row'>
                                 <span className='af2__price-val'>{activeData?.currentPrice ?? '—'}</span>
-                                <span className='af2__live-dot' />
+                                <span className={`af2__live-dot ${activeData?.lastTickTime && Date.now() - activeData.lastTickTime < 4000 ? 'af2__live-dot--active' : ''}`} />
                             </div>
                             <span className='af2__price-sym'>{MARKETS.find(m => m.symbol === selectedSymbol)?.label}</span>
                         </div>
