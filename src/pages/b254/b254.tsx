@@ -12,16 +12,13 @@ import { aiContinuousLearningService } from '@/services/ai-continuous-learning.s
 // B254 Types & Engine
 import {
     B254AutoState,
+    B254ManualConfig,
     B254MarketData,
     B254SignalResult,
     B254TransactionRecord,
-    CompoundingConfig,
-    SessionState,
-    TargetStrategyChoice,
     TradeConditionSnapshot,
 } from './types/b254.types';
 import {
-    calculateCompoundingPlan,
     computeDigitPower,
     computeMultiHorizon,
     evaluateB254Signal,
@@ -29,7 +26,7 @@ import {
 } from './services/b254-engine';
 
 // B254 Subcomponents
-import { CompoundingDashboard } from './components/compounding-dashboard';
+import { B254TradingDashboard } from './components/b254-trading-dashboard';
 import { LiveDigitChart } from './components/live-digit-chart';
 import { StatisticalCards } from './components/statistical-cards';
 import { SignalScoringHud } from './components/signal-scoring-hud';
@@ -37,8 +34,6 @@ import { MarketUnderstandingCard } from './components/market-understanding-card'
 import { TradingControlPanel } from './components/trading-control-panel';
 import { MarketScannerSidebar, ScannerMarketItem } from './components/market-scanner-sidebar';
 import { TransactionDrawer } from './components/transaction-drawer';
-import { CompoundingScheduleModal } from './components/compounding-schedule-modal';
-import { CompoundingSettingsModal } from './components/compounding-settings-modal';
 
 import './b254.scss';
 import { ChevronRight, History, Radio, Sparkles } from 'lucide-react';
@@ -46,6 +41,9 @@ import { ChevronRight, History, Radio, Sparkles } from 'lucide-react';
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const MAX_TICKS_STORED = 1000;
+const MARKET_DWELL_LIMIT_MS = 10 * 60 * 1000; // 10 minutes dwell before scheduled rotation
+const CONFIG_STORAGE_KEY = 'b254_manual_config';
+const SESSION_STORAGE_KEY = 'b254_session_state';
 
 const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
     symbol: m.symbol,
@@ -53,29 +51,19 @@ const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
     pip: m.pip || 2,
 }));
 
-const DEFAULT_COMPOUNDING_CONFIG: CompoundingConfig = {
-    challengeName: 'B254 30-Day Master Compounding',
-    startBalance: 20,
-    targetBalance: 8080,
-    durationValue: 30,
-    timeUnit: 'DAYS',
-    days: 30,
-    stakeType: 'PERCENTAGE',
-    baseStake: 0.50,
-    stakePercentage: 2.0,
+const DEFAULT_MANUAL_CONFIG: B254ManualConfig = {
+    stake: 0.50,
+    takeProfit: 25.0,
+    stopLoss: 20.0,
     enableMartingale: true,
     martingaleMultiplier: 2.6,
-    maxStake: 100,
-    dailyTakeProfit: 50,
-    dailyStopLoss: 30,
-    sessionTakeProfit: 25,
-    sessionStopLoss: 15,
-    maxConsecutiveLosses: 4,
-    maxTradesPerSession: 50,
-    signalScoreThreshold: 75,
-    reanalysisIntervalMinutes: 10,
-    sessionDurationMinutes: 60,
-    sessionStartTime: '00:00',
+    maxConsecutiveLosses: 5,
+    maxStake: 100.0,
+    tickDuration: 1,
+    targetStrategy: 'AUTO',
+    autoSwitchMarkets: true,
+    lossGuardEnabled: true,
+    minQualityScore: 65,
 };
 
 const extractLastDigit = (quote: number | string | undefined | null, pip = 2): number => {
@@ -88,6 +76,44 @@ const extractLastDigit = (quote: number | string | undefined | null, pip = 2): n
     return isNaN(digit) ? 0 : digit;
 };
 
+// ─── Sound Cues ────────────────────────────────────────────────────────────────
+
+const playSound = (type: 'win' | 'loss' | 'signal') => {
+    try {
+        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+        if (type === 'win') {
+            osc.frequency.setValueAtTime(587, now);
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+            osc.start(now);
+            osc.stop(now + 0.35);
+        } else if (type === 'loss') {
+            osc.frequency.setValueAtTime(392, now);
+            osc.frequency.exponentialRampToValueAtTime(220, now + 0.2);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else {
+            osc.frequency.setValueAtTime(659, now);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+        }
+    } catch {
+        /* audio context blocked or unavailable */
+    }
+};
+
 // ─── Master B254 Component ─────────────────────────────────────────────────────
 
 export const B254Page: React.FC = observer(() => {
@@ -95,27 +121,27 @@ export const B254Page: React.FC = observer(() => {
     const { client } = store;
     const currency = client?.currency || 'USD';
 
-    // ── Local Storage Config Persistence ──
-    const [config, setConfig] = useState<CompoundingConfig>(() => {
+    // ── Manual Config State (LocalStorage persistence) ──
+    const [config, setConfig] = useState<B254ManualConfig>(() => {
         try {
-            const saved = localStorage.getItem('b254_compounding_config');
-            return saved ? { ...DEFAULT_COMPOUNDING_CONFIG, ...JSON.parse(saved) } : DEFAULT_COMPOUNDING_CONFIG;
+            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+            return saved ? { ...DEFAULT_MANUAL_CONFIG, ...JSON.parse(saved) } : DEFAULT_MANUAL_CONFIG;
         } catch {
-            return DEFAULT_COMPOUNDING_CONFIG;
+            return DEFAULT_MANUAL_CONFIG;
         }
     });
 
-    const updateConfig = useCallback((partial: Partial<CompoundingConfig>) => {
+    const updateConfig = useCallback((partial: Partial<B254ManualConfig>) => {
         setConfig(prev => {
             const next = { ...prev, ...partial };
             try {
-                localStorage.setItem('b254_compounding_config', JSON.stringify(next));
+                localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next));
             } catch {}
             return next;
         });
     }, []);
 
-    // ── Actual Balance & Compounding Plan ──
+    // ── Actual Balance ──
     const actualBalance = useMemo(() => {
         const clientBal = client?.balance;
         if (typeof clientBal === 'number') return clientBal;
@@ -123,27 +149,76 @@ export const B254Page: React.FC = observer(() => {
             const p = parseFloat(clientBal);
             if (!isNaN(p)) return p;
         }
-        return config.startBalance;
-    }, [client?.balance, config.startBalance]);
+        return 0;
+    }, [client?.balance]);
 
-    const compoundingProgress = useMemo(() => {
-        return calculateCompoundingPlan(
-            config.startBalance,
-            config.targetBalance,
-            config.durationValue || config.days || 30,
-            config.timeUnit || 'DAYS',
-            actualBalance
-        );
-    }, [config.startBalance, config.targetBalance, config.durationValue, config.days, config.timeUnit, actualBalance]);
-
-    // ── Market Data Streams ──
+    // ── Market Data Streams & Selection ──
     const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
     const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(true);
-    const [autoInputBestMarket, setAutoInputBestMarket] = useState<boolean>(false);
     const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(false);
-    const [targetStrategy, setTargetStrategy] = useState<TargetStrategyChoice>('AUTO');
 
-    // UI Force Refresh Key for high-frequency render updates
+    // ── Session Trading Stats ──
+    const [totalProfit, setTotalProfit] = useState<number>(() => {
+        try {
+            const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (saved) return JSON.parse(saved).totalProfit || 0;
+        } catch {}
+        return 0;
+    });
+    const [wins, setWins] = useState<number>(() => {
+        try {
+            const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (saved) return JSON.parse(saved).wins || 0;
+        } catch {}
+        return 0;
+    });
+    const [losses, setLosses] = useState<number>(() => {
+        try {
+            const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+            if (saved) return JSON.parse(saved).losses || 0;
+        } catch {}
+        return 0;
+    });
+    const [consecutiveLosses, setConsecutiveLosses] = useState<number>(0);
+    const [martingaleLevel, setMartingaleLevel] = useState<number>(0);
+    const [currentStake, setCurrentStake] = useState<number>(config.stake);
+
+    // Sync stake when idle and config stake changes
+    useEffect(() => {
+        if (autoStateRef.current === 'IDLE' && martingaleLevel === 0) {
+            setCurrentStake(config.stake);
+            currentStakeRef.current = config.stake;
+        }
+    }, [config.stake, martingaleLevel]);
+
+    // ── Engine Execution State ──
+    const [autoState, setAutoState] = useState<B254AutoState>('IDLE');
+
+    // ── 10-Minute Dwell Countdown Timer ──
+    const marketStartTimeRef = useRef<number>(Date.now());
+    const [dwellRemainingSec, setDwellRemainingSec] = useState<number>(600);
+
+    const switchSelectedSymbol = useCallback((sym: string) => {
+        setSelectedSymbol(sym);
+        selectedSymbolRef.current = sym;
+        marketStartTimeRef.current = Date.now();
+        setDwellRemainingSec(600);
+    }, []);
+
+    useEffect(() => {
+        if (autoState === 'IDLE') {
+            setDwellRemainingSec(600);
+            return;
+        }
+        const dwellInterval = setInterval(() => {
+            const elapsed = Date.now() - marketStartTimeRef.current;
+            const rem = Math.max(0, Math.ceil((MARKET_DWELL_LIMIT_MS - elapsed) / 1000));
+            setDwellRemainingSec(rem);
+        }, 1000);
+        return () => clearInterval(dwellInterval);
+    }, [autoState]);
+
+    // ── UI Force Refresh Key for High-Frequency Render Updates ──
     const [, setRenderTrigger] = useState<number>(0);
     const throttleRender = useRef<() => void>(() => {});
     useEffect(() => {
@@ -152,18 +227,17 @@ export const B254Page: React.FC = observer(() => {
             if (!timer) {
                 timer = setTimeout(() => {
                     timer = null;
-                    setRenderTrigger(t => (t + 1) % 10000);
-                }, 150);
+                    setRenderTrigger(t => (t + 1) % 100000);
+                }, 100);
             }
         };
     }, []);
 
-    // Map storing market tick buffers
+    // ── Market Buffers & WebSockets ──
     const marketsDataRef = useRef<Map<string, B254MarketData>>(new Map());
     const subscriptionsRef = useRef<Map<string, { unsubscribe?: () => void }>>(new Map());
     const isMountedRef = useRef<boolean>(true);
 
-    // Initialize market buffers
     if (marketsDataRef.current.size === 0) {
         MARKETS.forEach(m => {
             marketsDataRef.current.set(m.symbol, {
@@ -178,27 +252,6 @@ export const B254Page: React.FC = observer(() => {
             });
         });
     }
-
-    // ── Automated Trading & Session State ──
-    const [autoState, setAutoState] = useState<B254AutoState>('IDLE');
-    const [martingaleLevel, setMartingaleLevel] = useState<number>(0);
-    const [consecutiveLosses, setConsecutiveLosses] = useState<number>(0);
-    const [sessionProfit, setSessionProfit] = useState<number>(0);
-    const [dailyProfit, setDailyProfit] = useState<number>(0);
-
-    const [sessionState, setSessionState] = useState<SessionState>({
-        isActive: false,
-        startTime: null,
-        endTime: null,
-        sessionDurationSeconds: config.sessionDurationMinutes * 60,
-        timeRemainingSeconds: config.sessionDurationMinutes * 60,
-        nextReanalysisCountdownSeconds: config.reanalysisIntervalMinutes * 60,
-        nextCheckpointFormatted: '10:00',
-        tradesThisSession: 0,
-        sessionProfit: 0,
-        dailyProfit: 0,
-        isSessionLocked: false,
-    });
 
     // ── Transactions Ledger ──
     const [transactions, setTransactions] = useState<B254TransactionRecord[]>(() => {
@@ -221,8 +274,6 @@ export const B254Page: React.FC = observer(() => {
     }, []);
 
     // ── Modals & Drawers ──
-    const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
     const [milestoneModal, setMilestoneModal] = useState<{
         isOpen: boolean;
@@ -234,15 +285,71 @@ export const B254Page: React.FC = observer(() => {
         amount: 0,
     });
 
-    // Trading in-progress execution lock
-    const isExecutingTradeRef = useRef<boolean>(false);
+    // ── Refs for Loop Access ──
     const autoStateRef = useRef<B254AutoState>(autoState);
     autoStateRef.current = autoState;
 
     const selectedSymbolRef = useRef<string>(selectedSymbol);
     selectedSymbolRef.current = selectedSymbol;
 
-    // ─── WebSocket Tick Subscription Management ────────────────────────────────
+    const configRef = useRef<B254ManualConfig>(config);
+    configRef.current = config;
+
+    const totalProfitRef = useRef<number>(totalProfit);
+    totalProfitRef.current = totalProfit;
+
+    const winsRef = useRef<number>(wins);
+    winsRef.current = wins;
+
+    const lossesRef = useRef<number>(losses);
+    lossesRef.current = losses;
+
+    const consecutiveLossesRef = useRef<number>(consecutiveLosses);
+    consecutiveLossesRef.current = consecutiveLosses;
+
+    const martingaleLevelRef = useRef<number>(martingaleLevel);
+    martingaleLevelRef.current = martingaleLevel;
+
+    const currentStakeRef = useRef<number>(currentStake);
+    currentStakeRef.current = currentStake;
+
+    const autoAbortRef = useRef<AbortController | null>(null);
+
+    // Save session state to localStorage periodically
+    const saveSessionState = useCallback(() => {
+        try {
+            localStorage.setItem(
+                SESSION_STORAGE_KEY,
+                JSON.stringify({
+                    totalProfit: totalProfitRef.current,
+                    wins: winsRef.current,
+                    losses: lossesRef.current,
+                })
+            );
+        } catch {}
+    }, []);
+
+    // Reset session stats handler
+    const handleResetStats = useCallback(() => {
+        if (autoStateRef.current !== 'IDLE') return;
+        setTotalProfit(0);
+        totalProfitRef.current = 0;
+        setWins(0);
+        winsRef.current = 0;
+        setLosses(0);
+        lossesRef.current = 0;
+        setConsecutiveLosses(0);
+        consecutiveLossesRef.current = 0;
+        setMartingaleLevel(0);
+        martingaleLevelRef.current = 0;
+        setCurrentStake(config.stake);
+        currentStakeRef.current = config.stake;
+        try {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+        } catch {}
+    }, [config.stake]);
+
+    // ─── WebSocket Tick Subscriptions ──────────────────────────────────────────
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -270,7 +377,6 @@ export const B254Page: React.FC = observer(() => {
         document.addEventListener('visibilitychange', handleVisibility);
         globalObserver.register('api.authorize', handleRefresh);
 
-        // 3-second watchdog timer to heal stalled streams
         const watchdog = setInterval(() => {
             if (!isMountedRef.current || document.hidden) return;
             const current = marketsDataRef.current.get(selectedSymbolRef.current);
@@ -290,7 +396,6 @@ export const B254Page: React.FC = observer(() => {
         };
     }, []);
 
-    // Subscribe to Active Market and Scanned Volatility Markets
     useEffect(() => {
         const activeSubs = subscriptionsRef.current;
         const symbolsToStream = scanAllMarkets ? MARKETS.map(m => m.symbol) : [selectedSymbol];
@@ -302,7 +407,6 @@ export const B254Page: React.FC = observer(() => {
 
             try {
                 const mData = marketsDataRef.current.get(sym);
-                // Fetch initial tick history if missing
                 if (!mData || mData.digits.length < 50) {
                     const res = await api_base.api.send({
                         ticks_history: sym,
@@ -330,7 +434,6 @@ export const B254Page: React.FC = observer(() => {
 
                 if (activeSubs.has(sym)) return;
 
-                // Subscribe via centralized WebSocket multiplexer
                 const sub = subscribeTicks(sym, (tickRes: Record<string, unknown>) => {
                     if (!isMountedRef.current) return;
                     const tickData = tickRes?.tick as { quote?: number | string; symbol?: string } | undefined;
@@ -346,18 +449,13 @@ export const B254Page: React.FC = observer(() => {
                             item.tickCount = (item.tickCount || 0) + 1;
                             item.lastTickTime = Date.now();
                             throttleRender.current();
-
-                            // Trigger Trade Check if this tick belongs to currently selected market
-                            if (sym === selectedSymbolRef.current) {
-                                handleLiveMarketTick(item);
-                            }
                         }
                     }
                 });
 
                 activeSubs.set(sym, sub);
             } catch (err) {
-                console.warn(`[B254] Subscription notice for ${sym}:`, err);
+                console.warn(`[B254] Subscription error for ${sym}:`, err);
             }
         };
 
@@ -365,7 +463,6 @@ export const B254Page: React.FC = observer(() => {
             subscribeSymbol(sym);
         });
 
-        // Unsubscribe from unneeded markets if scanAllMarkets was toggled off
         if (!scanAllMarkets) {
             activeSubs.forEach((sub, sym) => {
                 if (sym !== selectedSymbol) {
@@ -378,8 +475,7 @@ export const B254Page: React.FC = observer(() => {
         }
     }, [selectedSymbol, scanAllMarkets]);
 
-    // ─── Market Data Slices for Currently Selected Market ───────────────────────
-
+    // ── Market Data Slices ──
     const currentMarketData: B254MarketData = useMemo(() => {
         return (
             marketsDataRef.current.get(selectedSymbol) || {
@@ -410,13 +506,12 @@ export const B254Page: React.FC = observer(() => {
     const currentSignal: B254SignalResult | null = useMemo(() => {
         return evaluateB254Signal(
             currentMarketData.digits,
-            targetStrategy,
-            config.signalScoreThreshold
+            config.targetStrategy,
+            config.minQualityScore
         );
-    }, [currentMarketData.digits, targetStrategy, config.signalScoreThreshold]);
+    }, [currentMarketData.digits, config.targetStrategy, config.minQualityScore]);
 
-    // ─── Multi-Market Scanner Evaluations ──────────────────────────────────────
-
+    // ── Multi-Market Scanner Evaluations ──
     const scannerMarkets: ScannerMarketItem[] = useMemo(() => {
         const list: ScannerMarketItem[] = [];
 
@@ -451,7 +546,7 @@ export const B254Page: React.FC = observer(() => {
 
             const mh = computeMultiHorizon(digits);
             const reg = evaluateRegime(digits);
-            const sig = evaluateB254Signal(digits, 'AUTO', config.signalScoreThreshold);
+            const sig = evaluateB254Signal(digits, 'AUTO', config.minQualityScore);
 
             const u10 = digits.slice(-10).filter(d => d <= 5).length;
             const u7 = digits.slice(-7).filter(d => d <= 5).length;
@@ -480,11 +575,10 @@ export const B254Page: React.FC = observer(() => {
             });
         });
 
-        // Find highest score market
         let bestIndex = -1;
         let maxScore = -1;
         list.forEach((item, i) => {
-            if (item.signalScore > maxScore && item.signalScore >= config.signalScoreThreshold) {
+            if (item.signalScore > maxScore && item.signalScore >= config.minQualityScore) {
                 maxScore = item.signalScore;
                 bestIndex = i;
             }
@@ -495,197 +589,74 @@ export const B254Page: React.FC = observer(() => {
         }
 
         return list;
-    }, [MARKETS, marketsDataRef.current, config.signalScoreThreshold]);
+    }, [MARKETS, marketsDataRef.current, config.minQualityScore]);
 
     const bestMarketItem = useMemo(() => {
         return scannerMarkets.find(m => m.isBestMarket) || null;
     }, [scannerMarkets]);
 
-    // Auto-switch to best market if enabled and in Scanning state
-    useEffect(() => {
-        if (autoInputBestMarket && bestMarketItem && bestMarketItem.symbol !== selectedSymbol) {
-            if (autoState === 'SCANNING' || autoState === 'WAITING_TRIGGER') {
-                setSelectedSymbol(bestMarketItem.symbol);
-            }
-        }
-    }, [autoInputBestMarket, bestMarketItem, selectedSymbol, autoState]);
+    // ── Ranked Markets Helper for Auto-Switch ──
+    const getLiveRankedMarkets = useCallback(() => {
+        const result: Array<{
+            symbol: string;
+            label: string;
+            qualityScore: number;
+            isAutoPaused: boolean;
+            isTriggered: boolean;
+            direction: 'UNDER_6' | 'OVER_3';
+        }> = [];
 
-    // ─── Session Timer & Reanalysis Checkpoint Countdown ───────────────────────
-
-    useEffect(() => {
-        if (autoState === 'IDLE' || autoState === 'PAUSED') return;
-
-        const interval = setInterval(() => {
-            setSessionState(prev => {
-                const nextRemaining = Math.max(0, prev.timeRemainingSeconds - 1);
-                const nextReanalysis = prev.nextReanalysisCountdownSeconds - 1;
-
-                let updatedReanalysis = nextReanalysis;
-                if (nextReanalysis <= 0) {
-                    // Reanalysis Checkpoint Triggered
-                    updatedReanalysis = config.reanalysisIntervalMinutes * 60;
-                }
-
-                const mins = Math.floor(updatedReanalysis / 60);
-                const secs = updatedReanalysis % 60;
-                const formattedCheckpoint = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-                // Check session expiry
-                if (nextRemaining === 0 && prev.isActive) {
-                    setAutoState('IDLE');
-                    setMilestoneModal({
-                        isOpen: true,
-                        type: 'tp',
-                        amount: prev.sessionProfit,
-                    });
-                    return {
-                        ...prev,
-                        isActive: false,
-                        timeRemainingSeconds: 0,
-                        isSessionLocked: true,
-                        lockReason: 'Session time completed.',
-                    };
-                }
-
-                return {
-                    ...prev,
-                    timeRemainingSeconds: nextRemaining,
-                    nextReanalysisCountdownSeconds: updatedReanalysis,
-                    nextCheckpointFormatted: formattedCheckpoint,
-                };
+        MARKETS.forEach(m => {
+            const data = marketsDataRef.current.get(m.symbol);
+            if (!data || data.digits.length < 15) return;
+            const sig = evaluateB254Signal(data.digits, 'AUTO', configRef.current.minQualityScore);
+            result.push({
+                symbol: m.symbol,
+                label: m.label,
+                qualityScore: sig?.score.totalScore || 0,
+                isAutoPaused: Boolean(sig?.isAutoPaused),
+                isTriggered: sig?.status === 'TRIGGERED',
+                direction: sig?.direction || 'UNDER_6',
             });
-        }, 1000);
+        });
 
-        return () => clearInterval(interval);
-    }, [autoState, config.sessionDurationMinutes, config.reanalysisIntervalMinutes]);
+        result.sort((a, b) => {
+            if (a.isTriggered && !b.isTriggered) return -1;
+            if (!a.isTriggered && b.isTriggered) return 1;
+            return b.qualityScore - a.qualityScore;
+        });
 
-    // ─── Automated Trading Execution Handler ───────────────────────────────────
+        return result;
+    }, []);
 
-    const handleLiveMarketTick = async (marketData: B254MarketData) => {
-        if (isExecutingTradeRef.current) return;
-        const currentAutoState = autoStateRef.current;
-        if (currentAutoState !== 'TRADING' && currentAutoState !== 'WAITING_TRIGGER') return;
+    // ── Execute Trade Subroutine ──
+    const executeTrade = async (
+        symbol: string,
+        direction: 'UNDER_6' | 'OVER_3',
+        prediction: number,
+        tradeStake: number,
+        durationTicks: number
+    ): Promise<number> => {
+        const contractType = direction === 'UNDER_6' ? 'DIGITUNDER' : 'DIGITOVER';
+        const barrier = direction === 'UNDER_6' ? '6' : '3';
+        const marketLabel = MARKETS.find(m => m.symbol === symbol)?.label || symbol;
 
-        // Verify user login status
-        if (!isLoggedIn()) {
-            setAutoState('IDLE');
-            const oauthUrl = await generateOAuthURL();
-            window.location.assign(oauthUrl);
-            return;
-        }
+        const txId = `B254-${Date.now().toString().slice(-6)}`;
+        const now = new Date();
+        const timeFormatted = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-        // Evaluate Signal
-        const signal = evaluateB254Signal(
-            marketData.digits,
-            targetStrategy,
-            config.signalScoreThreshold
-        );
-
-        if (!signal) return;
-
-        // Auto-pause if regime shift or continuation broken
-        if (signal.isAutoPaused) {
-            setAutoState('PAUSED');
-            return;
-        }
-
-        // Check if all 8 conditions passed, score threshold passed, and live tick matches dominant entry digit
-        if (signal.status === 'TRIGGERED' && signal.checklist.allConditionsPassed) {
-            // Check Daily / Session Risk Guardrails
-            if (dailyProfit >= config.dailyTakeProfit) {
-                setAutoState('IDLE');
-                setMilestoneModal({
-                    isOpen: true,
-                    type: 'tp',
-                    amount: dailyProfit,
-                });
-                return;
-            }
-
-            if (dailyProfit <= -config.dailyStopLoss) {
-                setAutoState('IDLE');
-                setMilestoneModal({
-                    isOpen: true,
-                    type: 'sl',
-                    amount: Math.abs(dailyProfit),
-                });
-                return;
-            }
-
-            if (sessionProfit >= config.sessionTakeProfit) {
-                setAutoState('IDLE');
-                setMilestoneModal({
-                    isOpen: true,
-                    type: 'tp',
-                    amount: sessionProfit,
-                });
-                return;
-            }
-
-            if (sessionProfit <= -config.sessionStopLoss) {
-                setAutoState('IDLE');
-                setMilestoneModal({
-                    isOpen: true,
-                    type: 'sl',
-                    amount: Math.abs(sessionProfit),
-                });
-                return;
-            }
-
-            if (consecutiveLosses >= config.maxConsecutiveLosses) {
-                setAutoState('IDLE');
-                setMilestoneModal({
-                    isOpen: true,
-                    type: 'sl',
-                    amount: Math.abs(sessionProfit),
-                });
-                return;
-            }
-
-            // Execute Trade
-            await executeContractTrade(signal, marketData);
-        }
-    };
-
-    const executeContractTrade = async (signal: B254SignalResult, marketData: B254MarketData) => {
-        isExecutingTradeRef.current = true;
-        setAutoState('TRADING');
-
-        // Determine Stake (Fixed, Percentage of Capital, or Compounding Step target)
-        let tradeStake = config.baseStake;
-        if (config.stakeType === 'PERCENTAGE') {
-            tradeStake = Number(((actualBalance * (config.stakePercentage || 2.0)) / 100).toFixed(2));
-        } else if (config.stakeType === 'COMPOUNDING') {
-            // Dynamic Compounding Stake based on current step progress
-            const stepTarget = compoundingProgress.stepTargetBalance || compoundingProgress.dailyTargetBalance;
-            tradeStake = Number(Math.max(config.baseStake, (stepTarget * 0.02)).toFixed(2));
-        } else {
-            tradeStake = config.baseStake;
-        }
-
-        // Apply Martingale if active
-        if (config.enableMartingale && martingaleLevel > 0) {
-            tradeStake = Number((tradeStake * Math.pow(config.martingaleMultiplier, martingaleLevel)).toFixed(2));
-        }
-
-        tradeStake = Math.min(config.maxStake, Math.max(0.35, tradeStake));
-
-        const contractType = signal.direction === 'UNDER_6' ? 'DIGITUNDER' : 'DIGITOVER';
-        const barrier = signal.direction === 'UNDER_6' ? '6' : '3';
-
-        // Prepare Audit Snapshot
         const auditSnapshot: TradeConditionSnapshot = {
-            direction: signal.direction,
-            prediction: signal.prediction,
-            entryDigit: signal.entryDigit,
-            signalScore: signal.score.totalScore,
+            direction,
+            prediction,
+            entryDigit: currentSignal?.entryDigit || 0,
+            signalScore: currentSignal?.score.totalScore || 0,
             under04Pct: multiHorizon.h50.pctUnder04,
             over59Pct: multiHorizon.h50.pctOver59,
             under05Count: multiHorizon.h50.under05,
             over49Count: multiHorizon.h50.over49,
             last10Ratio: `${multiHorizon.h15.under05}/10 Under`,
             last7Ratio: `${Math.min(7, Math.round((multiHorizon.h15.under05 / 15) * 7))}/7 Under`,
-            outlierPct: signal.direction === 'UNDER_6'
+            outlierPct: direction === 'UNDER_6'
                 ? (digitPower.items[7]?.pct1000 || 0) + (digitPower.items[8]?.pct1000 || 0) + (digitPower.items[9]?.pct1000 || 0)
                 : (digitPower.items[0]?.pct1000 || 0) + (digitPower.items[1]?.pct1000 || 0) + (digitPower.items[2]?.pct1000 || 0),
             history30mBias: multiHorizon.history30m.bias,
@@ -693,28 +664,24 @@ export const B254Page: React.FC = observer(() => {
             regime: regime.currentRegime,
         };
 
-        const txId = `B254-${Date.now().toString().slice(-6)}`;
-        const now = new Date();
-        const timeFormatted = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
         const pendingRecord: B254TransactionRecord = {
             id: txId,
             timestamp: Date.now(),
             timeFormatted,
-            market: marketData.label,
-            symbol: marketData.symbol,
-            direction: signal.direction,
+            market: marketLabel,
+            symbol,
+            direction,
             contractType,
-            prediction: signal.prediction,
-            entryDigit: signal.entryDigit,
+            prediction,
+            entryDigit: currentSignal?.entryDigit || 0,
             stake: tradeStake,
-            martingaleLevel,
-            signalScore: signal.score.totalScore,
+            martingaleLevel: martingaleLevelRef.current,
+            signalScore: currentSignal?.score.totalScore || 0,
             result: 'PENDING',
             profit: 0,
             balanceAfterTrade: actualBalance,
             auditSnapshot,
-            durationTicks: 1,
+            durationTicks,
             status: 'open',
         };
 
@@ -727,135 +694,369 @@ export const B254Page: React.FC = observer(() => {
                     basis: 'stake',
                     contract_type: contractType,
                     currency,
-                    duration: 1,
+                    duration: durationTicks,
                     duration_unit: 't',
-                    symbol: marketData.symbol,
+                    symbol,
                     barrier,
                 },
                 price: tradeStake,
                 source: 'B254',
             });
 
-            if (buyResult?.contract_id) {
-                const settled = await streamContractUntilSettled({
-                    contractId: buyResult.contract_id,
-                    source: 'B254',
+            if (!buyResult?.contract_id) {
+                setTransactions(prev => prev.filter(t => t.id !== txId));
+                return 0;
+            }
+
+            const settled = await streamContractUntilSettled({
+                contractId: buyResult.contract_id,
+                source: 'B254',
+            });
+
+            const isWin = (settled?.profit ?? 0) > 0;
+            const profitAmount = settled?.profit ?? (isWin ? tradeStake * 0.40 : -tradeStake);
+
+            const settledRecord: B254TransactionRecord = {
+                ...pendingRecord,
+                id: String(settled?.contract_id || txId),
+                result: isWin ? 'WIN' : 'LOSS',
+                profit: Number(profitAmount.toFixed(2)),
+                balanceAfterTrade: Number(((settled?.balance_after ?? actualBalance) + profitAmount).toFixed(2)),
+                status: 'settled',
+            };
+
+            setTransactions(prev => prev.map(t => (t.id === txId ? settledRecord : t)));
+
+            // AI Continuous Learning
+            try {
+                aiContinuousLearningService.recordBotTrade({
+                    botName: 'AUTOFLIPPER',
+                    strategy: direction,
+                    market: symbol,
+                    contractType,
+                    barrier,
+                    prediction,
+                    isWin,
+                    profit: profitAmount,
+                    stake: tradeStake,
                 });
-                const isWin = (settled?.profit ?? 0) > 0;
-                const profitAmount = settled?.profit ?? (isWin ? tradeStake * 0.40 : -tradeStake);
+            } catch {}
 
-                // Update ledger record
-                const settledRecord: B254TransactionRecord = {
-                    ...pendingRecord,
-                    id: String(settled?.contract_id || txId),
-                    result: isWin ? 'WIN' : 'LOSS',
-                    profit: Number(profitAmount.toFixed(2)),
-                    balanceAfterTrade: Number(((settled?.balance_after ?? actualBalance) + profitAmount).toFixed(2)),
-                    status: 'settled',
-                };
-
-                setTransactions(prev => prev.map(t => (t.id === txId ? settledRecord : t)));
-
-                // Update AI continuous learning engine
-                try {
-                    aiContinuousLearningService.recordBotTrade({
-                        botName: 'AUTOFLIPPER',
-                        strategy: signal.direction,
-                        market: marketData.symbol,
-                        contractType,
-                        barrier,
-                        prediction: signal.prediction,
-                        isWin,
-                        profit: profitAmount,
-                        stake: tradeStake,
-                    });
-                } catch {}
-
-                // Update Session & Risk Stats
-                setSessionProfit(p => Number((p + profitAmount).toFixed(2)));
-                setDailyProfit(p => Number((p + profitAmount).toFixed(2)));
-
-                setSessionState(prev => ({
-                    ...prev,
-                    sessionProfit: Number((prev.sessionProfit + profitAmount).toFixed(2)),
-                    dailyProfit: Number((prev.dailyProfit + profitAmount).toFixed(2)),
-                    tradesThisSession: prev.tradesThisSession + 1,
-                }));
-
-                // Update Martingale & Loss streak
-                if (isWin) {
-                    setMartingaleLevel(0);
-                    setConsecutiveLosses(0);
-                } else {
-                    setMartingaleLevel(l => l + 1);
-                    setConsecutiveLosses(c => c + 1);
-                }
-            }
-        } catch (err: any) {
-            console.warn('[B254] Trade execution notice:', err);
-            // Revert pending transaction
+            return profitAmount;
+        } catch (err) {
+            console.error('[B254] Trade execution error:', err);
             setTransactions(prev => prev.filter(t => t.id !== txId));
-        } finally {
-            isExecutingTradeRef.current = false;
-            if (autoStateRef.current === 'TRADING') {
-                setAutoState('WAITING_TRIGGER');
-            }
+            return 0;
         }
     };
 
-    // ─── Control Handlers ──────────────────────────────────────────────────────
+    // ─── Continuous Autonomous Trading Loop ────────────────────────────────────
 
-    const handleStartAutoTrading = () => {
-        setAutoState('WAITING_TRIGGER');
-        setSessionState(prev => ({
-            ...prev,
-            isActive: true,
-            startTime: Date.now(),
-            endTime: Date.now() + config.sessionDurationMinutes * 60 * 1000,
-            sessionDurationSeconds: config.sessionDurationMinutes * 60,
-            timeRemainingSeconds: config.sessionDurationMinutes * 60,
-            nextReanalysisCountdownSeconds: config.reanalysisIntervalMinutes * 60,
-            isSessionLocked: false,
-        }));
-    };
+    const startTradingLoop = useCallback(() => {
+        if (autoAbortRef.current) {
+            autoAbortRef.current.abort();
+        }
+        const abortController = new AbortController();
+        autoAbortRef.current = abortController;
+        const abortSig = abortController.signal;
 
-    const handlePauseAutoTrading = () => {
+        marketStartTimeRef.current = Date.now();
+        setDwellRemainingSec(600);
+        setAutoState('SCANNING');
+        autoStateRef.current = 'SCANNING';
+
+        let noPatternCycles = 0;
+
+        const loop = async () => {
+            while (!abortSig.aborted && autoStateRef.current !== 'IDLE') {
+                if (autoStateRef.current === 'PAUSED' || autoStateRef.current === 'LOSS_GUARD') {
+                    await new Promise(r => setTimeout(r, 400));
+                    continue;
+                }
+
+                // 1. Verify User Login Status
+                if (!isLoggedIn()) {
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    const oauthUrl = await generateOAuthURL();
+                    window.location.assign(oauthUrl);
+                    break;
+                }
+
+                // 2. Check Stop Loss Auto-Stop
+                const sl = configRef.current.stopLoss;
+                if (totalProfitRef.current <= -sl) {
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('loss');
+                    setMilestoneModal({
+                        isOpen: true,
+                        type: 'sl',
+                        amount: Math.abs(totalProfitRef.current),
+                    });
+                    break;
+                }
+
+                // 3. Check Take Profit Auto-Stop
+                const tp = configRef.current.takeProfit;
+                if (totalProfitRef.current >= tp) {
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('win');
+                    setMilestoneModal({
+                        isOpen: true,
+                        type: 'tp',
+                        amount: totalProfitRef.current,
+                    });
+                    break;
+                }
+
+                // 4. Check Consecutive Losses Safety Auto-Stop
+                if (consecutiveLossesRef.current >= configRef.current.maxConsecutiveLosses) {
+                    setAutoState('IDLE');
+                    autoStateRef.current = 'IDLE';
+                    playSound('loss');
+                    break;
+                }
+
+                // 5. Get Active Market Data
+                const targetSym = selectedSymbolRef.current;
+                const mData = marketsDataRef.current.get(targetSym);
+                if (!mData || mData.digits.length < 15) {
+                    if (autoStateRef.current !== 'SCANNING') {
+                        setAutoState('SCANNING');
+                        autoStateRef.current = 'SCANNING';
+                    }
+                    await new Promise(r => setTimeout(r, 300));
+                    continue;
+                }
+
+                const sig = evaluateB254Signal(
+                    mData.digits,
+                    configRef.current.targetStrategy,
+                    configRef.current.minQualityScore
+                );
+
+                // 6. Check 10-Minute Dwell or Market Degradation Auto-Switch
+                const dwellElapsed = Date.now() - marketStartTimeRef.current;
+                const isTenMinuteDwellReached = dwellElapsed >= MARKET_DWELL_LIMIT_MS;
+                const isMarketBad = !sig || sig.isAutoPaused || noPatternCycles >= 15;
+
+                // Rotate only when not in middle of martingale recovery to avoid switching stakes
+                if (
+                    configRef.current.autoSwitchMarkets &&
+                    currentStakeRef.current <= configRef.current.stake &&
+                    (isTenMinuteDwellReached || isMarketBad)
+                ) {
+                    const ranked = getLiveRankedMarkets();
+                    const alt = ranked.find(
+                        m => m.symbol !== targetSym && !m.isAutoPaused && m.qualityScore >= configRef.current.minQualityScore
+                    ) || (isTenMinuteDwellReached ? ranked.find(m => m.symbol !== targetSym && !m.isAutoPaused) : null);
+
+                    if (alt) {
+                        switchSelectedSymbol(alt.symbol);
+                        noPatternCycles = 0;
+                        throttleRender.current();
+                        await new Promise(r => setTimeout(r, 600));
+                        continue;
+                    }
+                }
+
+                // 7. Handle Signal Auto-Pause (Regime shift)
+                if (sig?.isAutoPaused) {
+                    if (autoStateRef.current !== 'SCANNING') {
+                        setAutoState('SCANNING');
+                        autoStateRef.current = 'SCANNING';
+                    }
+                    await new Promise(r => setTimeout(r, 200));
+                    continue;
+                }
+
+                // 8. Handle Waiting for Trigger
+                if (!sig || sig.status === 'WAITING' || sig.status === 'ENTRY_READY') {
+                    noPatternCycles++;
+                    const nextState = sig?.status === 'ENTRY_READY' ? 'WAITING_TRIGGER' : 'SCANNING';
+                    if (autoStateRef.current !== nextState) {
+                        setAutoState(nextState);
+                        autoStateRef.current = nextState;
+                    }
+                    await new Promise(r => setTimeout(r, 120));
+                    continue;
+                }
+
+                // 9. EXECUTE TRADE
+                noPatternCycles = 0;
+                setAutoState('TRADING');
+                autoStateRef.current = 'TRADING';
+
+                try {
+                    const stake = currentStakeRef.current;
+                    const durationTicks = configRef.current.tickDuration || 1;
+
+                    const profit = await executeTrade(targetSym, sig.direction, sig.prediction, stake, durationTicks);
+                    if (abortSig.aborted || (autoStateRef.current as B254AutoState) === 'IDLE') break;
+
+                    const isWin = profit > 0;
+                    const newTotalProfit = parseFloat((totalProfitRef.current + profit).toFixed(2));
+                    totalProfitRef.current = newTotalProfit;
+                    setTotalProfit(newTotalProfit);
+                    saveSessionState();
+
+                    if (isWin) {
+                        winsRef.current++;
+                        setWins(winsRef.current);
+                        consecutiveLossesRef.current = 0;
+                        setConsecutiveLosses(0);
+                        martingaleLevelRef.current = 0;
+                        setMartingaleLevel(0);
+                        currentStakeRef.current = configRef.current.stake;
+                        setCurrentStake(configRef.current.stake);
+                        playSound('win');
+                    } else {
+                        lossesRef.current++;
+                        setLosses(lossesRef.current);
+                        consecutiveLossesRef.current++;
+                        setConsecutiveLosses(consecutiveLossesRef.current);
+
+                        if (configRef.current.enableMartingale) {
+                            martingaleLevelRef.current++;
+                            setMartingaleLevel(martingaleLevelRef.current);
+                            const nextStake = Math.min(
+                                configRef.current.maxStake,
+                                parseFloat((currentStakeRef.current * configRef.current.martingaleMultiplier).toFixed(2))
+                            );
+                            currentStakeRef.current = nextStake;
+                            setCurrentStake(nextStake);
+                        } else {
+                            currentStakeRef.current = configRef.current.stake;
+                            setCurrentStake(configRef.current.stake);
+                        }
+
+                        playSound('loss');
+
+                        // ── Post-Loss Guard Re-Analysis ──
+                        if (configRef.current.lossGuardEnabled && !abortSig.aborted && (autoStateRef.current as B254AutoState) !== 'IDLE') {
+                            const lossCount = consecutiveLossesRef.current;
+                            const cooldownMs = lossCount >= 2 ? 4000 : 2000;
+
+                            setAutoState('LOSS_GUARD');
+                            autoStateRef.current = 'LOSS_GUARD';
+
+                            await new Promise(r => setTimeout(r, cooldownMs));
+
+                            // Poll for fresh high-quality triggered signal before resuming
+                            const pollStart = Date.now();
+                            const maxWait = 45000;
+                            let verifiedSignal = false;
+
+                            while (
+                                !abortSig.aborted &&
+                                autoStateRef.current === 'LOSS_GUARD' &&
+                                Date.now() - pollStart < maxWait
+                            ) {
+                                const liveData = marketsDataRef.current.get(selectedSymbolRef.current);
+                                if (liveData && liveData.digits.length >= 15) {
+                                    const freshSig = evaluateB254Signal(
+                                        liveData.digits,
+                                        configRef.current.targetStrategy,
+                                        configRef.current.minQualityScore
+                                    );
+                                    if (freshSig && freshSig.status === 'TRIGGERED' && !freshSig.isAutoPaused) {
+                                        verifiedSignal = true;
+                                        break;
+                                    }
+                                }
+                                await new Promise(r => setTimeout(r, 2000));
+                            }
+
+                            if (!abortSig.aborted && autoStateRef.current === 'LOSS_GUARD') {
+                                if (verifiedSignal) {
+                                    playSound('signal');
+                                }
+                                setAutoState('WAITING_TRIGGER');
+                                autoStateRef.current = 'WAITING_TRIGGER';
+                            }
+                        }
+                    }
+                } catch (tradeErr) {
+                    console.error('[B254] Trade execution loop notice:', tradeErr);
+                } finally {
+                    if (!abortSig.aborted && autoStateRef.current === 'TRADING') {
+                        setAutoState('WAITING_TRIGGER');
+                        autoStateRef.current = 'WAITING_TRIGGER';
+                    }
+                }
+
+                await new Promise(r => setTimeout(r, 400));
+            }
+        };
+
+        loop();
+    }, [executeTrade, getLiveRankedMarkets, saveSessionState, switchSelectedSymbol]);
+
+    // ── Action Handlers ──
+
+    const handleStartAutoTrading = useCallback(() => {
+        startTradingLoop();
+    }, [startTradingLoop]);
+
+    const handlePauseAutoTrading = useCallback(() => {
         setAutoState('PAUSED');
-    };
+        autoStateRef.current = 'PAUSED';
+    }, []);
 
-    const handleResumeAutoTrading = () => {
+    const handleResumeAutoTrading = useCallback(() => {
         setAutoState('WAITING_TRIGGER');
-    };
+        autoStateRef.current = 'WAITING_TRIGGER';
+    }, []);
 
-    const handleStopAutoTrading = () => {
+    const handleStopAutoTrading = useCallback(() => {
+        if (autoAbortRef.current) {
+            autoAbortRef.current.abort();
+            autoAbortRef.current = null;
+        }
         setAutoState('IDLE');
-        setSessionState(prev => ({
-            ...prev,
-            isActive: false,
-        }));
-    };
+        autoStateRef.current = 'IDLE';
+    }, []);
 
-    const handleEmergencyStop = () => {
+    const handleEmergencyStop = useCallback(() => {
+        if (autoAbortRef.current) {
+            autoAbortRef.current.abort();
+            autoAbortRef.current = null;
+        }
         setAutoState('IDLE');
-        setSessionState(prev => ({
-            ...prev,
-            isActive: false,
-            isSessionLocked: true,
-            lockReason: 'Emergency stop activated by user.',
-        }));
-    };
+        autoStateRef.current = 'IDLE';
+    }, []);
 
     return (
         <div className='b254-suite'>
-            {/* ── 1. Top Unified Compounding Ribbon & Metric Dashboard ── */}
-            <CompoundingDashboard
-                config={config}
-                progress={compoundingProgress}
-                session={sessionState}
-                autoState={autoState}
+            {/* ── 1. Top Real-Time Trading Terminal HUD (No Compounding) ── */}
+            <B254TradingDashboard
+                liveBalance={actualBalance}
                 currency={currency}
-                onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
-                onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+                autoState={autoState}
+                totalProfit={totalProfit}
+                wins={wins}
+                losses={losses}
+                currentStake={currentStake}
+                baseStake={config.stake}
+                martingaleLevel={martingaleLevel}
+                takeProfit={config.takeProfit}
+                stopLoss={config.stopLoss}
+                selectedSymbol={selectedSymbol}
+                selectedLabel={currentMarketData.label}
+                dwellRemainingSec={dwellRemainingSec}
+                autoSwitch={config.autoSwitchMarkets}
+                regime={regime.currentRegime}
+                qualityScore={currentSignal?.score.totalScore || 0}
+                biasPct={
+                    regime.currentRegime === 'UNDER'
+                        ? multiHorizon.h50.pctUnder05
+                        : regime.currentRegime === 'OVER'
+                        ? multiHorizon.h50.pctOver49
+                        : 50
+                }
+                onResetStats={handleResetStats}
             />
 
             {/* ── 2. Main Workspace Layout with Collapsible Market Scanner ── */}
@@ -866,11 +1067,11 @@ export const B254Page: React.FC = observer(() => {
                     onToggleExpand={() => setSidebarExpanded(v => !v)}
                     markets={scannerMarkets}
                     selectedSymbol={selectedSymbol}
-                    onSelectMarket={sym => setSelectedSymbol(sym)}
+                    onSelectMarket={sym => switchSelectedSymbol(sym)}
                     scanAllMarkets={scanAllMarkets}
                     onToggleScanAll={setScanAllMarkets}
-                    autoInputBestMarket={autoInputBestMarket}
-                    onToggleAutoInputBest={setAutoInputBestMarket}
+                    autoInputBestMarket={config.autoSwitchMarkets}
+                    onToggleAutoInputBest={v => updateConfig({ autoSwitchMarkets: v })}
                     bestMarket={bestMarketItem}
                 />
 
@@ -892,7 +1093,7 @@ export const B254Page: React.FC = observer(() => {
                             <select
                                 className='b254-select-market'
                                 value={selectedSymbol}
-                                onChange={e => setSelectedSymbol(e.target.value)}
+                                onChange={e => switchSelectedSymbol(e.target.value)}
                             >
                                 {MARKETS.map(m => (
                                     <option key={m.symbol} value={m.symbol}>
@@ -913,21 +1114,21 @@ export const B254Page: React.FC = observer(() => {
                             <span className='group-label'>Strategy Bias:</span>
                             <div className='strategy-pill-selector'>
                                 <button
-                                    className={`pill-btn ${targetStrategy === 'AUTO' ? 'active auto' : ''}`}
-                                    onClick={() => setTargetStrategy('AUTO')}
+                                    className={`pill-btn ${config.targetStrategy === 'AUTO' ? 'active auto' : ''}`}
+                                    onClick={() => updateConfig({ targetStrategy: 'AUTO' })}
                                 >
                                     <Sparkles size={13} />
                                     <span>AUTO (Strongest)</span>
                                 </button>
                                 <button
-                                    className={`pill-btn ${targetStrategy === 'UNDER_6' ? 'active under' : ''}`}
-                                    onClick={() => setTargetStrategy('UNDER_6')}
+                                    className={`pill-btn ${config.targetStrategy === 'UNDER_6' ? 'active under' : ''}`}
+                                    onClick={() => updateConfig({ targetStrategy: 'UNDER_6' })}
                                 >
                                     <span>UNDER 6 (0–5)</span>
                                 </button>
                                 <button
-                                    className={`pill-btn ${targetStrategy === 'OVER_3' ? 'active over' : ''}`}
-                                    onClick={() => setTargetStrategy('OVER_3')}
+                                    className={`pill-btn ${config.targetStrategy === 'OVER_3' ? 'active over' : ''}`}
+                                    onClick={() => updateConfig({ targetStrategy: 'OVER_3' })}
                                 >
                                     <span>OVER 3 (4–9)</span>
                                 </button>
@@ -964,7 +1165,7 @@ export const B254Page: React.FC = observer(() => {
                         currentLastDigit={currentMarketData.lastDigit}
                     />
 
-                    {/* Clear Market Understanding Card & "Why Not Trade?" Diagnostics */}
+                    {/* Clear Market Understanding Card & Diagnostics */}
                     <MarketUnderstandingCard
                         explanation={currentSignal?.marketExplanation || 'Analyzing multi-timeframe tick streams...'}
                         whyNotTradeReasons={currentSignal?.whyNotTradeReasons || []}
@@ -972,20 +1173,18 @@ export const B254Page: React.FC = observer(() => {
                         marketLabel={currentMarketData.label}
                     />
 
-                    {/* Automated Trading Execution & Compounding Control Panel */}
+                    {/* Automated Trading Execution & Manual Risk Control Panel */}
                     <TradingControlPanel
                         config={config}
                         autoState={autoState}
-                        targetStrategy={targetStrategy}
                         currency={currency}
-                        liveBalance={actualBalance}
                         onUpdateConfig={updateConfig}
-                        onUpdateStrategy={setTargetStrategy}
                         onStartAutoTrading={handleStartAutoTrading}
                         onPauseAutoTrading={handlePauseAutoTrading}
                         onResumeAutoTrading={handleResumeAutoTrading}
                         onStopAutoTrading={handleStopAutoTrading}
                         onEmergencyStop={handleEmergencyStop}
+                        onResetStats={handleResetStats}
                     />
                 </div>
             </div>
@@ -996,25 +1195,6 @@ export const B254Page: React.FC = observer(() => {
                 onClose={() => setIsDrawerOpen(false)}
                 transactions={transactions}
                 currency={currency}
-            />
-
-            {/* ── 30-Day / 90-Day Compounding Schedule Table Modal ── */}
-            <CompoundingScheduleModal
-                isOpen={isScheduleModalOpen}
-                onClose={() => setIsScheduleModalOpen(false)}
-                config={config}
-                progress={compoundingProgress}
-                currency={currency}
-            />
-
-            {/* ── Compounding & Risk Settings Modal ── */}
-            <CompoundingSettingsModal
-                isOpen={isSettingsModalOpen}
-                onClose={() => setIsSettingsModalOpen(false)}
-                config={config}
-                onSave={updateConfig}
-                currency={currency}
-                liveBalance={actualBalance}
             />
 
             {/* ── Milestone TP/SL Modal ── */}

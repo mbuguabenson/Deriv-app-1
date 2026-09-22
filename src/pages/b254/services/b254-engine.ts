@@ -450,21 +450,23 @@ export function evaluateB254Signal(
     const last7Under = slice7.filter(d => d <= 5).length;
     const last7Over = slice7.filter(d => d >= 4).length;
 
-    // ── Evaluate 8 Systematic Conditions ──
+    // ── Evaluate Systematic Conditions (Autoflipper Edge) ──
     const cond0_historyAlignment = isUnder
         ? multiHorizon.history30m.bias !== 'OVER' && multiHorizon.history1h.bias !== 'OVER'
         : multiHorizon.history30m.bias !== 'UNDER' && multiHorizon.history1h.bias !== 'UNDER';
 
+    // 50-tick stat1: Under 6 (0-5) or Over 3 (4-9) dominance
     const cond1_stat1_threshold55 = isUnder
-        ? multiHorizon.h50.pctUnder04 >= 54
-        : multiHorizon.h50.pctOver59 >= 54;
+        ? multiHorizon.h50.pctUnder05 >= 50
+        : multiHorizon.h50.pctOver49 >= 50;
 
     const cond2_stat2_dominance = isUnder
-        ? multiHorizon.h50.under05 > multiHorizon.h50.over49 && multiHorizon.h50.under05 >= 27
-        : multiHorizon.h50.over49 > multiHorizon.h50.under05 && multiHorizon.h50.over49 >= 27;
+        ? multiHorizon.h50.under05 >= multiHorizon.h50.over49
+        : multiHorizon.h50.over49 >= multiHorizon.h50.under05;
 
-    const cond3_micro10_ratio = isUnder ? last10Under >= 6 : last10Over >= 6;
-    const cond4_micro7_continuation = isUnder ? last7Under >= 4 : last7Over >= 4;
+    // 10-tick micro trend: at least 5 of last 10 ticks are in winning direction
+    const cond3_micro10_ratio = isUnder ? last10Under >= 5 : last10Over >= 5;
+    const cond4_micro7_continuation = isUnder ? last7Under >= 3 : last7Over >= 3;
 
     const cond5_outlierSafety = isUnder ? digitPower.outliersUnder6Safe : digitPower.outliersOver3Safe;
 
@@ -472,17 +474,16 @@ export function evaluateB254Signal(
         ? digitPower.mostAppearing <= 5 || digitPower.secondMostAppearing <= 5
         : digitPower.mostAppearing >= 4 || digitPower.secondMostAppearing >= 4;
 
-    const cond7_entryDigitMatch = currentLastDigit === entryDigit;
+    // Winning digit range for Under 6 is 0, 1, 2, 3, 4, 5. For Over 3 is 4, 5, 6, 7, 8, 9
+    const isTriggerDigit = isUnder ? currentLastDigit <= 5 : currentLastDigit >= 4;
+    const isPrimeEntryMatch = currentLastDigit === entryDigit;
+    const cond7_entryDigitMatch = isPrimeEntryMatch || isTriggerDigit;
     const cycleStable = !regime.shiftDetected;
 
     const allConditionsPassed =
-        cond0_historyAlignment &&
         cond1_stat1_threshold55 &&
         cond2_stat2_dominance &&
         cond3_micro10_ratio &&
-        cond4_micro7_continuation &&
-        cond5_outlierSafety &&
-        cond6_digitPowerSupport &&
         cycleStable;
 
     const score = computeSignalScore(
@@ -497,7 +498,7 @@ export function evaluateB254Signal(
 
     const isAutoPaused = regime.shiftDetected;
     const pauseReason = regime.shiftDetected
-        ? regime.recentShiftMessage
+        ? regime.recentShiftMessage || `⏸ 15t Regime Shift (${isUnder ? multiHorizon.h15.over49 : multiHorizon.h15.under05}/15 counter-trend). Auto-paused.`
         : undefined;
 
     // Why Not Trade Diagnostics
@@ -506,33 +507,38 @@ export function evaluateB254Signal(
     if (!cond1_stat1_threshold55) {
         whyNotTradeReasons.push(
             isUnder
-                ? `Under 0-4 percentage is ${multiHorizon.h50.pctUnder04.toFixed(1)}% (below 55% threshold)`
-                : `Over 5-9 percentage is ${multiHorizon.h50.pctOver59.toFixed(1)}% (below 55% threshold)`
+                ? `Under 0-5 percentage is ${multiHorizon.h50.pctUnder05.toFixed(1)}% (below 50% threshold)`
+                : `Over 4-9 percentage is ${multiHorizon.h50.pctOver49.toFixed(1)}% (below 50% threshold)`
         );
     }
     if (!cond2_stat2_dominance) whyNotTradeReasons.push('50-tick digit dominance not established');
     if (!cond3_micro10_ratio) {
         whyNotTradeReasons.push(
-            `Last 10 ticks (${isUnder ? last10Under : last10Over}/10) fails 6/10 rule`
+            `Last 10 ticks (${isUnder ? last10Under : last10Over}/10) fails 5/10 micro trend rule`
         );
     }
-    if (!cond4_micro7_continuation) whyNotTradeReasons.push('Last 7 ticks reversed direction');
     if (!cond5_outlierSafety) whyNotTradeReasons.push('1,000-tick outlier safety threshold exceeded (>10% or rising)');
-    if (!cond6_digitPowerSupport) whyNotTradeReasons.push('Top appearing digits do not align with strategy zone');
     if (regime.shiftDetected) whyNotTradeReasons.push('15-tick counter-trend regime shift active');
-    if (!score.isPassedThreshold) whyNotTradeReasons.push(`Signal score (${score.totalScore}/100) below minimum threshold (${scoreThreshold})`);
-    if (allConditionsPassed && score.isPassedThreshold && !cond7_entryDigitMatch) {
-        whyNotTradeReasons.push(`All criteria satisfied — Waiting for entry digit [${entryDigit}] to appear on live tick`);
+    if (!score.isPassedThreshold) whyNotTradeReasons.push(`Signal score (${score.totalScore}/100) below threshold (${scoreThreshold})`);
+    if (allConditionsPassed && score.isPassedThreshold && !isTriggerDigit) {
+        whyNotTradeReasons.push(
+            isUnder
+                ? `Conditions clear! Waiting under digit [0-5] (current: ${currentLastDigit})`
+                : `Conditions clear! Waiting over digit [4-9] (current: ${currentLastDigit})`
+        );
     }
 
     // Natural Language Market Explanation
     let marketExplanation = '';
-    if (allConditionsPassed && score.isPassedThreshold) {
-        marketExplanation = `Statistical bias heavily favours ${isUnder ? 'Under 6' : 'Over 3'} across multi-timeframe windows. Micro 10-tick (${isUnder ? last10Under : last10Over}/10) and 7-tick (${isUnder ? last7Under : last7Over}/7) momentum agree with macro history with low counter-outliers. Market is stable.`;
-    } else if (regime.shiftDetected) {
-        marketExplanation = `Market is in active transition. A counter-trend regime flip was detected in the last 15 ticks. System pauses trade execution to protect capital until equilibrium restores.`;
+    if (isAutoPaused) {
+        marketExplanation = `Market in regime shift (${isUnder ? multiHorizon.h15.over49 : multiHorizon.h15.under05}/15 counter-ticks). Paused for capital safety.`;
+    } else if (allConditionsPassed && isTriggerDigit && !isAutoPaused) {
+        const confluence = isPrimeEntryMatch ? ' ★ High Confluence Prime Entry' : '';
+        marketExplanation = `🎯 ${isUnder ? 'UNDER 6' : 'OVER 3'} FIRED! Digit [${currentLastDigit}] (50t: ${isUnder ? multiHorizon.h50.pctUnder05.toFixed(0) : multiHorizon.h50.pctOver49.toFixed(0)}%, 10t: ${isUnder ? last10Under : last10Over}/10${confluence})`;
+    } else if (allConditionsPassed) {
+        marketExplanation = `⏳ Signal clear! Waiting for ${isUnder ? 'under digit [0-5]' : 'over digit [4-9]'} (current: ${currentLastDigit})`;
     } else {
-        marketExplanation = `Market is currently consolidating (${multiHorizon.h50.under05} Under vs ${multiHorizon.h50.over49} Over in 50 ticks). Monitoring for verified directional breakout.`;
+        marketExplanation = `Consolidating — U05: ${multiHorizon.h50.pctUnder05.toFixed(0)}% vs O49: ${multiHorizon.h50.pctOver49.toFixed(0)}%, 10t: ${isUnder ? last10Under : last10Over}/10`;
     }
 
     const checklist: B254ConditionChecklist = {
@@ -549,7 +555,7 @@ export function evaluateB254Signal(
     };
 
     let status: B254SignalResult['status'] = 'WAITING';
-    if (allConditionsPassed && score.isPassedThreshold && cond7_entryDigitMatch && !isAutoPaused) {
+    if (allConditionsPassed && score.isPassedThreshold && isTriggerDigit && !isAutoPaused) {
         status = 'TRIGGERED';
     } else if (allConditionsPassed && score.isPassedThreshold) {
         status = 'ENTRY_READY';

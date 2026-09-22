@@ -2,7 +2,22 @@
 
 export type StrategyDirection = 'UNDER_6' | 'OVER_3';
 export type TargetStrategyChoice = 'UNDER_6' | 'OVER_3' | 'AUTO';
-export type B254AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED';
+export type B254AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED' | 'LOSS_GUARD';
+
+export interface B254ManualConfig {
+    stake: number;                   // Manual base stake ($), min 0.35
+    takeProfit: number;              // Target profit ($) to stop
+    stopLoss: number;                // Max allowable loss ($) to stop
+    enableMartingale: boolean;       // Enable martingale recovery
+    martingaleMultiplier: number;    // Martingale multiplier, e.g. 2.6
+    maxConsecutiveLosses: number;    // Safety limit before auto-stopping (e.g. 5)
+    maxStake: number;                // Max stake ceiling ($)
+    tickDuration: number;            // Trade duration in ticks (e.g. 1)
+    targetStrategy: TargetStrategyChoice;
+    autoSwitchMarkets: boolean;      // Auto-switch to best market
+    lossGuardEnabled: boolean;       // Post-loss pause & re-analysis before next entry
+    minQualityScore: number;         // Threshold (0-100), e.g. 65
+}
 
 export type RegimeStatus = 'STABLE_UNDER' | 'STABLE_OVER' | 'SHIFTING' | 'NEUTRAL' | 'UNDER_BIAS_FORMING' | 'OVER_BIAS_FORMING';
 export type HorizonBias = 'UNDER' | 'OVER' | 'BALANCED' | 'SHIFTING' | 'STABLE' | 'WEAKENING' | 'STRENGTHENING';

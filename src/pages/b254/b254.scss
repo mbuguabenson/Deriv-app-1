@@ -82,9 +82,10 @@
     }
 }
 
-// ─── 1. Compounding Dashboard Header ──────────────────────────────────────────
+// ─── 1. Compounding / Trading Dashboard Header ───────────────────────────────
 
-.b254-compounding-dashboard {
+.b254-compounding-dashboard,
+.b254-trading-dashboard {
     padding: 1.25rem;
 
     .b254-compounding-header {
@@ -212,6 +213,13 @@
                     border: 1px solid rgba(239, 68, 68, 0.4);
                     color: #EF4444;
                     .dot { background: #EF4444; }
+                }
+
+                &--loss_guard {
+                    background: rgba(245, 158, 11, 0.15);
+                    border: 1px solid rgba(245, 158, 11, 0.4);
+                    color: #F59E0B;
+                    .dot { background: #F59E0B; animation: b254-pulse 0.9s infinite; }
                 }
             }
         }
@@ -1410,6 +1418,12 @@
                     cursor: not-allowed;
                 }
             }
+
+            .helper-note {
+                font-size: 0.68rem;
+                color: #64748B;
+                line-height: 1.25;
+            }
         }
     }
 
@@ -1463,6 +1477,23 @@
                 background: #EF4444;
                 color: #FFFFFF;
                 box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+            }
+
+            &.btn-reset {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                color: #CBD5E1;
+
+                &:hover:not(:disabled) {
+                    background: rgba(255, 255, 255, 0.12);
+                    border-color: #FFAA00;
+                    color: #FFAA00;
+                }
+
+                &:disabled {
+                    opacity: 0.4;
+                    cursor: not-allowed;
+                }
             }
         }
     }
