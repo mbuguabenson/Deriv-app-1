@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { generateOAuthURL, TradingMilestoneModal } from '@/components/shared';
 import type { MilestoneType } from '@/components/shared/trading-milestone-modal';
@@ -17,7 +17,6 @@ import {
     BookOpen,
     CheckCircle2,
     ChevronDown,
-    ChevronRight,
     ChevronUp,
     Info,
     Layers,
@@ -542,7 +541,6 @@ const Autoflipper: React.FC = observer(() => {
     const selectedSymbolRef = useRef<string>(selectedSymbol);
     const currentHourRef = useRef<number>(1);
     const scheduleRef = useRef<HourStage[]>([]);
-    const streamRefreshKey = useRef<number>(0);
     const [, forceRender] = useState<number>(0);
     const [streamKey, setStreamKey] = useState<number>(0);
 
@@ -853,7 +851,7 @@ const Autoflipper: React.FC = observer(() => {
                     addLog(`BUY ${sig.direction} ${sig.prediction}`, data.label, 'PENDING', 0, `Stake: $${stake.toFixed(2)} | ${sig.reason}`);
 
                     const profit = await executeTrade(targetSym, sig.direction, sig.prediction, stake);
-                    if (abortSig.aborted || autoStateRef.current === 'IDLE') break;
+                    if (abortSig.aborted || (autoStateRef.current as AutoState) === 'IDLE') break;
 
                     const isWin = profit > 0;
                     totalProfitRef.current = parseFloat((totalProfitRef.current + profit).toFixed(2));
@@ -885,14 +883,14 @@ const Autoflipper: React.FC = observer(() => {
                         await new Promise(r => setTimeout(r, 1200));
                     }
 
-                    if (autoStateRef.current !== 'IDLE') { setAutoState('SCANNING'); autoStateRef.current = 'SCANNING'; }
+                    if ((autoStateRef.current as AutoState) !== 'IDLE') { setAutoState('SCANNING'); autoStateRef.current = 'SCANNING'; }
                     await new Promise(r => setTimeout(r, 350));
                 } catch (err) {
-                    if (abortSig.aborted || autoStateRef.current === 'IDLE') break;
+                    if (abortSig.aborted || (autoStateRef.current as AutoState) === 'IDLE') break;
                     const msg = err instanceof Error ? err.message : String(err);
                     console.error('[Autoflipper] Trade error:', msg);
                     addLog('TRADE ERROR', data.label, 'LOSS', 0, msg);
-                    if (autoStateRef.current !== 'IDLE') { setAutoState('SCANNING'); autoStateRef.current = 'SCANNING'; }
+                    if ((autoStateRef.current as AutoState) !== 'IDLE') { setAutoState('SCANNING'); autoStateRef.current = 'SCANNING'; }
                     await new Promise(r => setTimeout(r, 1200));
                 }
             }
