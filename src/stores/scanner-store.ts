@@ -1601,7 +1601,7 @@ export default class ScannerStore implements IScannerStore {
 
         const waitForHighEntry = async (): Promise<void> => {
             // Abort if the bot was stopped manually or re-analysis was cleared by a win
-            if (!this._loss_reanalysis_pending || this.$scope?.stopped) return;
+            if (!this._loss_reanalysis_pending || !this.is_auto_trading) return;
             if (run_panel?.is_running && !run_panel?.is_paused) {
                 // Bot already resumed externally — release the lock
                 this._loss_reanalysis_pending = false;
