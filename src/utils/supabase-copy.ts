@@ -295,6 +295,10 @@ export interface SiteConfig {
     runPanelBg?: string;
     runPanelText?: string;
     faviconBase64?: string;
+    dangerShieldEnabled?: boolean;
+    dangerShieldWhatsAppUrl?: string;
+    dangerShieldTelegramUrl?: string;
+    dangerShieldDomainName?: string;
 }
 
 export interface TabConfigItem {
@@ -382,6 +386,10 @@ export const getSiteConfig = (): SiteConfig => {
         runPanelBg: '#0e0e0e',
         runPanelText: '#ffffff',
         faviconBase64: '',
+        dangerShieldEnabled: true,
+        dangerShieldWhatsAppUrl: 'https://whatsapp.com/channel/profithub',
+        dangerShieldTelegramUrl: 'https://t.me/profithubofficial',
+        dangerShieldDomainName: 'profithubexpert.com',
     };
 };
 

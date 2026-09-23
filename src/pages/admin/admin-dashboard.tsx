@@ -52,6 +52,7 @@ import {
     MarkupCommission,
     SystemLogItem,
 } from '@/utils/supabase-copy';
+import { dangerShield } from '@/utils/danger-shield';
 import { getAppId, getSocketURL, isProduction } from '@/components/shared/utils/config/config';
 import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
 import { getActiveToken } from '@/utils/token-bridge';
@@ -5389,6 +5390,126 @@ Status: Systems functional. Replicator nodes ready.
                                             }}
                                         >
                                             Save Message
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ═══════════════ DANGERSHIELD SECURITY & DEVTOOLS PROTECTION ═══════════════ */}
+                            <div className='adm-card'>
+                                <div className='adm-card__header'>
+                                    <h3 className='adm-card__title'>
+                                        🛡️ DangerShield Security & DevTools Protection
+                                    </h3>
+                                    <span
+                                        className='adm-live-badge'
+                                        style={{
+                                            background: siteConfig.dangerShieldEnabled !== false ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                                            color: siteConfig.dangerShieldEnabled !== false ? '#10b981' : '#ef4444',
+                                        }}
+                                    >
+                                        ● {siteConfig.dangerShieldEnabled !== false ? 'ARMED' : 'DISABLED'}
+                                    </span>
+                                </div>
+                                <div style={{ padding: 20 }}>
+                                    <div className='adm-maintenance-toggle'>
+                                        <div className='adm-maintenance-toggle__info'>
+                                            <strong style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                                                Enforce DangerShield in Production
+                                            </strong>
+                                            <p
+                                                style={{
+                                                    margin: '4px 0 0',
+                                                    fontSize: 12,
+                                                    color: 'var(--text-muted)',
+                                                    lineHeight: 1.5,
+                                                }}
+                                            >
+                                                Blocks F12, Inspect Element, console tampering, and debuggers. Displays the restricted danger zone alarm and mutes sensitive console logs in production.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type='button'
+                                            className={`adm-toggle-switch ${siteConfig.dangerShieldEnabled !== false ? 'adm-toggle-switch--on' : ''}`}
+                                            onClick={() => {
+                                                const updated = {
+                                                    ...siteConfig,
+                                                    dangerShieldEnabled: siteConfig.dangerShieldEnabled === false,
+                                                };
+                                                setSiteConfigState(updated);
+                                                saveSiteConfig(updated);
+                                                addSystemLog(
+                                                    'info',
+                                                    `DangerShield protection toggled to ${updated.dangerShieldEnabled ? 'ARMED' : 'DISABLED'}`,
+                                                    'DangerShield'
+                                                );
+                                            }}
+                                        >
+                                            <span className='adm-toggle-switch__thumb' />
+                                        </button>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 20 }}>
+                                        <div className='adm-form-field'>
+                                            <label>Protected Domain Name</label>
+                                            <input
+                                                type='text'
+                                                className='adm-form-input'
+                                                placeholder='profithubexpert.com'
+                                                value={siteConfig.dangerShieldDomainName || ''}
+                                                onChange={e => handleSiteConfigChange({ dangerShieldDomainName: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className='adm-form-field'>
+                                            <label>💬 WhatsApp Channel / Support Link</label>
+                                            <input
+                                                type='text'
+                                                className='adm-form-input'
+                                                placeholder='https://whatsapp.com/channel/...'
+                                                value={siteConfig.dangerShieldWhatsAppUrl || ''}
+                                                onChange={e => handleSiteConfigChange({ dangerShieldWhatsAppUrl: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className='adm-form-field'>
+                                            <label>✈️ Telegram Channel / Support Link</label>
+                                            <input
+                                                type='text'
+                                                className='adm-form-input'
+                                                placeholder='https://t.me/...'
+                                                value={siteConfig.dangerShieldTelegramUrl || ''}
+                                                onChange={e => handleSiteConfigChange({ dangerShieldTelegramUrl: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                                        <button
+                                            type='button'
+                                            className='adm-act adm-act--green'
+                                            onClick={() => {
+                                                saveSiteConfig({
+                                                    dangerShieldEnabled: siteConfig.dangerShieldEnabled !== false,
+                                                    dangerShieldDomainName: siteConfig.dangerShieldDomainName,
+                                                    dangerShieldWhatsAppUrl: siteConfig.dangerShieldWhatsAppUrl,
+                                                    dangerShieldTelegramUrl: siteConfig.dangerShieldTelegramUrl,
+                                                });
+                                                setSaveSuccess(true);
+                                                setTimeout(() => setSaveSuccess(false), 3000);
+                                            }}
+                                        >
+                                            Save DangerShield Settings
+                                        </button>
+                                        <button
+                                            type='button'
+                                            className='adm-act adm-act--orange'
+                                            onClick={() => {
+                                                dangerShield.showShield(true);
+                                                setTimeout(() => {
+                                                    dangerShield.hideShield();
+                                                }, 4000);
+                                            }}
+                                        >
+                                            👁️ Test DangerShield Preview (4s)
                                         </button>
                                     </div>
                                 </div>

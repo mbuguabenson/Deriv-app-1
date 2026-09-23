@@ -12,6 +12,10 @@ configure({ isolateGlobalState: true });
 // Perform version check FIRST - before any other operations
 performVersionCheck();
 
+// Initialize DangerShield protection in production
+import { dangerShield } from './utils/danger-shield';
+dangerShield.init();
+
 // Initialize Iframe Authentication Receiver Bridge immediately at startup
 import { iframeReceiverService } from './services/iframe-receiver.service';
 iframeReceiverService.init();
