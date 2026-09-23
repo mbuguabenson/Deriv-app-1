@@ -974,7 +974,7 @@ export const getLegacyServerURL = () => {
     return `${DERIV_WS_BASE}?app_id=${encodeURIComponent(appId)}&l=en&brand=deriv`;
 };
 
-export const getDefaultServerURL = () => getLegacyServerURL();
+export const getDefaultServerURL = () => DERIV_PUBLIC_WS_BASE;
 
 /**
  * Gets the WebSocket URL for the current session.
@@ -1014,12 +1014,12 @@ export const getSocketURL = async (): Promise<string> => {
             }
         }
     } catch (error) {
-        console.warn('[getSocketURL] OTP flow failed, using legacy endpoint:', error);
+        console.warn('[getSocketURL] OTP flow failed, using public market data endpoint:', error);
     }
 
-    // Use the legacy WebSocket endpoint — works for public market data or API token auth
-    console.log('[getSocketURL] Using legacy Deriv WebSocket endpoint');
-    return getDefaultServerURL();
+    // For public market data, use the documented endpoint
+    console.log('[getSocketURL] Using documented Deriv public market data endpoint');
+    return DERIV_PUBLIC_WS_BASE;
 };
 
 export const getDebugServiceWorker = () => {

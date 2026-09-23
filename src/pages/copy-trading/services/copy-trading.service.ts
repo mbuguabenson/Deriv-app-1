@@ -417,15 +417,15 @@ class CopyTradingEngine {
                     if (otpUrl) {
                         wsUrl = otpUrl;
                     } else {
-                        wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
+                        wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=en`;
                     }
                 } catch (otpErr) {
                     console.warn(`[CopierSocketPool] Could not get OTP URL for ${conn.loginid}, falling back to direct connection:`, otpErr);
-                    wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
+                    wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=en`;
                     conn.isNewApi = false;
                 }
             } else {
-                wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=EN`;
+                wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(conn.appId)}&l=en`;
             }
 
             const ws = new WebSocket(wsUrl);
@@ -845,7 +845,7 @@ class CopyTradingEngine {
         email: string;
         error?: string;
     }> {
-        const wsUrl = `${wsBase}?app_id=${encodeURIComponent(appId)}&l=EN`;
+        const wsUrl = `${wsBase}?app_id=${encodeURIComponent(appId)}&l=en`;
 
         return new Promise(resolve => {
             let ws: WebSocket | null = null;
@@ -1766,7 +1766,7 @@ class CopyTradingEngine {
         balance_after?: number;
         error?: string;
     }> {
-        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN`;
+        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=en`;
 
         return new Promise(resolve => {
             let ws: WebSocket | null = null;

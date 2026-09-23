@@ -99,11 +99,11 @@ export class ParentBridgeClient {
             localStorage.getItem('active_loginid') ||
             localStorage.getItem('client.loginid') ||
             '';
-        const targetToken = getActiveToken(targetLoginId) || '';
-        if (targetToken && targetLoginId) {
+        const targetToken = getActiveToken(targetLoginId) || getActiveToken() || '';
+        if (targetToken) {
             import('@/services/derivws-accounts.service')
                 .then(({ DerivWSAccountsService }) => {
-                    DerivWSAccountsService.fetchOTPWebSocketURL(targetToken, targetLoginId)
+                    DerivWSAccountsService.getAuthenticatedWebSocketURL(targetToken)
                         .then(url => {
                             if (url) {
                                 this.cachedOtpUrl = url;
@@ -222,7 +222,7 @@ export class ParentBridgeClient {
                     fullname: 'Profithub Trader',
                 },
                 clientId: appIdStr || '121856',
-                apiBase: 'https://ws.derivws.com/websockets/v3',
+                apiBase: 'https://api.derivws.com',
                 authBase: 'https://auth.deriv.com',
             };
 
@@ -376,7 +376,7 @@ export class ParentBridgeClient {
         if (this.retryIntervalId) clearInterval(this.retryIntervalId);
 
         let attempts = 0;
-        const maxAttempts = 20; // ~5s @ 250ms
+        const maxAttempts = 6; // ~6s @ 1000ms
 
         const postAuth = async () => {
             if (!this.iframeWindow) return;
@@ -415,7 +415,7 @@ export class ParentBridgeClient {
                 return;
             }
             postAuth();
-        }, 250);
+        }, 1000);
     }
 
     public detach() {

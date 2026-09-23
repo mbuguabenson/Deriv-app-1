@@ -1,5 +1,9 @@
 let ENDPOINT_INDEX = 0;
-const ENDPOINTS = ['wss://ws.derivws.com/websockets/v3?app_id=1089', 'wss://ws.derivws.org/websockets/v3?app_id=1089'];
+const ENDPOINTS = [
+    'wss://api.derivws.com/trading/v1/options/ws/public',
+    'wss://ws.derivws.com/websockets/v3?app_id=1089&l=en',
+    'wss://ws.derivws.org/websockets/v3?app_id=1089&l=en',
+];
 let ws = null;
 let currentSymbol = null;
 let activeSymbols = [];
