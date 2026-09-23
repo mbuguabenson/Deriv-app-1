@@ -1,0 +1,909 @@
+<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
+  <variables>
+    <variable id="var_stake">Stake</variable>
+    <variable id="var_init_stake">InitialStake</variable>
+    <variable id="var_target">TargetProfit</variable>
+    <variable id="var_loss">StopLoss</variable>
+    <variable id="var_martingale">MartingaleMultiplier</variable>
+    <variable id="var_prediction">Prediction</variable>
+    <variable id="var_trade_dir">TradeDirection</variable>
+    <variable id="var_pattern_found">PatternFound</variable>
+    <variable id="var_trades_cycle">TradesInCycle</variable>
+    <variable id="var_max_trades">MaxTradesPerCycle</variable>
+    <variable id="var_tick_1">Tick 1</variable>
+    <variable id="var_tick_2">Tick 2</variable>
+    <variable id="var_tick_3">Tick 3</variable>
+    <variable id="var_tick_4">Tick 4</variable>
+    <variable id="var_text">text</variable>
+  </variables>
+  <block type="profithub_bot_lock" id="lock_1_5775" deletable="false" movable="true" x="0" y="-120"/>
+  <block type="trade_definition" id="trade_def_2_5775" deletable="false" x="0" y="60">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market" id="mkt_3_5775" deletable="false" movable="false">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">1HZ100V</field>
+        <next>
+          <block type="trade_definition_tradetype" id="tt_4_5775" deletable="false" movable="false">
+            <field name="TRADETYPECAT_LIST">digits</field>
+            <field name="TRADETYPE_LIST">overunder</field>
+            <next>
+              <block type="trade_definition_contracttype" id="ct_5_5775" deletable="false" movable="false">
+                <field name="TYPE_LIST">both</field>
+                <next>
+                  <block type="trade_definition_candleinterval" id="ci_6_5775" deletable="false" movable="false">
+                    <field name="CANDLEINTERVAL_LIST">60</field>
+                    <next>
+                      <block type="trade_definition_restartbuysell" id="rm_7_5775" deletable="false" movable="false">
+                        <field name="TIME_MACHINE_ENABLED">FALSE</field>
+                        <next>
+                          <block type="trade_definition_restartonerror" id="re_8_5775" deletable="false" movable="false">
+                            <field name="RESTARTONERROR">TRUE</field>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="vset_9_5775">
+        <field name="VAR" id="var_stake">Stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="num_10_5775">
+            <field name="NUM">0.35</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="vset_11_5775">
+            <field name="VAR" id="var_init_stake">InitialStake</field>
+            <value name="VALUE">
+              <block type="math_number" id="num_12_5775">
+                <field name="NUM">0.35</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="vset_13_5775">
+                <field name="VAR" id="var_target">TargetProfit</field>
+                <value name="VALUE">
+                  <block type="math_number" id="num_14_5775">
+                    <field name="NUM">10.0</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="vset_15_5775">
+                    <field name="VAR" id="var_loss">StopLoss</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="num_16_5775">
+                        <field name="NUM">50.0</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="vset_17_5775">
+                        <field name="VAR" id="var_martingale">MartingaleMultiplier</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="num_18_5775">
+                            <field name="NUM">2.0</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="vset_19_5775">
+                            <field name="VAR" id="var_prediction">Prediction</field>
+                            <value name="VALUE">
+                              <block type="math_number" id="num_20_5775">
+                                <field name="NUM">1</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="vset_21_5775">
+                                <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                <value name="VALUE">
+                                  <block type="text" id="txt_22_5775">
+                                    <field name="TEXT">NONE</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="vset_23_5775">
+                                    <field name="VAR" id="var_pattern_found">PatternFound</field>
+                                    <value name="VALUE">
+                                      <block type="logic_boolean" id="bool_24_5775">
+                                        <field name="BOOL">FALSE</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="variables_set" id="vset_25_5775">
+                                        <field name="VAR" id="var_trades_cycle">TradesInCycle</field>
+                                        <value name="VALUE">
+                                          <block type="math_number" id="num_26_5775">
+                                            <field name="NUM">0</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="variables_set" id="vset_27_5775">
+                                            <field name="VAR" id="var_max_trades">MaxTradesPerCycle</field>
+                                            <value name="VALUE">
+                                              <block type="math_number" id="num_28_5775">
+                                                <field name="NUM">5</field>
+                                              </block>
+                                            </value>
+                                            <next>
+                                              <block type="notify" id="notif_init_29_5775">
+                                                <field name="NOTIFICATION_TYPE">info</field>
+                                                <field name="NOTIFICATION_SOUND">silent</field>
+                                                <value name="MESSAGE">
+                                                  <shadow type="text" id="sh_txt_30_5775">
+                                                    <field name="TEXT">🤖 Deriv auto X Activated | Over 1 &amp; Under 8 LDP Engine</field>
+                                                  </shadow>
+                                                </value>
+                                              </block>
+                                            </next>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="trade_definition_tradeoptions" id="to_31_5775">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true"/>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <value name="DURATION">
+          <shadow type="math_number" id="sh_dur_32_5775">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="AMOUNT">
+          <shadow type="math_number" id="sh_amt_33_5775">
+            <field name="NUM">0.35</field>
+          </shadow>
+          <block type="variables_get" id="vget_34_5775">
+            <field name="VAR" id="var_stake">Stake</field>
+          </block>
+        </value>
+        <value name="PREDICTION">
+          <shadow type="math_number_positive" id="sh_pred_35_5775">
+            <field name="NUM">1</field>
+          </shadow>
+          <block type="variables_get" id="vget_36_5775">
+            <field name="VAR" id="var_prediction">Prediction</field>
+          </block>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="during_purchase" id="during_pur_37_5775" collapsed="true" x="714" y="60">
+    <statement name="DURING_PURCHASE_STACK">
+      <block type="controls_if" id="ctrl_dp_38_5775">
+        <value name="IF0">
+          <block type="check_sell" id="chk_sell_39_5775"/>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="before_pur_40_5775" deletable="false" x="0" y="1000">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="variables_set" id="vset_tick_41_5775">
+        <field name="VAR" id="var_tick_1">Tick 1</field>
+        <value name="VALUE">
+          <block type="lists_getIndex" id="get_idx_42_5775">
+            <mutation xmlns="http://www.w3.org/1999/xhtml" statement="false" at="true"/>
+            <field name="MODE">GET</field>
+            <field name="WHERE">FROM_END</field>
+            <value name="VALUE">
+              <block type="lastDigitList" id="ldl_43_5775"/>
+            </value>
+            <value name="AT">
+              <block type="math_number" id="at_num_44_5775">
+                <field name="NUM">1</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="vset_tick_45_5775">
+            <field name="VAR" id="var_tick_2">Tick 2</field>
+            <value name="VALUE">
+              <block type="lists_getIndex" id="get_idx_46_5775">
+                <mutation xmlns="http://www.w3.org/1999/xhtml" statement="false" at="true"/>
+                <field name="MODE">GET</field>
+                <field name="WHERE">FROM_END</field>
+                <value name="VALUE">
+                  <block type="lastDigitList" id="ldl_47_5775"/>
+                </value>
+                <value name="AT">
+                  <block type="math_number" id="at_num_48_5775">
+                    <field name="NUM">2</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="vset_tick_49_5775">
+                <field name="VAR" id="var_tick_3">Tick 3</field>
+                <value name="VALUE">
+                  <block type="lists_getIndex" id="get_idx_50_5775">
+                    <mutation xmlns="http://www.w3.org/1999/xhtml" statement="false" at="true"/>
+                    <field name="MODE">GET</field>
+                    <field name="WHERE">FROM_END</field>
+                    <value name="VALUE">
+                      <block type="lastDigitList" id="ldl_51_5775"/>
+                    </value>
+                    <value name="AT">
+                      <block type="math_number" id="at_num_52_5775">
+                        <field name="NUM">3</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="vset_tick_53_5775">
+                    <field name="VAR" id="var_tick_4">Tick 4</field>
+                    <value name="VALUE">
+                      <block type="lists_getIndex" id="get_idx_54_5775">
+                        <mutation xmlns="http://www.w3.org/1999/xhtml" statement="false" at="true"/>
+                        <field name="MODE">GET</field>
+                        <field name="WHERE">FROM_END</field>
+                        <value name="VALUE">
+                          <block type="lastDigitList" id="ldl_55_5775"/>
+                        </value>
+                        <value name="AT">
+                          <block type="math_number" id="at_num_56_5775">
+                            <field name="NUM">4</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="controls_if" id="ctrl_pattern_57_5775">
+                        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"/>
+                        <value name="IF0">
+                          <block type="logic_compare" id="cmp_pfound_58_5775">
+                            <field name="OP">EQ</field>
+                            <value name="A">
+                              <block type="variables_get" id="vget_59_5775">
+                                <field name="VAR" id="var_pattern_found">PatternFound</field>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="logic_boolean" id="bool_f_60_5775">
+                                <field name="BOOL">FALSE</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <statement name="DO0">
+                          <block type="controls_if" id="ctrl_scan_if_61_5775">
+                            <mutation xmlns="http://www.w3.org/1999/xhtml" elseif="1" else="1"/>
+                            <value name="IF0">
+                              <block type="logic_operation" id="land_62_5775">
+                                <field name="OP">AND</field>
+                                <value name="A">
+                                  <block type="logic_operation" id="land_63_5775">
+                                    <field name="OP">AND</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_64_5775">
+                                        <field name="OP">GT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_65_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_66_5775">
+                                            <field name="NUM">1</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_67_5775">
+                                        <field name="OP">GT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_68_5775">
+                                            <field name="VAR" id="var_tick_2">Tick 2</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_69_5775">
+                                            <field name="NUM">1</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="logic_operation" id="land_70_5775">
+                                    <field name="OP">AND</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_71_5775">
+                                        <field name="OP">GT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_72_5775">
+                                            <field name="VAR" id="var_tick_3">Tick 3</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_73_5775">
+                                            <field name="NUM">1</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_74_5775">
+                                        <field name="OP">GT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_75_5775">
+                                            <field name="VAR" id="var_tick_4">Tick 4</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_76_5775">
+                                            <field name="NUM">1</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <statement name="DO0">
+                              <block type="variables_set" id="vset_77_5775">
+                                <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                <value name="VALUE">
+                                  <block type="text" id="txt_78_5775">
+                                    <field name="TEXT">OVER</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="vset_79_5775">
+                                    <field name="VAR" id="var_prediction">Prediction</field>
+                                    <value name="VALUE">
+                                      <block type="math_number" id="num_80_5775">
+                                        <field name="NUM">1</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="variables_set" id="vset_81_5775">
+                                        <field name="VAR" id="var_pattern_found">PatternFound</field>
+                                        <value name="VALUE">
+                                          <block type="logic_boolean" id="bool_82_5775">
+                                            <field name="BOOL">TRUE</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="notify" id="notif_83_5775">
+                                            <field name="NOTIFICATION_TYPE">success</field>
+                                            <field name="NOTIFICATION_SOUND">silent</field>
+                                            <value name="MESSAGE">
+                                              <shadow type="text" id="sh_txt_84_5775">
+                                                <field name="TEXT">🎯 4 Over digits detected! Strategy locked: OVER 1 (Waiting for entry digit 0/1)...</field>
+                                              </shadow>
+                                            </value>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </statement>
+                            <value name="IF1">
+                              <block type="logic_operation" id="land_85_5775">
+                                <field name="OP">AND</field>
+                                <value name="A">
+                                  <block type="logic_operation" id="land_86_5775">
+                                    <field name="OP">AND</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_87_5775">
+                                        <field name="OP">LT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_88_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_89_5775">
+                                            <field name="NUM">8</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_90_5775">
+                                        <field name="OP">LT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_91_5775">
+                                            <field name="VAR" id="var_tick_2">Tick 2</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_92_5775">
+                                            <field name="NUM">8</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="logic_operation" id="land_93_5775">
+                                    <field name="OP">AND</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_94_5775">
+                                        <field name="OP">LT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_95_5775">
+                                            <field name="VAR" id="var_tick_3">Tick 3</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_96_5775">
+                                            <field name="NUM">8</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_97_5775">
+                                        <field name="OP">LT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_98_5775">
+                                            <field name="VAR" id="var_tick_4">Tick 4</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_99_5775">
+                                            <field name="NUM">8</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <statement name="DO1">
+                              <block type="variables_set" id="vset_100_5775">
+                                <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                <value name="VALUE">
+                                  <block type="text" id="txt_101_5775">
+                                    <field name="TEXT">UNDER</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="vset_102_5775">
+                                    <field name="VAR" id="var_prediction">Prediction</field>
+                                    <value name="VALUE">
+                                      <block type="math_number" id="num_103_5775">
+                                        <field name="NUM">8</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="variables_set" id="vset_104_5775">
+                                        <field name="VAR" id="var_pattern_found">PatternFound</field>
+                                        <value name="VALUE">
+                                          <block type="logic_boolean" id="bool_105_5775">
+                                            <field name="BOOL">TRUE</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="notify" id="notif_106_5775">
+                                            <field name="NOTIFICATION_TYPE">warn</field>
+                                            <field name="NOTIFICATION_SOUND">silent</field>
+                                            <value name="MESSAGE">
+                                              <shadow type="text" id="sh_txt_107_5775">
+                                                <field name="TEXT">🎯 4 Under digits detected! Strategy locked: UNDER 8 (Waiting for entry digit 8/9)...</field>
+                                              </shadow>
+                                            </value>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </statement>
+                            <statement name="ELSE">
+                              <block type="notify" id="notif_scan_108_5775">
+                                <field name="NOTIFICATION_TYPE">info</field>
+                                <field name="NOTIFICATION_SOUND">silent</field>
+                                <value name="MESSAGE">
+                                  <shadow type="text" id="sh_txt_109_5775">
+                                    <field name="TEXT">🔍 Deriv auto X: Analyzing 25 Ticks LDP... Waiting for 4 Over/Under pattern.</field>
+                                  </shadow>
+                                </value>
+                              </block>
+                            </statement>
+                          </block>
+                        </statement>
+                        <statement name="ELSE">
+                          <block type="controls_if" id="ctrl_entry_if_110_5775">
+                            <mutation xmlns="http://www.w3.org/1999/xhtml" elseif="1"/>
+                            <value name="IF0">
+                              <block type="logic_operation" id="land_111_5775">
+                                <field name="OP">AND</field>
+                                <value name="A">
+                                  <block type="logic_compare" id="cmp_td_112_5775">
+                                    <field name="OP">EQ</field>
+                                    <value name="A">
+                                      <block type="variables_get" id="vget_113_5775">
+                                        <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="text" id="txt_114_5775">
+                                        <field name="TEXT">OVER</field>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="logic_operation" id="lor_115_5775">
+                                    <field name="OP">OR</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_116_5775">
+                                        <field name="OP">EQ</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_117_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_118_5775">
+                                            <field name="NUM">0</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_119_5775">
+                                        <field name="OP">EQ</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_120_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_121_5775">
+                                            <field name="NUM">1</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <statement name="DO0">
+                              <block type="notify" id="notif_122_5775">
+                                <field name="NOTIFICATION_TYPE">success</field>
+                                <field name="NOTIFICATION_SOUND">silent</field>
+                                <value name="MESSAGE">
+                                  <shadow type="text" id="sh_txt_123_5775">
+                                    <field name="TEXT">🚀 Entry Confirmed! Purchasing DIGITOVER with Prediction 1...</field>
+                                  </shadow>
+                                </value>
+                                <next>
+                                  <block type="purchase" id="pur_over_124_5775">
+                                    <field name="PURCHASE_LIST">DIGITOVER</field>
+                                  </block>
+                                </next>
+                              </block>
+                            </statement>
+                            <value name="IF1">
+                              <block type="logic_operation" id="land_125_5775">
+                                <field name="OP">AND</field>
+                                <value name="A">
+                                  <block type="logic_compare" id="cmp_td_126_5775">
+                                    <field name="OP">EQ</field>
+                                    <value name="A">
+                                      <block type="variables_get" id="vget_127_5775">
+                                        <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="text" id="txt_128_5775">
+                                        <field name="TEXT">UNDER</field>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="logic_operation" id="lor_129_5775">
+                                    <field name="OP">OR</field>
+                                    <value name="A">
+                                      <block type="logic_compare" id="cmp_130_5775">
+                                        <field name="OP">EQ</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_131_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_132_5775">
+                                            <field name="NUM">8</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="cmp_133_5775">
+                                        <field name="OP">EQ</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="vget_134_5775">
+                                            <field name="VAR" id="var_tick_1">Tick 1</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="num_135_5775">
+                                            <field name="NUM">9</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <statement name="DO1">
+                              <block type="notify" id="notif_136_5775">
+                                <field name="NOTIFICATION_TYPE">warn</field>
+                                <field name="NOTIFICATION_SOUND">silent</field>
+                                <value name="MESSAGE">
+                                  <shadow type="text" id="sh_txt_137_5775">
+                                    <field name="TEXT">🚀 Entry Confirmed! Purchasing DIGITUNDER with Prediction 8...</field>
+                                  </shadow>
+                                </value>
+                                <next>
+                                  <block type="purchase" id="pur_under_138_5775">
+                                    <field name="PURCHASE_LIST">DIGITUNDER</field>
+                                  </block>
+                                </next>
+                              </block>
+                            </statement>
+                          </block>
+                        </statement>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="after_pur_139_5775" x="714" y="300">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="ctrl_win_loss_140_5775">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"/>
+        <value name="IF0">
+          <block type="contract_check_result" id="chk_win_141_5775">
+            <field name="CHECK_RESULT">win</field>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="variables_set" id="vset_142_5775">
+            <field name="VAR" id="var_stake">Stake</field>
+            <value name="VALUE">
+              <block type="variables_get" id="vget_143_5775">
+                <field name="VAR" id="var_init_stake">InitialStake</field>
+              </block>
+            </value>
+            <next>
+              <block type="notify" id="notif_win_144_5775">
+                <field name="NOTIFICATION_TYPE">success</field>
+                <field name="NOTIFICATION_SOUND">silent</field>
+                <value name="MESSAGE">
+                  <shadow type="text" id="sh_txt_145_5775">
+                    <field name="TEXT">🎉 Trade WON! Stake reset to initial.</field>
+                  </shadow>
+                </value>
+              </block>
+            </next>
+          </block>
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="vset_146_5775">
+            <field name="VAR" id="var_stake">Stake</field>
+            <value name="VALUE">
+              <block type="math_arithmetic" id="arith_147_5775">
+                <field name="OP">MULTIPLY</field>
+                <value name="A">
+                  <block type="variables_get" id="vget_148_5775">
+                    <field name="VAR" id="var_stake">Stake</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="vget_149_5775">
+                    <field name="VAR" id="var_martingale">MartingaleMultiplier</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="notify" id="notif_loss_150_5775">
+                <field name="NOTIFICATION_TYPE">warn</field>
+                <field name="NOTIFICATION_SOUND">silent</field>
+                <value name="MESSAGE">
+                  <shadow type="text" id="sh_txt_151_5775">
+                    <field name="TEXT">⚠️ Trade LOST. Applying Martingale 2.0x.</field>
+                  </shadow>
+                </value>
+              </block>
+            </next>
+          </block>
+        </statement>
+        <next>
+          <block type="math_change" id="mchg_152_5775">
+            <field name="VAR" id="var_trades_cycle">TradesInCycle</field>
+            <value name="DELTA">
+              <shadow type="math_number" id="sh_num_153_5775">
+                <field name="NUM">1</field>
+              </shadow>
+            </value>
+            <next>
+              <block type="controls_if" id="ctrl_limits_154_5775">
+                <mutation xmlns="http://www.w3.org/1999/xhtml" elseif="1" else="1"/>
+                <value name="IF0">
+                  <block type="logic_compare" id="cmp_tp_155_5775">
+                    <field name="OP">GTE</field>
+                    <value name="A">
+                      <block type="total_profit" id="tot_prof_156_5775"/>
+                    </value>
+                    <value name="B">
+                      <block type="variables_get" id="vget_157_5775">
+                        <field name="VAR" id="var_target">TargetProfit</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <statement name="DO0">
+                  <block type="notify" id="notif_tp_158_5775">
+                    <field name="NOTIFICATION_TYPE">success</field>
+                    <field name="NOTIFICATION_SOUND">silent</field>
+                    <value name="MESSAGE">
+                      <shadow type="text" id="sh_txt_159_5775">
+                        <field name="TEXT">🏆 TARGET PROFIT ACHIEVED! Deriv auto X stopping successfully.</field>
+                      </shadow>
+                    </value>
+                  </block>
+                </statement>
+                <value name="IF1">
+                  <block type="logic_compare" id="cmp_sl_160_5775">
+                    <field name="OP">LTE</field>
+                    <value name="A">
+                      <block type="total_profit" id="tot_prof_161_5775"/>
+                    </value>
+                    <value name="B">
+                      <block type="math_single" id="math_neg_162_5775">
+                        <field name="OP">NEG</field>
+                        <value name="NUM">
+                          <block type="variables_get" id="vget_163_5775">
+                            <field name="VAR" id="var_loss">StopLoss</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <statement name="DO1">
+                  <block type="notify" id="notif_sl_164_5775">
+                    <field name="NOTIFICATION_TYPE">error</field>
+                    <field name="NOTIFICATION_SOUND">silent</field>
+                    <value name="MESSAGE">
+                      <shadow type="text" id="sh_txt_165_5775">
+                        <field name="TEXT">🛑 STOP LOSS LIMIT HIT! Deriv auto X stopping to protect balance.</field>
+                      </shadow>
+                    </value>
+                  </block>
+                </statement>
+                <statement name="ELSE">
+                  <block type="controls_if" id="ctrl_cycle_166_5775">
+                    <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"/>
+                    <value name="IF0">
+                      <block type="logic_compare" id="cmp_cycle_167_5775">
+                        <field name="OP">GTE</field>
+                        <value name="A">
+                          <block type="variables_get" id="vget_168_5775">
+                            <field name="VAR" id="var_trades_cycle">TradesInCycle</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="variables_get" id="vget_169_5775">
+                            <field name="VAR" id="var_max_trades">MaxTradesPerCycle</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="vset_170_5775">
+                        <field name="VAR" id="var_trades_cycle">TradesInCycle</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="num_171_5775">
+                            <field name="NUM">0</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="vset_172_5775">
+                            <field name="VAR" id="var_pattern_found">PatternFound</field>
+                            <value name="VALUE">
+                              <block type="logic_boolean" id="bool_173_5775">
+                                <field name="BOOL">FALSE</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="vset_174_5775">
+                                <field name="VAR" id="var_trade_dir">TradeDirection</field>
+                                <value name="VALUE">
+                                  <block type="text" id="txt_175_5775">
+                                    <field name="TEXT">NONE</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="notify" id="notif_cyc_176_5775">
+                                    <field name="NOTIFICATION_TYPE">info</field>
+                                    <field name="NOTIFICATION_SOUND">silent</field>
+                                    <value name="MESSAGE">
+                                      <shadow type="text" id="sh_txt_177_5775">
+                                        <field name="TEXT">🔄 5 trades placed in cycle. Pausing to re-analyze last 25 ticks &amp; waiting for next 4-digit pattern...</field>
+                                      </shadow>
+                                    </value>
+                                    <next>
+                                      <block type="trade_again" id="ta_178_5775"/>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </statement>
+                    <statement name="ELSE">
+                      <block type="notify" id="notif_mid_179_5775">
+                        <field name="NOTIFICATION_TYPE">info</field>
+                        <field name="NOTIFICATION_SOUND">silent</field>
+                        <value name="MESSAGE">
+                          <shadow type="text" id="sh_txt_180_5775">
+                            <field name="TEXT">⚡ Trade complete. Waiting for next entry trigger in current 5-trade cycle...</field>
+                          </shadow>
+                        </value>
+                        <next>
+                          <block type="trade_again" id="ta_181_5775"/>
+                        </next>
+                      </block>
+                    </statement>
+                  </block>
+                </statement>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+</xml>
