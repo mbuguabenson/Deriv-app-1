@@ -38,7 +38,7 @@ export interface TradeLogItem {
     id: string;
     time: string;
     market: string;
-    strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY';
+    strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY' | 'CYCLE_PAUSE' | 'CYCLE_RESUME';
     contractType: string;
     prediction: number;
     stake: number;
@@ -598,7 +598,7 @@ const PovertyHunter: React.FC = observer(() => {
     const addLogEntry = useCallback(
         (
             market: string,
-            strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY',
+            strategy: 'DIFFERS' | 'OVER_UNDER' | 'RECOVERY_OVER' | 'RECOVERY_UNDER' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'RECOVERY' | 'CYCLE_PAUSE' | 'CYCLE_RESUME',
             contractType: string,
             prediction: number,
             stake: number,
@@ -827,6 +827,7 @@ const PovertyHunter: React.FC = observer(() => {
         setBotStateSync('SCANNING');
         let ticksRemaining = 2;
         let waitingForCandidate = true;
+        let cycleRunCount = 0;
 
         const loop = async () => {
             while (!signal.aborted && botStateRef.current !== 'IDLE') {
@@ -978,6 +979,87 @@ const PovertyHunter: React.FC = observer(() => {
                                 setBotStateSync('SCANNING');
                             }
                             await new Promise(r => setTimeout(r, 500));
+
+                            // 5-Run Cycle Pause + Quality Re-analysis Gate
+                            const baseStk = parseFloat(initialStake) || 0.5;
+                            if (!isInRecoveryRef.current && currentStakeRef.current <= baseStk * 1.05) {
+                                cycleRunCount++;
+                                if (cycleRunCount >= 5) {
+                                    cycleRunCount = 0;
+                                    addLogEntry(
+                                        targetSym,
+                                        'CYCLE_PAUSE',
+                                        '5 Runs Complete — Pausing for Quality Re-Analysis',
+                                        targetDiff,
+                                        currentStakeRef.current,
+                                        'PENDING',
+                                        0
+                                    );
+                                    setBotStateSync('PAUSED');
+                                    // 3s post-trade settle
+                                    await new Promise(r => setTimeout(r, 3000));
+
+                                    // Reset countdown state so we never trade on a stale signal
+                                    waitingForCandidate = true;
+                                    setWaitingForAppear(true);
+                                    ticksRemaining = 2;
+                                    setConfirmationTicksRemaining(2);
+
+                                    // Quality signal poll loop: wait for quality setup (up to 90 seconds)
+                                    const cyclePauseStart = Date.now();
+                                    let qualitySetupFound = false;
+
+                                    while (!signal.aborted && botStateRef.current !== 'IDLE' && Date.now() - cyclePauseStart < 90000) {
+                                        const symToCheck = selectedSymbolRef.current;
+                                        const mDataCheck = marketsDataRef.current.get(symToCheck);
+
+                                        if (mDataCheck && mDataCheck.digits.length >= 30) {
+                                            const recentTicks = mDataCheck.digits.slice(-60);
+                                            const counts = new Array(10).fill(0);
+                                            recentTicks.forEach(d => {
+                                                if (d >= 0 && d <= 9) counts[d]++;
+                                            });
+                                            const validCounts = counts.filter((_, d) => !EXCLUDED_DIGITS.includes(d));
+                                            const minCount = Math.min(...validCounts);
+                                            const total = recentTicks.length || 1;
+                                            const minPct = (minCount / total) * 100;
+                                            const score = Math.round(100 - minPct * 5);
+
+                                            // Quality setup: cold digit frequency <= 8% or score >= 60
+                                            if (score >= 60) {
+                                                qualitySetupFound = true;
+                                                addLogEntry(
+                                                    symToCheck,
+                                                    'CYCLE_RESUME',
+                                                    `Quality Setup Verified (${score}% score) — Resuming Engine`,
+                                                    targetDiff,
+                                                    currentStakeRef.current,
+                                                    'PENDING',
+                                                    0
+                                                );
+                                                break;
+                                            }
+                                        }
+                                        await new Promise(r => setTimeout(r, 1000));
+                                    }
+
+                                    if (!qualitySetupFound && !signal.aborted && botStateRef.current !== 'IDLE') {
+                                        addLogEntry(
+                                            selectedSymbolRef.current,
+                                            'CYCLE_RESUME',
+                                            'Cycle pause window elapsed (90s) — Resuming Engine',
+                                            targetDiff,
+                                            currentStakeRef.current,
+                                            'PENDING',
+                                            0
+                                        );
+                                    }
+
+                                    if (botStateRef.current !== 'IDLE') {
+                                        setBotStateSync('SCANNING');
+                                    }
+                                }
+                            }
                         } else {
                             if (botStateRef.current !== 'WAITING_CONFIRMATION') {
                                 setBotStateSync('WAITING_CONFIRMATION');
@@ -1002,6 +1084,7 @@ const PovertyHunter: React.FC = observer(() => {
     }, [
         takeProfit,
         stopLoss,
+        initialStake,
         autoSwitchMarkets,
         maxRunsBeforeCheck,
         bestMarketCandidate,

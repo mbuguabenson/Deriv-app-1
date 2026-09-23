@@ -1313,12 +1313,17 @@ const OverlordAi: React.FC = observer(() => {
         autoAbortRef.current = new AbortController();
         const abortSignal = autoAbortRef.current.signal;
 
+        let cycleRunCount = 0; // 5-run cycle tracker — quality setup gate
+
         const loop = async () => {
             while (!abortSignal.aborted && botStateRef.current !== 'IDLE') {
                 if (botStateRef.current === 'PAUSED') {
                     await new Promise(r => setTimeout(r, 600));
                     continue;
                 }
+
+                // Internal 5-run cycle counter (resets independent of burst)
+                // (declared as loop-local, initialised once per startAutoTrading call)
 
                 // Check Take Profit & Stop Loss
                 if (sessionProfitRef.current >= tp && tp > 0) {
@@ -1417,6 +1422,9 @@ const OverlordAi: React.FC = observer(() => {
                     setCurrentBurstRun(0);
                 }
 
+                // Increment 5-run cycle counter after each settled trade
+                cycleRunCount++;
+
                 if (abortSignal.aborted || (botStateRef.current as string) === 'IDLE') break;
 
                 // Check Take Profit / Stop Loss immediately after settlement
@@ -1448,6 +1456,45 @@ const OverlordAi: React.FC = observer(() => {
                     setBurstCountTotal(burstCountRef.current);
 
                     setBotStateSync('BURST_PAUSED');
+
+                    // ── 5-run Cycle Quality Re-Analysis ──────────────────────────────────────
+                    if (cycleRunCount >= 5) {
+                        cycleRunCount = 0;
+                        console.log('[Overlord] Cycle pause — scanning for quality setup…');
+
+                        // Initial settle window
+                        await new Promise(r => setTimeout(r, 3000));
+
+                        // Poll for high-confidence signal (max 90s)
+                        const ovldPollStart = Date.now();
+                        let ovldCycleFound = false;
+                        while (
+                            !abortSignal.aborted &&
+                            botStateRef.current === 'BURST_PAUSED' &&
+                            Date.now() - ovldPollStart < 90_000
+                        ) {
+                            const ovldSym = selectedSymbolRef.current;
+                            const ovldData = marketsDataRef.current.get(ovldSym);
+                            if (ovldData && ovldData.digits.length >= 15) {
+                                const ovldAnalysis = evaluateOverlordAnalysis(ovldData.digits, strategyMode, ovldData.lastDigit);
+                                if (
+                                    ovldAnalysis.signal !== 'NEUTRAL' &&
+                                    ovldAnalysis.signalConfidence >= 60 &&
+                                    ovldAnalysis.isTriggerReady
+                                ) {
+                                    ovldCycleFound = true;
+                                    if (soundEnabled) playSoundCue('signal');
+                                    console.log(`[Overlord] Quality setup found (conf: ${ovldAnalysis.signalConfidence}). Resuming.`);
+                                    break;
+                                }
+                            }
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+
+                        if (!ovldCycleFound) {
+                            console.log('[Overlord] Cycle pause: 90s timeout — resuming scan.');
+                        }
+                    }
 
                     // Market rotation check
                     if (

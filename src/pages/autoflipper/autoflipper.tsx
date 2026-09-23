@@ -1406,18 +1406,57 @@ const Autoflipper: React.FC = observer(() => {
                         }
                     }
 
-                    // ── Batch pause: every 5 completed trades, pause for reanalysis ──
-                    runsInBatchRef.current++;
-                    setRunsInBatch(runsInBatchRef.current);
+                    // ── Cycle pause: every 5 completed base-stake trades, pause and wait for a quality setup ──
+                    // Martingale recovery trades (stake > base) bypass this counter to avoid interrupting sequences
+                    if (currentStakeRef.current <= getHourStake(currentHourRef.current) * 1.05) {
+                        runsInBatchRef.current++;
+                        setRunsInBatch(runsInBatchRef.current);
+                    }
                     if (runsInBatchRef.current >= 5) {
                         runsInBatchRef.current = 0;
                         setRunsInBatch(0);
-                        addLog('BATCH REANALYSIS', data.label, 'PENDING', 0,
-                            `⏸ 5-trade batch complete. Pausing 8s for market reanalysis before next batch…`);
+                        addLog('CYCLE PAUSE', data.label, 'PENDING', 0,
+                            `🔄 5-run cycle complete. Re-analysing market — waiting for quality setup (score ≥ 60) before resuming…`);
                         setAutoState('PAUSED'); autoStateRef.current = 'PAUSED';
-                        await new Promise(r => setTimeout(r, 8000));
-                        if ((autoStateRef.current as AutoState) === 'PAUSED') {
-                            addLog('BATCH RESUME', data.label, 'PENDING', 0, '▶ Reanalysis complete. Resuming engine…');
+
+                        // Initial settle window
+                        await new Promise(r => setTimeout(r, 3000));
+
+                        // Poll for a fresh quality triggered signal (max 90s)
+                        const batchPollStart = Date.now();
+                        let batchSignalFound = false;
+                        while (
+                            !abortSig.aborted &&
+                            (autoStateRef.current as AutoState) === 'PAUSED' &&
+                            Date.now() - batchPollStart < 90_000
+                        ) {
+                            const batchData = marketsRef.current.get(selectedSymbolRef.current);
+                            if (batchData && batchData.digits.length >= 25) {
+                                const batchSig  = checkEntrySignal(batchData.digits, 'AUTO');
+                                const batchAnalysis = computeAnalysis(batchData.digits);
+                                if (
+                                    batchSig &&
+                                    batchSig.status === 'TRIGGERED' &&
+                                    !batchSig.isAutoPaused &&
+                                    batchSig.qualityScore >= 60 &&
+                                    batchAnalysis.condition.isGood &&
+                                    !batchAnalysis.isAvoidMarket
+                                ) {
+                                    batchSignalFound = true;
+                                    addLog('CYCLE RESUME', batchData.label, 'PENDING', 0,
+                                        `✅ Quality setup confirmed (Score: ${batchSig.qualityScore}). Resuming next 5-run cycle…`);
+                                    break;
+                                }
+                            }
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+
+                        if (!batchSignalFound && !abortSig.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
+                            addLog('CYCLE RESUME', data.label, 'PENDING', 0,
+                                '⏱️ 90s elapsed without quality setup. Resuming scan — will wait for trigger naturally.');
+                        }
+
+                        if (!abortSig.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
                             setAutoState('SCANNING'); autoStateRef.current = 'SCANNING';
                         }
                     }

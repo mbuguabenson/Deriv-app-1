@@ -28,6 +28,7 @@ export class ParentBridgeClient {
     private instanceId: string;
     private logger: ReturnType<typeof makeBridgeLogger>;
     private retryIntervalId: any = null;
+    private cachedOtpUrl: string = '';
 
     // Diagnostics
     private diagnostics: BridgeDiagnosticInfo = {
@@ -92,6 +93,41 @@ export class ParentBridgeClient {
             this.handleSessionChange(session);
         });
 
+        // Prefetch authenticated OTP WebSocket URL for DTrader iframe so WebSocket connects immediately
+        const targetLoginId =
+            sessionManager.getSession()?.loginid ||
+            localStorage.getItem('active_loginid') ||
+            localStorage.getItem('client.loginid') ||
+            '';
+        const targetToken = getActiveToken(targetLoginId) || '';
+        if (targetToken && targetLoginId) {
+            import('@/services/derivws-accounts.service')
+                .then(({ DerivWSAccountsService }) => {
+                    DerivWSAccountsService.fetchOTPWebSocketURL(targetToken, targetLoginId)
+                        .then(url => {
+                            if (url) {
+                                this.cachedOtpUrl = url;
+                                if (this.iframeWindow) {
+                                    const currency = sessionManager.getSession()?.currency || localStorage.getItem('client.currency') || 'USD';
+                                    const appIdStr = String(sessionManager.getSession()?.appId || getAppId() || '121856');
+                                    this.sendAuthPayloadToWindow(
+                                        this.iframeWindow,
+                                        targetToken,
+                                        targetLoginId,
+                                        currency,
+                                        appIdStr,
+                                        url
+                                    );
+                                }
+                            }
+                        })
+                        .catch(err => {
+                            console.warn('[ParentBridge] OTP prefetch note:', err);
+                        });
+                })
+                .catch(() => {});
+        }
+
         // Proactively send auth handshakes to iframe continuously for 30s
         this.startProactiveAuthLoop();
 
@@ -107,22 +143,21 @@ export class ParentBridgeClient {
         tok: string,
         loginid: string,
         currency: string,
-        appIdStr: string
+        appIdStr: string,
+        otpUrlParam: string = ''
     ) {
         if (!targetWindow || targetWindow === window) return;
         try {
-            // For Deriv DTrader iframe, if OAuth JWT is passed, fallback to legacy token if available
-            const isDTrader = Boolean(
-                this.iframeOrigin &&
-                (this.iframeOrigin.includes('deriv-dtrader') || this.iframeOrigin.includes('profhubdtrader'))
-            );
+            // For Deriv DTrader iframe, if legacy token is available prefer it, otherwise use active token (OAuth2 or PAT)
             let tokenToUse = tok;
-            if (isDTrader && tok && tok.startsWith('ey')) {
+            if (tok && tok.startsWith('ey')) {
                 const legacy = getLegacyDTraderToken(loginid) || localStorage.getItem('token1');
                 if (legacy) {
                     tokenToUse = legacy;
                 }
             }
+
+            const effectiveOtpUrl = otpUrlParam || this.cachedOtpUrl || '';
 
             const hasToken =
                 Boolean(tokenToUse && tokenToUse !== 'null' && tokenToUse !== 'undefined' && tokenToUse !== 'a1-guest' && tokenToUse !== 'dummy_token');
@@ -178,7 +213,8 @@ export class ParentBridgeClient {
                 },
                 activeAccountId: activeAccId,
                 accounts,
-                otpUrl: '',
+                otpUrl: effectiveOtpUrl,
+                ws_url: effectiveOtpUrl,
                 userProfile: {
                     country: profileCountry.toLowerCase(),
                     currency: currency || 'USD',
@@ -200,10 +236,15 @@ export class ParentBridgeClient {
                 tokenPresent: hasToken,
                 token: effectiveToken,
                 token1: effectiveToken,
+                access_token: effectiveToken,
                 loginid: activeAccId,
                 loginId: activeAccId,
                 acct1: activeAccId,
                 account_id: activeAccId,
+                accounts,
+                otpUrl: effectiveOtpUrl,
+                otp_url: effectiveOtpUrl,
+                ws_url: effectiveOtpUrl,
                 currency: currency || 'USD',
                 cur1: currency || 'USD',
                 accountType: 'ZOOM',
@@ -345,24 +386,20 @@ export class ParentBridgeClient {
                     session?.loginid ||
                     localStorage.getItem('active_loginid') ||
                     localStorage.getItem('client.loginid') ||
-                    'DOT100000';
-                const isDTrader = Boolean(
-                    this.iframeOrigin &&
-                    (this.iframeOrigin.includes('deriv-dtrader') || this.iframeOrigin.includes('profhubdtrader'))
-                );
-                const syncToken = (isDTrader ? getLegacyDTraderToken(loginid) : null) || getActiveToken(loginid) || '';
+                    '';
+                const syncToken = getActiveToken(loginid) || getLegacyDTraderToken(loginid) || '';
                 const currency = session?.currency || localStorage.getItem('client.currency') || 'USD';
                 const appIdStr = String(session?.appId || getAppId() || '121856');
 
                 if (syncToken) {
-                    this.sendAuthPayloadToWindow(this.iframeWindow, syncToken, loginid, currency, appIdStr);
+                    this.sendAuthPayloadToWindow(this.iframeWindow, syncToken, loginid, currency, appIdStr, this.cachedOtpUrl);
                 }
                 this.sendAuthInit();
 
-                if (!syncToken && !isDTrader) {
+                if (!syncToken) {
                     const resolvedToken = await resolveValidDerivWSToken(loginid);
                     if (resolvedToken && resolvedToken !== syncToken && this.iframeWindow) {
-                        this.sendAuthPayloadToWindow(this.iframeWindow, resolvedToken, loginid, currency, appIdStr);
+                        this.sendAuthPayloadToWindow(this.iframeWindow, resolvedToken, loginid, currency, appIdStr, this.cachedOtpUrl);
                     }
                 }
             } catch {

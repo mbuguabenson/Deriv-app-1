@@ -1406,6 +1406,7 @@ const ElitePro: React.FC = observer(() => {
             autoAbortRef.current = new AbortController();
             const abortSignal = autoAbortRef.current.signal;
             let tradeRuns = 0;
+            let cycleRunCount = 0; // Tracks base-stake completions for 5-run cycle pause
 
             // Stabilized Market Analysis Dwell Tracking
             let currentMarketDwellTicks = 0;
@@ -1684,6 +1685,75 @@ const ElitePro: React.FC = observer(() => {
                             autoStateRef.current = 'IDLE';
                             setMilestone({ isOpen: true, type: 'sl' });
                             break;
+                        }
+
+                        // ── 5-Run Cycle Pause: only count base-stake completions ──────────────────
+                        if (currentStakeRef.current <= baseStake * 1.05) {
+                            cycleRunCount++;
+                        }
+                        if (cycleRunCount >= 5) {
+                            cycleRunCount = 0;
+                            addLogEntry(
+                                'CYCLE PAUSE',
+                                currentData.label,
+                                'PENDING',
+                                0,
+                                '🔄 5-run cycle complete. Re-analysing — waiting for quality setup (score ≥ 60)…'
+                            );
+                            setAutoState('PAUSED');
+                            autoStateRef.current = 'PAUSED';
+
+                            // Initial settle window
+                            await new Promise(r => setTimeout(r, 3000));
+
+                            // Poll for fresh quality TRIGGERED signal (max 90s)
+                            const eliteCyclePollStart = Date.now();
+                            let eliteCycleFound = false;
+                            while (
+                                !abortSignal.aborted &&
+                                (autoStateRef.current as AutoState) === 'PAUSED' &&
+                                Date.now() - eliteCyclePollStart < 90_000
+                            ) {
+                                const eliteLiveData = marketsRef.current.get(selectedSymbolRef.current);
+                                if (eliteLiveData && eliteLiveData.digits.length >= 15) {
+                                    const eliteSig = checkEntrySignal(eliteLiveData.digits, targetStrategyRef.current);
+                                    const eliteAnalysis = computeAnalysis(eliteLiveData.digits);
+                                    if (
+                                        eliteSig &&
+                                        eliteSig.status === 'TRIGGERED' &&
+                                        !eliteSig.isAutoPaused &&
+                                        eliteAnalysis.qualityScore >= 60 &&
+                                        eliteAnalysis.condition.isGood &&
+                                        !eliteAnalysis.isAvoidMarket
+                                    ) {
+                                        eliteCycleFound = true;
+                                        addLogEntry(
+                                            'CYCLE RESUME',
+                                            eliteLiveData.label,
+                                            'PENDING',
+                                            0,
+                                            `✅ Quality setup confirmed (Score: ${eliteAnalysis.qualityScore}). Resuming next 5-run cycle…`
+                                        );
+                                        break;
+                                    }
+                                }
+                                await new Promise(r => setTimeout(r, 2000));
+                            }
+
+                            if (!eliteCycleFound && !abortSignal.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
+                                addLogEntry(
+                                    'CYCLE RESUME',
+                                    currentData.label,
+                                    'PENDING',
+                                    0,
+                                    '⏱️ 90s elapsed without quality setup. Resuming scan — will wait for trigger naturally.'
+                                );
+                            }
+
+                            if (!abortSignal.aborted && (autoStateRef.current as AutoState) === 'PAUSED') {
+                                setAutoState('SCANNING');
+                                autoStateRef.current = 'SCANNING';
+                            }
                         }
 
                         // Always cycle back to SCANNING so the loop continues effortlessly!

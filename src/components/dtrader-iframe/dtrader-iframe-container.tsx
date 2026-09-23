@@ -64,30 +64,33 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Robust token resolver checking all local storage sources for legacy tokens compatible with DTrader
+    // Robust token resolver checking all local storage sources for tokens (both legacy and modern OAuth2 JWT)
     const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
-        if (explicitToken && isLegacyToken(explicitToken)) return explicitToken;
+        if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
         const targetId =
             loginid ||
             localStorage.getItem('active_loginid') ||
             localStorage.getItem('client.loginid') ||
             getActiveLoginId() ||
             '';
-        const legacy = getLegacyDTraderToken(targetId);
-        if (legacy && isLegacyToken(legacy)) return legacy;
         const active = getActiveToken(targetId);
-        if (active && isLegacyToken(active)) return active;
+        if (active && !isInvalidBearerToken(active)) return active;
         const accounts = getAccountsList();
-        if (targetId && accounts[targetId] && isLegacyToken(accounts[targetId])) {
+        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId])) {
             return accounts[targetId];
         }
         for (const k in accounts) {
-            if (accounts[k] && isLegacyToken(accounts[k])) return accounts[k];
+            if (accounts[k] && !isInvalidBearerToken(accounts[k])) return accounts[k];
         }
+        const legacy = getLegacyDTraderToken(targetId);
+        if (legacy && !isInvalidBearerToken(legacy)) return legacy;
         const candidate =
             localStorage.getItem('legacy_dtrader_token') ||
-            localStorage.getItem('token1');
-        if (candidate && isLegacyToken(candidate)) return candidate;
+            localStorage.getItem('token1') ||
+            localStorage.getItem('bot_new_api_token') ||
+            localStorage.getItem('active_token') ||
+            localStorage.getItem('token');
+        if (candidate && !isInvalidBearerToken(candidate)) return candidate;
         return '';
     }, []);
 
@@ -187,10 +190,19 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         try {
             const url = new URL(baseUrl);
 
-            if (currentToken && isLegacyToken(currentToken)) {
-                url.searchParams.set('acct1', currentLoginId || 'CR100000');
+            if (currentToken && !isInvalidBearerToken(currentToken)) {
+                const acc = currentLoginId || 'CR100000';
+                // Supply all standard, OAuth, and legacy parameter names to ensure
+                // seamless authentication regardless of how child stores read them
+                url.searchParams.set('token', currentToken);
                 url.searchParams.set('token1', currentToken);
+                url.searchParams.set('access_token', currentToken);
+                url.searchParams.set('account', acc);
+                url.searchParams.set('loginid', acc);
+                url.searchParams.set('acct1', acc);
                 url.searchParams.set('cur1', 'USD');
+                url.searchParams.set('currency', 'USD');
+                url.searchParams.set('is_embedded', 'true');
             }
 
             url.searchParams.set('theme', currentTheme);

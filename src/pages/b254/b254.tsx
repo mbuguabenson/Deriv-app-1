@@ -766,6 +766,7 @@ export const B254Page: React.FC = observer(() => {
         autoStateRef.current = 'SCANNING';
 
         let noPatternCycles = 0;
+        let cycleRunCount = 0; // Tracks base-stake trade completions for the 5-run cycle pause
 
         const loop = async () => {
             while (!abortSig.aborted && autoStateRef.current !== 'IDLE') {
@@ -976,6 +977,59 @@ export const B254Page: React.FC = observer(() => {
                                 setAutoState('WAITING_TRIGGER');
                                 autoStateRef.current = 'WAITING_TRIGGER';
                             }
+                        }
+                    }
+                    // ── 5-Run Cycle Pause: only count base-stake completions ──────────────────
+                    if (currentStakeRef.current <= configRef.current.stake * 1.05) {
+                        cycleRunCount++;
+                    }
+                    if (cycleRunCount >= 5) {
+                        cycleRunCount = 0;
+                        const cycleMarket = marketsDataRef.current.get(selectedSymbolRef.current);
+                        const cycleLabel = cycleMarket?.label || selectedSymbolRef.current;
+                        setAutoState('LOSS_GUARD');
+                        autoStateRef.current = 'LOSS_GUARD';
+                        console.log('[B254] Cycle pause — scanning for quality setup…');
+
+                        // 3s settle window
+                        await new Promise(r => setTimeout(r, 3000));
+
+                        // Poll up to 90s for a fresh TRIGGERED quality signal
+                        const cyclePollStart = Date.now();
+                        let cycleSignalFound = false;
+                        while (
+                            !abortSig.aborted &&
+                            autoStateRef.current === 'LOSS_GUARD' &&
+                            Date.now() - cyclePollStart < 90_000
+                        ) {
+                            const liveD = marketsDataRef.current.get(selectedSymbolRef.current);
+                            if (liveD && liveD.digits.length >= 15) {
+                                const freshSig = evaluateB254Signal(
+                                    liveD.digits,
+                                    configRef.current.targetStrategy,
+                                    configRef.current.minQualityScore
+                                );
+                                if (
+                                    freshSig &&
+                                    freshSig.status === 'TRIGGERED' &&
+                                    !freshSig.isAutoPaused &&
+                                    freshSig.qualityScore >= configRef.current.minQualityScore
+                                ) {
+                                    cycleSignalFound = true;
+                                    playSound('signal');
+                                    console.log(`[B254] Quality setup found after cycle pause (Q:${freshSig.qualityScore}). Resuming.`);
+                                    break;
+                                }
+                            }
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+
+                        if (!abortSig.aborted && autoStateRef.current === 'LOSS_GUARD') {
+                            if (!cycleSignalFound) {
+                                console.log('[B254] Cycle pause: 90s timeout — resuming scan.');
+                            }
+                            setAutoState('WAITING_TRIGGER');
+                            autoStateRef.current = 'WAITING_TRIGGER';
                         }
                     }
                 } catch (tradeErr) {
