@@ -117,7 +117,7 @@ export const MarketScannerSidebar: React.FC<MarketScannerSidebarProps> = ({
                 <div className='b254-market-cards-list'>
                     {markets.map(m => {
                         const isSelected = m.symbol === selectedSymbol;
-                        const isUnder = m.favoredDirection === 'UNDER_6';
+                        const isUnder = m.favoredDirection.startsWith('UNDER');
 
                         return (
                             <div

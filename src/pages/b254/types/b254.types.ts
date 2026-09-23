@@ -1,7 +1,22 @@
 // ─── B254 Unified Trading Suite Types & Interfaces ──────────────────────────────
 
-export type StrategyDirection = 'UNDER_6' | 'OVER_3';
-export type TargetStrategyChoice = 'UNDER_6' | 'OVER_3' | 'AUTO';
+export type StrategyTier = 'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6' | 'AUTO';
+export type StrategyBiasMode = 'AUTO_BIAS' | 'UNDER_ONLY' | 'OVER_ONLY';
+
+export type StrategyDirection = 
+    | 'UNDER_8' | 'OVER_1'
+    | 'UNDER_7' | 'OVER_2'
+    | 'UNDER_6' | 'OVER_3';
+
+export type TargetStrategyChoice = 
+    | 'AUTO'
+    | 'OVER_1_UNDER_8'
+    | 'OVER_2_UNDER_7'
+    | 'OVER_3_UNDER_6'
+    | 'UNDER_8' | 'OVER_1'
+    | 'UNDER_7' | 'OVER_2'
+    | 'UNDER_6' | 'OVER_3';
+
 export type B254AutoState = 'IDLE' | 'SCANNING' | 'WAITING_TRIGGER' | 'TRADING' | 'PAUSED' | 'LOSS_GUARD';
 
 export interface B254ManualConfig {
@@ -9,11 +24,13 @@ export interface B254ManualConfig {
     takeProfit: number;              // Target profit ($) to stop
     stopLoss: number;                // Max allowable loss ($) to stop
     enableMartingale: boolean;       // Enable martingale recovery
-    martingaleMultiplier: number;    // Martingale multiplier, e.g. 2.6
+    martingaleMultiplier: number;    // Martingale multiplier, e.g. 2.0 or 2.6
     maxConsecutiveLosses: number;    // Safety limit before auto-stopping (e.g. 5)
     maxStake: number;                // Max stake ceiling ($)
     tickDuration: number;            // Trade duration in ticks (e.g. 1)
     targetStrategy: TargetStrategyChoice;
+    strategyTier?: StrategyTier;
+    biasMode?: StrategyBiasMode;
     autoSwitchMarkets: boolean;      // Auto-switch to best market
     lossGuardEnabled: boolean;       // Post-loss pause & re-analysis before next entry
     minQualityScore: number;         // Threshold (0-100), e.g. 65
@@ -55,6 +72,15 @@ export interface HorizonStats {
     over49: number;
     pctUnder05: number;
     pctOver49: number;
+    // Multi-tier distribution metrics
+    under07?: number; // Under 8 (0-7)
+    over29?: number;  // Over 1 (2-9)
+    pctUnder07?: number;
+    pctOver29?: number;
+    under06?: number; // Under 7 (0-6)
+    over39?: number;  // Over 2 (3-9)
+    pctUnder06?: number;
+    pctOver39?: number;
     bias: HorizonBias;
 }
 
@@ -131,9 +157,14 @@ export interface B254ConditionChecklist {
 
 export interface B254SignalResult {
     direction: StrategyDirection;
-    prediction: number; // 6 for Under, 3 for Over
+    contractType: 'DIGITUNDER' | 'DIGITOVER';
+    prediction: number; // 8, 1, 7, 2, 6, 3
+    tier: StrategyTier;
     entryDigit: number;
+    winningDigits: number[];
+    triggerDigits: number[];
     score: SignalScoreBreakdown;
+    qualityScore: number;
     checklist: B254ConditionChecklist;
     status: 'WAITING' | 'ENTRY_READY' | 'TRIGGERED';
     isAutoPaused: boolean;

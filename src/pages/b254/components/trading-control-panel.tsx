@@ -43,28 +43,64 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
                 </div>
 
                 {/* Strategy Mode Selector */}
-                <div className='strategy-pills'>
+                <div className='strategy-pills' style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     <button
                         className={`strat-btn ${config.targetStrategy === 'AUTO' ? 'active' : ''}`}
-                        onClick={() => onUpdateConfig({ targetStrategy: 'AUTO' })}
+                        onClick={() => onUpdateConfig({ targetStrategy: 'AUTO', strategyTier: 'AUTO' })}
                         disabled={isRunning}
                     >
                         <Sparkles size={13} />
-                        <span>Auto-Detect (Best Edge)</span>
+                        <span>Auto (Best Edge)</span>
                     </button>
                     <button
-                        className={`strat-btn ${config.targetStrategy === 'UNDER_6' ? 'active under' : ''}`}
-                        onClick={() => onUpdateConfig({ targetStrategy: 'UNDER_6' })}
+                        className={`strat-btn ${config.targetStrategy === 'OVER_1_UNDER_8' || config.targetStrategy === 'UNDER_8' || config.targetStrategy === 'OVER_1' ? 'active' : ''}`}
+                        onClick={() => onUpdateConfig({ targetStrategy: 'OVER_1_UNDER_8', strategyTier: 'OVER_1_UNDER_8' })}
                         disabled={isRunning}
                     >
-                        <span>🛡️ Force UNDER 6</span>
+                        <span>Over 1 / Under 8</span>
                     </button>
                     <button
-                        className={`strat-btn ${config.targetStrategy === 'OVER_3' ? 'active over' : ''}`}
-                        onClick={() => onUpdateConfig({ targetStrategy: 'OVER_3' })}
+                        className={`strat-btn ${config.targetStrategy === 'OVER_2_UNDER_7' || config.targetStrategy === 'UNDER_7' || config.targetStrategy === 'OVER_2' ? 'active' : ''}`}
+                        onClick={() => onUpdateConfig({ targetStrategy: 'OVER_2_UNDER_7', strategyTier: 'OVER_2_UNDER_7' })}
                         disabled={isRunning}
                     >
-                        <span>🚀 Force OVER 3</span>
+                        <span>Over 2 / Under 7</span>
+                    </button>
+                    <button
+                        className={`strat-btn ${config.targetStrategy === 'OVER_3_UNDER_6' || config.targetStrategy === 'UNDER_6' || config.targetStrategy === 'OVER_3' ? 'active' : ''}`}
+                        onClick={() => onUpdateConfig({ targetStrategy: 'OVER_3_UNDER_6', strategyTier: 'OVER_3_UNDER_6' })}
+                        disabled={isRunning}
+                    >
+                        <span>Over 3 / Under 6</span>
+                    </button>
+                </div>
+
+                {/* Direction Bias Controls */}
+                <div className='bias-pills' style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                    <span style={{ fontSize: '11px', color: '#94a3b8', marginRight: '4px' }}>Direction:</span>
+                    <button
+                        className={`strat-btn ${(!config.biasMode || config.biasMode === 'AUTO_BIAS') ? 'active' : ''}`}
+                        style={{ padding: '3px 9px', fontSize: '11px' }}
+                        onClick={() => onUpdateConfig({ biasMode: 'AUTO_BIAS' })}
+                        disabled={isRunning}
+                    >
+                        Auto Bias
+                    </button>
+                    <button
+                        className={`strat-btn ${config.biasMode === 'UNDER_ONLY' ? 'active under' : ''}`}
+                        style={{ padding: '3px 9px', fontSize: '11px' }}
+                        onClick={() => onUpdateConfig({ biasMode: 'UNDER_ONLY' })}
+                        disabled={isRunning}
+                    >
+                        🛡️ Under Only
+                    </button>
+                    <button
+                        className={`strat-btn ${config.biasMode === 'OVER_ONLY' ? 'active over' : ''}`}
+                        style={{ padding: '3px 9px', fontSize: '11px' }}
+                        onClick={() => onUpdateConfig({ biasMode: 'OVER_ONLY' })}
+                        disabled={isRunning}
+                    >
+                        🚀 Over Only
                     </button>
                 </div>
             </div>

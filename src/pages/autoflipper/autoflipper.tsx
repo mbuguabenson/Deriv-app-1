@@ -537,13 +537,16 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
         const micro10Condition = a.micro.last10UnderCount >= 6;
         // 15-tick cycle: no strong regime shift against under AND under is majority (>= 8/15)
         const cycleCondition = !a.cycle.isRegimeShiftUnder && a.cycle.cycleUnder05 >= 8;
+        // Last 6 digits must all be Under (0-5)
+        const last6 = digits.slice(-6);
+        const last6UnderCondition = last6.length === 6 && last6.every(d => d <= 5);
         // Winning digit range for Under 6 is 0-5, and must be high confluence trigger digit (highest under digit or prime low <= 3)
-        const triggerDigitCondition = (cur === a.mid.highestUnderDigit || cur <= 3) && cur <= 5;
+        const triggerDigitCondition = (cur === a.mid.highestUnderDigit || cur <= 3) && cur <= 5 && last6UnderCondition;
         
         // Market health condition: market must be GOOD, not avoid, score >= 60, no outlier spike, no unidentified pattern
         const qualityCondition = a.condition.isGood && !a.isAvoidMarket && a.qualityScore >= 60 && !a.condition.unbalancedDigits && !a.condition.unidentifiedPattern && a.condition.status === 'GOOD';
 
-        const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition && qualityCondition;
+        const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition && qualityCondition && last6UnderCondition;
         const isTriggered = all && triggerDigitCondition && !a.cycle.isRegimeShiftUnder;
         const isAutoPaused = a.cycle.isRegimeShiftUnder || a.condition.isNotGood || a.isAvoidMarket || a.condition.status === 'NOT_GOOD';
 
@@ -552,7 +555,9 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
             reason = a.condition.isNotGood ? `⚠️ Market Condition: ${a.condition.reasons[0] || 'Unfavorable'}` : `⏸ 15t Regime Shift (${a.cycle.cycleOver49}/15 Over). Auto-paused.`;
         } else if (isTriggered) {
             const isPrime = cur === a.mid.highestUnderDigit || cur <= 3;
-            reason = `🎯 UNDER 6 FIRED! Digit [${cur}] (50t: ${a.mid.pctUnder05.toFixed(0)}%, 10t: ${a.micro.last10UnderCount}/10, Score: ${a.qualityScore}${isPrime ? ' ★ High Confluence' : ''})`;
+            reason = `🎯 UNDER 6 FIRED! 6 Under Digits Confirmed [${last6.join('-')}] (50t: ${a.mid.pctUnder05.toFixed(0)}%, Score: ${a.qualityScore}${isPrime ? ' ★ High Confluence' : ''})`;
+        } else if (!last6UnderCondition && macroCondition && stat1Condition && stat2Condition) {
+            reason = `⏳ Signal clear! Waiting for last 6 digits to be Under (current: ${last6.join('-')})`;
         } else if (all) {
             reason = `⏳ Signal clear! Waiting under trigger digit [${a.mid.highestUnderDigit} or 0-3] (current: ${cur})`;
         } else {
@@ -580,13 +585,16 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
         const micro10Condition = a.micro.last10OverCount >= 6;
         // 15-tick cycle: no strong regime shift against over AND over is majority (>= 8/15)
         const cycleCondition = !a.cycle.isRegimeShiftOver && a.cycle.cycleOver49 >= 8;
+        // Last 6 digits must all be Over (4-9)
+        const last6 = digits.slice(-6);
+        const last6OverCondition = last6.length === 6 && last6.every(d => d >= 4);
         // Winning digit range for Over 3 is 4-9, and must be high confluence trigger digit (highest over digit or prime high >= 6)
-        const triggerDigitCondition = (cur === a.mid.highestOverDigit || cur >= 6) && cur >= 4;
+        const triggerDigitCondition = (cur === a.mid.highestOverDigit || cur >= 6) && cur >= 4 && last6OverCondition;
         
         // Market health condition
         const qualityCondition = a.condition.isGood && !a.isAvoidMarket && a.qualityScore >= 60 && !a.condition.unbalancedDigits && !a.condition.unidentifiedPattern && a.condition.status === 'GOOD';
 
-        const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition && qualityCondition;
+        const all = macroCondition && stat1Condition && stat2Condition && cycleCondition && micro10Condition && qualityCondition && last6OverCondition;
         const isTriggered = all && triggerDigitCondition && !a.cycle.isRegimeShiftOver;
         const isAutoPaused = a.cycle.isRegimeShiftOver || a.condition.isNotGood || a.isAvoidMarket || a.condition.status === 'NOT_GOOD';
 
@@ -595,7 +603,9 @@ function checkEntrySignal(digits: number[], forcedDir?: 'UNDER_6'|'OVER_3'|'AUTO
             reason = a.condition.isNotGood ? `⚠️ Market Condition: ${a.condition.reasons[0] || 'Unfavorable'}` : `⏸ 15t Regime Shift (${a.cycle.cycleUnder05}/15 Under). Auto-paused.`;
         } else if (isTriggered) {
             const isPrime = cur === a.mid.highestOverDigit || cur >= 6;
-            reason = `🎯 OVER 3 FIRED! Digit [${cur}] (50t: ${a.mid.pctOver49.toFixed(0)}%, 10t: ${a.micro.last10OverCount}/10, Score: ${a.qualityScore}${isPrime ? ' ★ High Confluence' : ''})`;
+            reason = `🎯 OVER 3 FIRED! 6 Over Digits Confirmed [${last6.join('-')}] (50t: ${a.mid.pctOver49.toFixed(0)}%, Score: ${a.qualityScore}${isPrime ? ' ★ High Confluence' : ''})`;
+        } else if (!last6OverCondition && macroCondition && stat1Condition && stat2Condition) {
+            reason = `⏳ Signal clear! Waiting for last 6 digits to be Over (current: ${last6.join('-')})`;
         } else if (all) {
             reason = `⏳ Signal clear! Waiting over trigger digit [${a.mid.highestOverDigit} or 6-9] (current: ${cur})`;
         } else {
@@ -1373,14 +1383,14 @@ const Autoflipper: React.FC = observer(() => {
                                 if (liveData && liveData.digits.length >= 25) {
                                     const freshSig = checkEntrySignal(liveData.digits, 'AUTO');
                                     const freshA = computeAnalysis(liveData.digits);
-                                    if (freshSig && freshSig.status === 'TRIGGERED' && !freshSig.isAutoPaused && freshSig.qualityScore >= 60 && freshA.condition.isGood) {
+                                    if (freshSig && freshSig.status === 'TRIGGERED' && !freshSig.isAutoPaused && freshSig.qualityScore >= 65 && freshA.condition.isGood) {
                                         foundSignal = true;
                                         addLog(
                                             'LOSS GUARD CLEARED',
                                             data.label,
                                             'PENDING',
                                             0,
-                                            `✅ High-confidence entry found (Q:${freshSig.qualityScore}). Resuming engine…`
+                                            `✅ Higher-confidence entry found (Q:${freshSig.qualityScore} ≥ 65). Resuming engine…`
                                         );
                                         break;
                                     }
@@ -1416,7 +1426,7 @@ const Autoflipper: React.FC = observer(() => {
                         runsInBatchRef.current = 0;
                         setRunsInBatch(0);
                         addLog('CYCLE PAUSE', data.label, 'PENDING', 0,
-                            `🔄 5-run cycle complete. Re-analysing market — waiting for quality setup (score ≥ 60) before resuming…`);
+                            `🔄 5-run cycle complete. Re-analysing market — waiting for higher quality setup (Score ≥ 65) before resuming…`);
                         setAutoState('PAUSED'); autoStateRef.current = 'PAUSED';
 
                         // Initial settle window
@@ -1438,13 +1448,13 @@ const Autoflipper: React.FC = observer(() => {
                                     batchSig &&
                                     batchSig.status === 'TRIGGERED' &&
                                     !batchSig.isAutoPaused &&
-                                    batchSig.qualityScore >= 60 &&
+                                    batchSig.qualityScore >= 65 &&
                                     batchAnalysis.condition.isGood &&
                                     !batchAnalysis.isAvoidMarket
                                 ) {
                                     batchSignalFound = true;
                                     addLog('CYCLE RESUME', batchData.label, 'PENDING', 0,
-                                        `✅ Quality setup confirmed (Score: ${batchSig.qualityScore}). Resuming next 5-run cycle…`);
+                                        `✅ Higher quality setup confirmed (Score: ${batchSig.qualityScore} ≥ 65). Resuming next 5-run cycle…`);
                                     break;
                                 }
                             }

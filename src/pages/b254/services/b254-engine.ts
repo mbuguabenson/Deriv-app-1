@@ -7,7 +7,9 @@ import {
     MultiHorizonBreakdown,
     RegimeAssessment,
     SignalScoreBreakdown,
+    StrategyBiasMode,
     StrategyDirection,
+    StrategyTier,
     TargetStrategyChoice,
 } from '../types/b254.types';
 
@@ -24,6 +26,17 @@ function computeSingleHorizon(slice: number[]): HorizonStats {
     const over49 = slice.filter(d => d >= 4 && d <= 9).length;
     const pctUnder05 = (under05 / total) * 100;
     const pctOver49 = (over49 / total) * 100;
+
+    // Multi-tier frequencies (Over 1 / Under 8 & Over 2 / Under 7)
+    const under07 = slice.filter(d => d >= 0 && d <= 7).length;
+    const over29 = slice.filter(d => d >= 2 && d <= 9).length;
+    const pctUnder07 = (under07 / total) * 100;
+    const pctOver29 = (over29 / total) * 100;
+
+    const under06 = slice.filter(d => d >= 0 && d <= 6).length;
+    const over39 = slice.filter(d => d >= 3 && d <= 9).length;
+    const pctUnder06 = (under06 / total) * 100;
+    const pctOver39 = (over39 / total) * 100;
 
     let bias: HorizonStats['bias'] = 'BALANCED';
     if (pctUnder05 >= 57 && under05 > over49) {
@@ -46,6 +59,14 @@ function computeSingleHorizon(slice: number[]): HorizonStats {
         over49,
         pctUnder05,
         pctOver49,
+        under07,
+        over29,
+        pctUnder07,
+        pctOver29,
+        under06,
+        over39,
+        pctUnder06,
+        pctOver39,
         bias,
     };
 }
@@ -250,23 +271,49 @@ export function computeSignalScore(
     entryDigit: number,
     threshold: number = 75
 ): SignalScoreBreakdown {
-    const isUnder = direction === 'UNDER_6';
+    const isUnder = direction.startsWith('UNDER');
     const explanations: string[] = [];
+
+    // Dominance percentages depending on tier
+    let pctWinningH1000 = 0;
+    let pctWinningH50 = 0;
+    let tierLabel = '';
+
+    if (direction === 'UNDER_8') {
+        pctWinningH1000 = multiHorizon.h1000.pctUnder07 ?? multiHorizon.h1000.pctUnder05;
+        pctWinningH50 = multiHorizon.h50.pctUnder07 ?? multiHorizon.h50.pctUnder05;
+        tierLabel = 'Under 8';
+    } else if (direction === 'OVER_1') {
+        pctWinningH1000 = multiHorizon.h1000.pctOver29 ?? multiHorizon.h1000.pctOver49;
+        pctWinningH50 = multiHorizon.h50.pctOver29 ?? multiHorizon.h50.pctOver49;
+        tierLabel = 'Over 1';
+    } else if (direction === 'UNDER_7') {
+        pctWinningH1000 = multiHorizon.h1000.pctUnder06 ?? multiHorizon.h1000.pctUnder05;
+        pctWinningH50 = multiHorizon.h50.pctUnder06 ?? multiHorizon.h50.pctUnder05;
+        tierLabel = 'Under 7';
+    } else if (direction === 'OVER_2') {
+        pctWinningH1000 = multiHorizon.h1000.pctOver39 ?? multiHorizon.h1000.pctOver49;
+        pctWinningH50 = multiHorizon.h50.pctOver39 ?? multiHorizon.h50.pctOver49;
+        tierLabel = 'Over 2';
+    } else if (direction === 'UNDER_6') {
+        pctWinningH1000 = multiHorizon.h1000.pctUnder05;
+        pctWinningH50 = multiHorizon.h50.pctUnder05;
+        tierLabel = 'Under 6';
+    } else {
+        pctWinningH1000 = multiHorizon.h1000.pctOver49;
+        pctWinningH50 = multiHorizon.h50.pctOver49;
+        tierLabel = 'Over 3';
+    }
 
     // 1. Historical market bias (Max 20)
     let historicalBiasScore = 0;
-    if (isUnder && multiHorizon.h1000.pctUnder05 >= 58) {
+    const baseCutoff = direction === 'UNDER_8' || direction === 'OVER_1' ? 76 : direction === 'UNDER_7' || direction === 'OVER_2' ? 66 : 56;
+    if (pctWinningH1000 >= baseCutoff + 4) {
         historicalBiasScore = 20;
-        explanations.push('+20 Historical Under 6 Dominance (1,000 Ticks)');
-    } else if (!isUnder && multiHorizon.h1000.pctOver49 >= 58) {
-        historicalBiasScore = 20;
-        explanations.push('+20 Historical Over 3 Dominance (1,000 Ticks)');
-    } else if (isUnder && multiHorizon.h1000.pctUnder05 >= 53) {
+        explanations.push(`+20 Historical ${tierLabel} Dominance (1,000 Ticks: ${pctWinningH1000.toFixed(0)}%)`);
+    } else if (pctWinningH1000 >= baseCutoff) {
         historicalBiasScore = 14;
-        explanations.push('+14 Moderate Historical Under Bias');
-    } else if (!isUnder && multiHorizon.h1000.pctOver49 >= 53) {
-        historicalBiasScore = 14;
-        explanations.push('+14 Moderate Historical Over Bias');
+        explanations.push(`+14 Moderate Historical ${tierLabel} Bias (${pctWinningH1000.toFixed(0)}%)`);
     }
 
     // 2. 30-Minute alignment (Max 10)
@@ -291,18 +338,12 @@ export function computeSignalScore(
 
     // 4. 50-Tick dominance (Max 15)
     let fiftyTickScore = 0;
-    if (isUnder && multiHorizon.h50.pctUnder04 >= 55) {
+    if (pctWinningH50 >= baseCutoff + 5) {
         fiftyTickScore = 15;
-        explanations.push(`+15 50-Tick Under 0-4 Dominance (${multiHorizon.h50.pctUnder04.toFixed(0)}%)`);
-    } else if (!isUnder && multiHorizon.h50.pctOver59 >= 55) {
-        fiftyTickScore = 15;
-        explanations.push(`+15 50-Tick Over 5-9 Dominance (${multiHorizon.h50.pctOver59.toFixed(0)}%)`);
-    } else if (isUnder && multiHorizon.h50.pctUnder05 >= 56) {
+        explanations.push(`+15 50-Tick ${tierLabel} Dominance (${pctWinningH50.toFixed(0)}%)`);
+    } else if (pctWinningH50 >= baseCutoff) {
         fiftyTickScore = 10;
-        explanations.push(`+10 50-Tick Under 0-5 Dominance (${multiHorizon.h50.pctUnder05.toFixed(0)}%)`);
-    } else if (!isUnder && multiHorizon.h50.pctOver49 >= 56) {
-        fiftyTickScore = 10;
-        explanations.push(`+10 50-Tick Over 4-9 Dominance (${multiHorizon.h50.pctOver49.toFixed(0)}%)`);
+        explanations.push(`+10 50-Tick ${tierLabel} Support (${pctWinningH50.toFixed(0)}%)`);
     }
 
     // 5. 30-Tick regime stability (Max 10)
@@ -390,92 +431,134 @@ export function computeSignalScore(
     };
 }
 
-// ─── Master B254 Strategy & 8-Point Verification Engine ─────────────────────────
+// ─── Single-Tier Evaluator ─────────────────────────────────────────────────────
 
-export function evaluateB254Signal(
+function evaluateSingleTierCandidate(
     digits: number[],
+    tier: 'OVER_1_UNDER_8' | 'OVER_2_UNDER_7' | 'OVER_3_UNDER_6',
     forcedDirection?: TargetStrategyChoice,
-    scoreThreshold: number = 75
-): B254SignalResult | null {
-    if (digits.length < 15) return null;
-
+    scoreThreshold: number = 75,
+    biasMode: StrategyBiasMode = 'AUTO_BIAS'
+): B254SignalResult {
     const currentLastDigit = digits[digits.length - 1];
     const multiHorizon = computeMultiHorizon(digits);
     const digitPower = computeDigitPower(digits);
     const regime = evaluateRegime(digits);
 
-    // Determine Active Direction
+    // Determine Direction for this Tier
     let direction: StrategyDirection;
-    if (forcedDirection && forcedDirection !== 'AUTO') {
-        direction = forcedDirection;
+    if (tier === 'OVER_1_UNDER_8') {
+        if (forcedDirection === 'UNDER_8' || biasMode === 'UNDER_ONLY') {
+            direction = 'UNDER_8';
+        } else if (forcedDirection === 'OVER_1' || biasMode === 'OVER_ONLY') {
+            direction = 'OVER_1';
+        } else {
+            direction = (multiHorizon.h50.pctUnder07 ?? 80) >= (multiHorizon.h50.pctOver29 ?? 80) ? 'UNDER_8' : 'OVER_1';
+        }
+    } else if (tier === 'OVER_2_UNDER_7') {
+        if (forcedDirection === 'UNDER_7' || biasMode === 'UNDER_ONLY') {
+            direction = 'UNDER_7';
+        } else if (forcedDirection === 'OVER_2' || biasMode === 'OVER_ONLY') {
+            direction = 'OVER_2';
+        } else {
+            direction = (multiHorizon.h50.pctUnder06 ?? 70) >= (multiHorizon.h50.pctOver39 ?? 70) ? 'UNDER_7' : 'OVER_2';
+        }
     } else {
-        direction = multiHorizon.h50.under05 >= multiHorizon.h50.over49 ? 'UNDER_6' : 'OVER_3';
+        // OVER_3_UNDER_6
+        if (forcedDirection === 'UNDER_6' || biasMode === 'UNDER_ONLY') {
+            direction = 'UNDER_6';
+        } else if (forcedDirection === 'OVER_3' || biasMode === 'OVER_ONLY') {
+            direction = 'OVER_3';
+        } else {
+            direction = multiHorizon.h50.under05 >= multiHorizon.h50.over49 ? 'UNDER_6' : 'OVER_3';
+        }
     }
 
-    const isUnder = direction === 'UNDER_6';
-    const prediction = isUnder ? 6 : 3;
+    const isUnder = direction.startsWith('UNDER');
+    const contractType = isUnder ? 'DIGITUNDER' : 'DIGITOVER';
 
-    // Determine Strongest Dominant Qualifying Entry Digit
-    let entryDigit: number;
-    if (isUnder) {
-        // Strongest qualifying digit below 6 (0-5) in last 50 ticks
-        let maxCount = -1;
-        let bestDigit = 0;
-        digitPower.items.slice(0, 6).forEach(item => {
-            if (item.count50 > maxCount) {
-                maxCount = item.count50;
-                bestDigit = item.digit;
-            }
-        });
-        entryDigit = bestDigit;
+    let prediction = 6;
+    let winningDigits: number[] = [0, 1, 2, 3, 4, 5];
+    let minOverDigit = 4;
+    let maxUnderDigit = 5;
+
+    if (direction === 'UNDER_8') {
+        prediction = 8;
+        winningDigits = [0, 1, 2, 3, 4, 5, 6, 7];
+        maxUnderDigit = 7;
+    } else if (direction === 'OVER_1') {
+        prediction = 1;
+        winningDigits = [2, 3, 4, 5, 6, 7, 8, 9];
+        minOverDigit = 2;
+    } else if (direction === 'UNDER_7') {
+        prediction = 7;
+        winningDigits = [0, 1, 2, 3, 4, 5, 6];
+        maxUnderDigit = 6;
+    } else if (direction === 'OVER_2') {
+        prediction = 2;
+        winningDigits = [3, 4, 5, 6, 7, 8, 9];
+        minOverDigit = 3;
+    } else if (direction === 'UNDER_6') {
+        prediction = 6;
+        winningDigits = [0, 1, 2, 3, 4, 5];
+        maxUnderDigit = 5;
     } else {
-        // Strongest qualifying digit above 3 (4-9) in last 50 ticks
-        let maxCount = -1;
-        let bestDigit = 4;
-        digitPower.items.slice(4, 10).forEach(item => {
-            if (item.count50 > maxCount) {
-                maxCount = item.count50;
-                bestDigit = item.digit;
-            }
-        });
-        entryDigit = bestDigit;
+        prediction = 3;
+        winningDigits = [4, 5, 6, 7, 8, 9];
+        minOverDigit = 4;
     }
+
+    const triggerDigits = winningDigits;
+
+    // Determine Strongest Dominant Qualifying Entry Digit from winning digits
+    let entryDigit = winningDigits[0];
+    let maxCount = -1;
+    winningDigits.forEach(d => {
+        const item = digitPower.items[d];
+        if (item && item.count50 > maxCount) {
+            maxCount = item.count50;
+            entryDigit = d;
+        }
+    });
 
     // Micro window checks
     const slice10 = digits.slice(-10);
-    const last10Under = slice10.filter(d => d <= 5).length;
-    const last10Over = slice10.filter(d => d >= 4).length;
+    const last10Winning = slice10.filter(d => winningDigits.includes(d)).length;
 
     const slice7 = digits.slice(-7);
-    const last7Under = slice7.filter(d => d <= 5).length;
-    const last7Over = slice7.filter(d => d >= 4).length;
+    const last7Winning = slice7.filter(d => winningDigits.includes(d)).length;
 
-    // ── Evaluate Systematic Conditions (Autoflipper Edge) ──
+    // Strict 6-tick trend verification (User requirement: last 6 ticks must be over if trading over, and under if trading under)
+    const last6 = digits.slice(-6);
+    const last6TrendConfirmed = last6.length >= 6 && (
+        isUnder
+            ? last6.every(d => d <= maxUnderDigit)
+            : last6.every(d => d >= minOverDigit)
+    );
+
+    // Systematic Conditions (Autoflipper Edge)
     const cond0_historyAlignment = isUnder
         ? multiHorizon.history30m.bias !== 'OVER' && multiHorizon.history1h.bias !== 'OVER'
         : multiHorizon.history30m.bias !== 'UNDER' && multiHorizon.history1h.bias !== 'UNDER';
 
-    // 50-tick stat1: Under 6 (0-5) or Over 3 (4-9) dominance
-    const cond1_stat1_threshold55 = isUnder
-        ? multiHorizon.h50.pctUnder05 >= 50
-        : multiHorizon.h50.pctOver49 >= 50;
+    const baseCutoff = tier === 'OVER_1_UNDER_8' ? 70 : tier === 'OVER_2_UNDER_7' ? 62 : 50;
+    const statPct = isUnder
+        ? (tier === 'OVER_1_UNDER_8' ? (multiHorizon.h50.pctUnder07 ?? 80) : tier === 'OVER_2_UNDER_7' ? (multiHorizon.h50.pctUnder06 ?? 70) : multiHorizon.h50.pctUnder05)
+        : (tier === 'OVER_1_UNDER_8' ? (multiHorizon.h50.pctOver29 ?? 80) : tier === 'OVER_2_UNDER_7' ? (multiHorizon.h50.pctOver39 ?? 70) : multiHorizon.h50.pctOver49);
 
+    const cond1_stat1_threshold55 = statPct >= baseCutoff;
     const cond2_stat2_dominance = isUnder
         ? multiHorizon.h50.under05 >= multiHorizon.h50.over49
         : multiHorizon.h50.over49 >= multiHorizon.h50.under05;
 
-    // 10-tick micro trend: at least 5 of last 10 ticks are in winning direction
-    const cond3_micro10_ratio = isUnder ? last10Under >= 5 : last10Over >= 5;
-    const cond4_micro7_continuation = isUnder ? last7Under >= 3 : last7Over >= 3;
-
+    const cond3_micro10_ratio = last10Winning >= 5;
+    const cond4_micro7_continuation = last7Winning >= 3;
     const cond5_outlierSafety = isUnder ? digitPower.outliersUnder6Safe : digitPower.outliersOver3Safe;
-
     const cond6_digitPowerSupport = isUnder
-        ? digitPower.mostAppearing <= 5 || digitPower.secondMostAppearing <= 5
-        : digitPower.mostAppearing >= 4 || digitPower.secondMostAppearing >= 4;
+        ? digitPower.mostAppearing <= maxUnderDigit || digitPower.secondMostAppearing <= maxUnderDigit
+        : digitPower.mostAppearing >= minOverDigit || digitPower.secondMostAppearing >= minOverDigit;
 
-    // Winning digit range for Under 6 is 0, 1, 2, 3, 4, 5. For Over 3 is 4, 5, 6, 7, 8, 9
-    const isTriggerDigit = isUnder ? currentLastDigit <= 5 : currentLastDigit >= 4;
+    const isTriggerDigit = winningDigits.includes(currentLastDigit);
     const isPrimeEntryMatch = currentLastDigit === entryDigit;
     const cond7_entryDigitMatch = isPrimeEntryMatch || isTriggerDigit;
     const cycleStable = !regime.shiftDetected;
@@ -484,7 +567,8 @@ export function evaluateB254Signal(
         cond1_stat1_threshold55 &&
         cond2_stat2_dominance &&
         cond3_micro10_ratio &&
-        cycleStable;
+        cycleStable &&
+        last6TrendConfirmed;
 
     const score = computeSignalScore(
         multiHorizon,
@@ -498,47 +582,34 @@ export function evaluateB254Signal(
 
     const isAutoPaused = regime.shiftDetected;
     const pauseReason = regime.shiftDetected
-        ? regime.recentShiftMessage || `⏸ 15t Regime Shift (${isUnder ? multiHorizon.h15.over49 : multiHorizon.h15.under05}/15 counter-trend). Auto-paused.`
+        ? regime.recentShiftMessage || `⏸ 15t Regime Shift active. Auto-paused.`
         : undefined;
 
     // Why Not Trade Diagnostics
     const whyNotTradeReasons: string[] = [];
-    if (!cond0_historyAlignment) whyNotTradeReasons.push('30-minute / 1-hour history opposes current direction');
-    if (!cond1_stat1_threshold55) {
-        whyNotTradeReasons.push(
-            isUnder
-                ? `Under 0-5 percentage is ${multiHorizon.h50.pctUnder05.toFixed(1)}% (below 50% threshold)`
-                : `Over 4-9 percentage is ${multiHorizon.h50.pctOver49.toFixed(1)}% (below 50% threshold)`
-        );
-    }
+    if (!cond0_historyAlignment) whyNotTradeReasons.push('30m / 1h history opposes current direction');
+    if (!cond1_stat1_threshold55) whyNotTradeReasons.push(`${direction} recent percentage (${statPct.toFixed(1)}%) below ${baseCutoff}% threshold`);
     if (!cond2_stat2_dominance) whyNotTradeReasons.push('50-tick digit dominance not established');
-    if (!cond3_micro10_ratio) {
-        whyNotTradeReasons.push(
-            `Last 10 ticks (${isUnder ? last10Under : last10Over}/10) fails 5/10 micro trend rule`
-        );
-    }
-    if (!cond5_outlierSafety) whyNotTradeReasons.push('1,000-tick outlier safety threshold exceeded (>10% or rising)');
+    if (!cond3_micro10_ratio) whyNotTradeReasons.push(`Last 10 ticks (${last10Winning}/10 winning) fails 5/10 micro trend rule`);
+    if (!last6TrendConfirmed) whyNotTradeReasons.push(`Waiting for last 6 consecutive ticks to confirm ${isUnder ? `Under ≤ ${maxUnderDigit}` : `Over ≥ ${minOverDigit}`} trend (current: [${last6.join(',')}])`);
+    if (!cond5_outlierSafety) whyNotTradeReasons.push('Outlier safety threshold exceeded (>10% or rising)');
     if (regime.shiftDetected) whyNotTradeReasons.push('15-tick counter-trend regime shift active');
     if (!score.isPassedThreshold) whyNotTradeReasons.push(`Signal score (${score.totalScore}/100) below threshold (${scoreThreshold})`);
     if (allConditionsPassed && score.isPassedThreshold && !isTriggerDigit) {
-        whyNotTradeReasons.push(
-            isUnder
-                ? `Conditions clear! Waiting under digit [0-5] (current: ${currentLastDigit})`
-                : `Conditions clear! Waiting over digit [4-9] (current: ${currentLastDigit})`
-        );
+        whyNotTradeReasons.push(`Conditions clear! Waiting for winning digit [${winningDigits.join(',')}] (current: ${currentLastDigit})`);
     }
 
     // Natural Language Market Explanation
     let marketExplanation = '';
     if (isAutoPaused) {
-        marketExplanation = `Market in regime shift (${isUnder ? multiHorizon.h15.over49 : multiHorizon.h15.under05}/15 counter-ticks). Paused for capital safety.`;
+        marketExplanation = `Market in regime shift. Paused for capital safety.`;
     } else if (allConditionsPassed && isTriggerDigit && !isAutoPaused) {
         const confluence = isPrimeEntryMatch ? ' ★ High Confluence Prime Entry' : '';
-        marketExplanation = `🎯 ${isUnder ? 'UNDER 6' : 'OVER 3'} FIRED! Digit [${currentLastDigit}] (50t: ${isUnder ? multiHorizon.h50.pctUnder05.toFixed(0) : multiHorizon.h50.pctOver49.toFixed(0)}%, 10t: ${isUnder ? last10Under : last10Over}/10${confluence})`;
+        marketExplanation = `🎯 ${direction} FIRED! Digit [${currentLastDigit}] (50t: ${statPct.toFixed(0)}%, 10t: ${last10Winning}/10, 6t Trend: Verified${confluence})`;
     } else if (allConditionsPassed) {
-        marketExplanation = `⏳ Signal clear! Waiting for ${isUnder ? 'under digit [0-5]' : 'over digit [4-9]'} (current: ${currentLastDigit})`;
+        marketExplanation = `⏳ Signal clear! Waiting for winning digit [${winningDigits.join(',')}] (current: ${currentLastDigit})`;
     } else {
-        marketExplanation = `Consolidating — U05: ${multiHorizon.h50.pctUnder05.toFixed(0)}% vs O49: ${multiHorizon.h50.pctOver49.toFixed(0)}%, 10t: ${isUnder ? last10Under : last10Over}/10`;
+        marketExplanation = `Consolidating — ${direction} 50t: ${statPct.toFixed(0)}%, 10t: ${last10Winning}/10, 6t: [${last6.join(',')}]`;
     }
 
     const checklist: B254ConditionChecklist = {
@@ -563,9 +634,14 @@ export function evaluateB254Signal(
 
     return {
         direction,
+        contractType,
         prediction,
+        tier,
         entryDigit,
+        winningDigits,
+        triggerDigits,
         score,
+        qualityScore: score.totalScore,
         checklist,
         status,
         isAutoPaused,
@@ -573,6 +649,58 @@ export function evaluateB254Signal(
         whyNotTradeReasons,
         marketExplanation,
     };
+}
+
+// ─── Master B254 Strategy & 8-Point Verification Engine ─────────────────────────
+
+export function evaluateB254Signal(
+    digits: number[],
+    forcedDirection?: TargetStrategyChoice,
+    scoreThreshold: number = 75,
+    biasMode: StrategyBiasMode = 'AUTO_BIAS'
+): B254SignalResult | null {
+    if (digits.length < 15) return null;
+
+    // Check if target is a specific single tier
+    if (forcedDirection === 'OVER_1_UNDER_8' || forcedDirection === 'UNDER_8' || forcedDirection === 'OVER_1') {
+        return evaluateSingleTierCandidate(digits, 'OVER_1_UNDER_8', forcedDirection, scoreThreshold, biasMode);
+    }
+    if (forcedDirection === 'OVER_2_UNDER_7' || forcedDirection === 'UNDER_7' || forcedDirection === 'OVER_2') {
+        return evaluateSingleTierCandidate(digits, 'OVER_2_UNDER_7', forcedDirection, scoreThreshold, biasMode);
+    }
+    if (forcedDirection === 'OVER_3_UNDER_6' || forcedDirection === 'UNDER_6' || forcedDirection === 'OVER_3') {
+        return evaluateSingleTierCandidate(digits, 'OVER_3_UNDER_6', forcedDirection, scoreThreshold, biasMode);
+    }
+
+    // AUTO Mode: evaluate all 3 tiers and select the highest quality edge
+    const c1 = evaluateSingleTierCandidate(digits, 'OVER_1_UNDER_8', undefined, scoreThreshold, biasMode);
+    const c2 = evaluateSingleTierCandidate(digits, 'OVER_2_UNDER_7', undefined, scoreThreshold, biasMode);
+    const c3 = evaluateSingleTierCandidate(digits, 'OVER_3_UNDER_6', undefined, scoreThreshold, biasMode);
+
+    const candidates = [c1, c2, c3];
+
+    // Priority 1: Triggered setups with highest score
+    const triggered = candidates.filter(c => c.status === 'TRIGGERED' && !c.isAutoPaused);
+    if (triggered.length > 0) {
+        triggered.sort((a, b) => b.score.totalScore - a.score.totalScore);
+        return triggered[0];
+    }
+
+    // Priority 2: Entry-ready setups
+    const entryReady = candidates.filter(c => c.status === 'ENTRY_READY' && !c.isAutoPaused);
+    if (entryReady.length > 0) {
+        entryReady.sort((a, b) => b.score.totalScore - a.score.totalScore);
+        return entryReady[0];
+    }
+
+    // Priority 3: Non-paused candidate with highest score
+    const nonPaused = candidates.filter(c => !c.isAutoPaused);
+    if (nonPaused.length > 0) {
+        nonPaused.sort((a, b) => b.score.totalScore - a.score.totalScore);
+        return nonPaused[0];
+    }
+
+    return c3; // Default to classic Over 3 / Under 6
 }
 
 // ─── Account Compounding Calculation Engine ────────────────────────────────────

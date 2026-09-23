@@ -16,6 +16,7 @@ import {
     B254MarketData,
     B254SignalResult,
     B254TransactionRecord,
+    StrategyDirection,
     TradeConditionSnapshot,
 } from './types/b254.types';
 import {
@@ -52,7 +53,7 @@ const MARKETS = SUPPORTED_VOLATILITY_MARKETS.map(m => ({
 }));
 
 const DEFAULT_MANUAL_CONFIG: B254ManualConfig = {
-    stake: 0.50,
+    stake: 0.35,
     takeProfit: 25.0,
     stopLoss: 20.0,
     enableMartingale: true,
@@ -61,6 +62,8 @@ const DEFAULT_MANUAL_CONFIG: B254ManualConfig = {
     maxStake: 100.0,
     tickDuration: 1,
     targetStrategy: 'AUTO',
+    strategyTier: 'AUTO',
+    biasMode: 'AUTO_BIAS',
     autoSwitchMarkets: true,
     lossGuardEnabled: true,
     minQualityScore: 65,
@@ -507,9 +510,10 @@ export const B254Page: React.FC = observer(() => {
         return evaluateB254Signal(
             currentMarketData.digits,
             config.targetStrategy,
-            config.minQualityScore
+            config.minQualityScore,
+            config.biasMode
         );
-    }, [currentMarketData.digits, config.targetStrategy, config.minQualityScore]);
+    }, [currentMarketData.digits, config.targetStrategy, config.minQualityScore, config.biasMode]);
 
     // ── Multi-Market Scanner Evaluations ──
     const scannerMarkets: ScannerMarketItem[] = useMemo(() => {
@@ -546,7 +550,7 @@ export const B254Page: React.FC = observer(() => {
 
             const mh = computeMultiHorizon(digits);
             const reg = evaluateRegime(digits);
-            const sig = evaluateB254Signal(digits, 'AUTO', config.minQualityScore);
+            const sig = evaluateB254Signal(digits, config.targetStrategy, config.minQualityScore, config.biasMode);
 
             const u10 = digits.slice(-10).filter(d => d <= 5).length;
             const u7 = digits.slice(-7).filter(d => d <= 5).length;
@@ -603,13 +607,13 @@ export const B254Page: React.FC = observer(() => {
             qualityScore: number;
             isAutoPaused: boolean;
             isTriggered: boolean;
-            direction: 'UNDER_6' | 'OVER_3';
+            direction: StrategyDirection;
         }> = [];
 
         MARKETS.forEach(m => {
             const data = marketsDataRef.current.get(m.symbol);
             if (!data || data.digits.length < 15) return;
-            const sig = evaluateB254Signal(data.digits, 'AUTO', configRef.current.minQualityScore);
+            const sig = evaluateB254Signal(data.digits, configRef.current.targetStrategy, configRef.current.minQualityScore, configRef.current.biasMode);
             result.push({
                 symbol: m.symbol,
                 label: m.label,
@@ -632,13 +636,13 @@ export const B254Page: React.FC = observer(() => {
     // ── Execute Trade Subroutine ──
     const executeTrade = async (
         symbol: string,
-        direction: 'UNDER_6' | 'OVER_3',
+        direction: StrategyDirection,
+        contractType: 'DIGITUNDER' | 'DIGITOVER',
         prediction: number,
         tradeStake: number,
         durationTicks: number
     ): Promise<number> => {
-        const contractType = direction === 'UNDER_6' ? 'DIGITUNDER' : 'DIGITOVER';
-        const barrier = direction === 'UNDER_6' ? '6' : '3';
+        const barrier = String(prediction);
         const marketLabel = MARKETS.find(m => m.symbol === symbol)?.label || symbol;
 
         const txId = `B254-${Date.now().toString().slice(-6)}`;
@@ -656,7 +660,7 @@ export const B254Page: React.FC = observer(() => {
             over49Count: multiHorizon.h50.over49,
             last10Ratio: `${multiHorizon.h15.under05}/10 Under`,
             last7Ratio: `${Math.min(7, Math.round((multiHorizon.h15.under05 / 15) * 7))}/7 Under`,
-            outlierPct: direction === 'UNDER_6'
+            outlierPct: direction.startsWith('UNDER')
                 ? (digitPower.items[7]?.pct1000 || 0) + (digitPower.items[8]?.pct1000 || 0) + (digitPower.items[9]?.pct1000 || 0)
                 : (digitPower.items[0]?.pct1000 || 0) + (digitPower.items[1]?.pct1000 || 0) + (digitPower.items[2]?.pct1000 || 0),
             history30mBias: multiHorizon.history30m.bias,
@@ -835,7 +839,8 @@ export const B254Page: React.FC = observer(() => {
                 const sig = evaluateB254Signal(
                     mData.digits,
                     configRef.current.targetStrategy,
-                    configRef.current.minQualityScore
+                    configRef.current.minQualityScore,
+                    configRef.current.biasMode
                 );
 
                 // 6. Check 10-Minute Dwell or Market Degradation Auto-Switch
@@ -894,7 +899,14 @@ export const B254Page: React.FC = observer(() => {
                     const stake = currentStakeRef.current;
                     const durationTicks = configRef.current.tickDuration || 1;
 
-                    const profit = await executeTrade(targetSym, sig.direction, sig.prediction, stake, durationTicks);
+                    const profit = await executeTrade(
+                        targetSym,
+                        sig.direction,
+                        sig.contractType,
+                        sig.prediction,
+                        stake,
+                        durationTicks
+                    );
                     if (abortSig.aborted || (autoStateRef.current as B254AutoState) === 'IDLE') break;
 
                     const isWin = profit > 0;
@@ -960,7 +972,8 @@ export const B254Page: React.FC = observer(() => {
                                     const freshSig = evaluateB254Signal(
                                         liveData.digits,
                                         configRef.current.targetStrategy,
-                                        configRef.current.minQualityScore
+                                        configRef.current.minQualityScore,
+                                        configRef.current.biasMode
                                     );
                                     if (freshSig && freshSig.status === 'TRIGGERED' && !freshSig.isAutoPaused) {
                                         verifiedSignal = true;
@@ -989,7 +1002,7 @@ export const B254Page: React.FC = observer(() => {
                         const cycleLabel = cycleMarket?.label || selectedSymbolRef.current;
                         setAutoState('LOSS_GUARD');
                         autoStateRef.current = 'LOSS_GUARD';
-                        console.log('[B254] Cycle pause — scanning for quality setup…');
+                        console.log(`[B254] Cycle pause (${cycleLabel}) — scanning for quality setup…`);
 
                         // 3s settle window
                         await new Promise(r => setTimeout(r, 3000));
@@ -1007,7 +1020,8 @@ export const B254Page: React.FC = observer(() => {
                                 const freshSig = evaluateB254Signal(
                                     liveD.digits,
                                     configRef.current.targetStrategy,
-                                    configRef.current.minQualityScore
+                                    configRef.current.minQualityScore,
+                                    configRef.current.biasMode
                                 );
                                 if (
                                     freshSig &&
