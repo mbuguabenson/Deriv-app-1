@@ -67,7 +67,10 @@ const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 const DTraderPage = lazyRetry(() => import('../dtrader'), 'dtrader');
 const AutoflipperPage = lazyRetry(() => import('../autoflipper/autoflipper'), 'autoflipper');
-const RiseFallPage = lazyRetry(() => import('../rise-fall'), 'rise_fall');
+const RiseFallPage = lazyRetry(
+    () => import('../rise-fall').then(m => ({ default: m.default || (m as any).RiseFallPage })),
+    'rise_fall'
+);
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
 import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';

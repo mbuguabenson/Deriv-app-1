@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useStore } from '@/hooks/useStore';
-import { api_base } from '@/external/bot-skeleton';
 import {
     AutoTradingConfig,
     Candle,

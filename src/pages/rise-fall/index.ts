@@ -1,1 +1,4 @@
-export { default } from './rise-fall';
+import RiseFallPage from './rise-fall';
+
+export default RiseFallPage;
+export { RiseFallPage };
