@@ -9,30 +9,35 @@ export const lazyRetry = <T extends React.ComponentType<any>>(
     name = 'module'
 ): React.LazyExoticComponent<T> => {
     return React.lazy(async () => {
-        const storageKey = `retry_chunk_${name}`;
-        const hasRefreshed = sessionStorage.getItem(storageKey) === 'true';
-
         try {
-            const component = await componentImport();
-            sessionStorage.removeItem(storageKey);
-            return component;
-        } catch (error: any) {
-            const isChunkError =
-                error?.name === 'ChunkLoadError' ||
-                /loading chunk/i.test(error?.message || '') ||
-                /failed to fetch dynamically imported module/i.test(error?.message || '') ||
-                /importing a module script failed/i.test(error?.message || '') ||
-                /error loading dynamically imported module/i.test(error?.message || '');
+            return await componentImport();
+        } catch (firstError) {
+            // Immediate in-memory retry after brief pause before attempting anything drastic
+            await new Promise(resolve => setTimeout(resolve, 500));
+            try {
+                return await componentImport();
+            } catch (error: any) {
+                const isChunkError =
+                    error?.name === 'ChunkLoadError' ||
+                    /loading chunk/i.test(error?.message || '') ||
+                    /failed to fetch dynamically imported module/i.test(error?.message || '') ||
+                    /importing a module script failed/i.test(error?.message || '') ||
+                    /error loading dynamically imported module/i.test(error?.message || '');
 
-            if (isChunkError && !hasRefreshed) {
-                console.warn(`[LazyRetry] Chunk load failed for ${name}. Reloading application for new deployment...`);
-                sessionStorage.setItem(storageKey, 'true');
-                window.location.reload();
-                return { default: (() => null) as unknown as T };
+                const now = Date.now();
+                const lastReload = Number(sessionStorage.getItem('last_global_chunk_reload') || '0');
+
+                // Enforce a strict single global reload with a 45-second debounce across ALL modules
+                if (isChunkError && now - lastReload > 45000 && process.env.NODE_ENV === 'production') {
+                    console.warn(`[LazyRetry] Chunk load failed for ${name}. Reloading application once for new deployment...`);
+                    sessionStorage.setItem('last_global_chunk_reload', String(now));
+                    window.location.reload();
+                    return { default: (() => null) as unknown as T };
+                }
+
+                console.error(`[LazyRetry] Module failed to load: ${name}`, error);
+                throw error;
             }
-
-            sessionStorage.removeItem(storageKey);
-            throw error;
         }
     });
 };

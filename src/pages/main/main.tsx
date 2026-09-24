@@ -67,6 +67,7 @@ const B254Page = lazyRetry(() => import('../b254'), 'b254');
 const CopyTradingPage = lazyRetry(() => import('../copy-trading/copy-trading'), 'copy_trading');
 const DTraderPage = lazyRetry(() => import('../dtrader'), 'dtrader');
 const AutoflipperPage = lazyRetry(() => import('../autoflipper/autoflipper'), 'autoflipper');
+const RiseFallPage = lazyRetry(() => import('../rise-fall'), 'rise_fall');
 
 import { TabErrorBoundary } from '@/components/shared/TabErrorBoundary';
 import { copyTradingService } from '@/pages/copy-trading/services/copy-trading.service';
@@ -140,6 +141,7 @@ const AppWrapper = observer(() => {
         'copy_trading',
         'dtrader',
         'autoflipper',
+        'rise_fall',
     ];
     const { isDesktop } = useDevice();
     const location = useLocation();
@@ -689,6 +691,18 @@ const AppWrapper = observer(() => {
                     <TabErrorBoundary tabId='id-autoflipper' tabName='AutoFlipper'>
                         <Suspense fallback={<ChunkLoader message={localize('Please wait, loading AutoFlipper...')} />}>
                             <AutoflipperPage />
+                        </Suspense>
+                    </TabErrorBoundary>
+                ),
+            },
+            {
+                key: 'rise_fall',
+                id: 'id-rise-fall',
+                label: <TabIcon iconKey='rise_fall' label='Rise & Fall' />,
+                content: (
+                    <TabErrorBoundary tabId='id-rise-fall' tabName='Rise & Fall'>
+                        <Suspense fallback={<ChunkLoader message={localize('Please wait, loading Rise & Fall...')} />}>
+                            <RiseFallPage />
                         </Suspense>
                     </TabErrorBoundary>
                 ),

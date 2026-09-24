@@ -35,18 +35,8 @@ export class TabErrorBoundary extends React.Component<Props, State> {
     }
 
     handleRestart = () => {
-        const isChunkError =
-            /loading chunk/i.test(this.state.error?.message || '') ||
-            /failed to fetch dynamically imported module/i.test(this.state.error?.message || '');
-
-        if (isChunkError) {
-            window.location.reload();
-            return;
-        }
-
         this.setState({ hasError: false, error: null });
         systemCenterStore.updateTabStatus(this.props.tabId, 'Refreshing');
-        // Give UI a tick to show refreshing state before attempting remount
         setTimeout(() => {
             systemCenterStore.updateTabStatus(this.props.tabId, 'Ready');
         }, 100);

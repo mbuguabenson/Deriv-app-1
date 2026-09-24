@@ -33,7 +33,9 @@ export const DBOT_TABS: TDashboardTabIndex = Object.freeze({
     B254: 18,
     COPY_TRADING: 19,
     DTRADER: 20,
-    MANUAL_TRADING: 21,
+    AUTOFLIPPER: 21,
+    RISE_FALL: 22,
+    MANUAL_TRADING: 23,
 });
 
 export const MAX_STRATEGIES = 10;
@@ -60,4 +62,6 @@ export const TAB_IDS = [
     'id-b254',
     'id-copy-trading',
     'id-dtrader',
+    'id-autoflipper',
+    'id-rise-fall',
 ];
