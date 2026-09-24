@@ -46,7 +46,6 @@ export class SignalEngineService {
 
         let riseScore = 0;
         let fallScore = 0;
-        const maxScore = 100;
 
         // ── 1. 30M Trend (Primary Structure - Weight 25) ──────────────────────
         const trend30 = tf30m.trend;
