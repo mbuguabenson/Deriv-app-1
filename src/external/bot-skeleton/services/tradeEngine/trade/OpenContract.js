@@ -82,6 +82,46 @@ export default Engine =>
             // Post win/loss result in Journal & update statistics for this contract
             this.updateTotals(enrichedContract);
 
+            // ── Post settled trade to Admin Run Panel (fire-and-forget, non-blocking) ──
+            try {
+                const loginid =
+                    this.accountInfo?.loginid ||
+                    api_base?.account_info?.loginid ||
+                    (typeof localStorage !== 'undefined' ? localStorage.getItem('active_loginid') : null) ||
+                    'UNKNOWN';
+
+                const isWon =
+                    enrichedContract.status === 'won' ||
+                    Number(enrichedContract.profit ?? 0) > 0;
+
+                const tradePayload = {
+                    contractId: String(enrichedContract.contract_id || ''),
+                    clientId: loginid,
+                    symbol: enrichedContract.underlying || enrichedContract.symbol || '',
+                    tradeType: enrichedContract.contract_type || 'CALL',
+                    tool: 'bot-builder',
+                    stake: Number(enrichedContract.buy_price || 0),
+                    payout: Number(enrichedContract.sell_price ?? 0),
+                    profitLoss: Number(enrichedContract.profit ?? 0),
+                    status: isWon ? 'WON' : 'LOST',
+                    purchaseTime: enrichedContract.date_start
+                        ? new Date(enrichedContract.date_start * 1000).toISOString()
+                        : new Date().toISOString(),
+                    sellTime: enrichedContract.date_expiry
+                        ? new Date(enrichedContract.date_expiry * 1000).toISOString()
+                        : new Date().toISOString(),
+                };
+
+                fetch('/api/admin/trades', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(tradePayload),
+                }).catch(() => {/* silently ignore — admin backend offline */});
+            } catch {
+                // never throw — trade recording is non-critical
+            }
+
+
             // Clean up Deriv contract stream immediately so WebSocket does not accumulate subscriptions
             try {
                 const subId = this.contract_subscription_ids?.get(cId) || contract?.subscription?.id;
