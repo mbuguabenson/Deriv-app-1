@@ -36,6 +36,27 @@ async function safeApiCall<T>(url: string, options?: RequestInit): Promise<T | n
     }
 }
 
+// Like safeApiCall but returns the parsed body even on non-2xx responses
+// so auth error messages ("Invalid credentials") can be surfaced to the UI
+async function safeApiCallWithError<T>(url: string, options?: RequestInit): Promise<T | null> {
+    try {
+        const res = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options?.headers,
+            },
+            ...options,
+        });
+        try {
+            return await res.json();
+        } catch {
+            return null;
+        }
+    } catch {
+        return null;
+    }
+}
+
 // ─── System Health & Deriv Health ─────────────────────────────────────────────
 export interface SystemHealthData {
     timestamp: string;
@@ -64,14 +85,16 @@ export const loginAdminApi = async (
     username: string,
     password: string
 ): Promise<{ success: boolean; token?: string; error?: string }> => {
-    const res = await safeApiCall<{ success: boolean; token?: string; error?: string }>(`${API_BASE}/auth`, {
+    const res = await safeApiCallWithError<{ success: boolean; token?: string; error?: string }>(`${API_BASE}/auth`, {
         method: 'POST',
         body: JSON.stringify({ action: 'login', username, password }),
     });
 
-    if (res) return res;
+    // Got a real response (even 401 "Invalid credentials") — return it directly
+    if (res !== null) return res;
 
-    return { success: false, error: 'Database authentication service unreachable or credentials invalid.' };
+    // True network/server failure — couldn't reach the endpoint at all
+    return { success: false, error: 'Admin service unreachable. Ensure the backend server is running.' };
 };
 
 export const changeAdminPasswordApi = async (newPassword: string): Promise<boolean> => {

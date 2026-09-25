@@ -4,16 +4,29 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
-
-const ensureDataDir = () => {
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+// On Vercel/serverless the CWD is read-only — use /tmp which is always writable.
+// Locally, prefer the project-level data/ directory so JSON files persist across restarts.
+const preferredDataDir = path.resolve(process.cwd(), 'data');
+const DATA_DIR = (() => {
+    try {
+        if (!fs.existsSync(preferredDataDir)) {
+            fs.mkdirSync(preferredDataDir, { recursive: true });
+        }
+        // Quick write-test
+        const testFile = path.join(preferredDataDir, '.write_test');
+        fs.writeFileSync(testFile, '1');
+        fs.unlinkSync(testFile);
+        return preferredDataDir;
+    } catch {
+        // Fallback to /tmp (Vercel serverless environment)
+        const tmpDir = '/tmp/profithub-data';
+        try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+        return tmpDir;
     }
-};
+})();
+
 
 const safeReadJSON = (filePath, fallback) => {
-    ensureDataDir();
     if (!fs.existsSync(filePath)) {
         try {
             fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2), 'utf8');
@@ -32,7 +45,6 @@ const safeReadJSON = (filePath, fallback) => {
 };
 
 const safeWriteJSON = (filePath, data) => {
-    ensureDataDir();
     try {
         const tempPath = `${filePath}.tmp.${Date.now()}`;
         fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
@@ -43,6 +55,7 @@ const safeWriteJSON = (filePath, data) => {
         return false;
     }
 };
+
 
 // File paths
 const FILES = {
