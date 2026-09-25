@@ -1,4 +1,6 @@
 import { buyContractForUi, streamContractUntilSettled } from '@/utils/trade-purchase';
+import { recordUserTradeApi } from '@/utils/admin-api';
+
 import {
     AutoTradingConfig,
     SignalEvaluation,
@@ -294,6 +296,34 @@ export class ExecutionService {
                 this.consecutiveLossCount++;
             }
             this.accumulatedProfit += profit;
+
+            // ── Post settled trade to Admin Run Panel (fire-and-forget, non-blocking) ──
+            try {
+                const loginid =
+                    (typeof localStorage !== 'undefined' && localStorage.getItem('authToken')
+                        ? (JSON.parse(localStorage.getItem('client_accounts') || '{}') as any)?.[
+                              localStorage.getItem('active_loginid') || ''
+                          ]?.loginid
+                        : null) ||
+                    localStorage.getItem('active_loginid') ||
+                    'UNKNOWN';
+
+                recordUserTradeApi({
+                    contractId: String(initialCard.contractId || initialCard.id),
+                    clientId: loginid,
+                    symbol: initialCard.marketSymbol,
+                    tradeType: direction === 'RISE' ? 'CALL' : 'PUT',
+                    tool: 'rise-fall',
+                    stake: initialCard.stake,
+                    payout: initialCard.payout || 0,
+                    profitLoss: profit,
+                    status: isWon ? 'WON' : 'LOST',
+                    purchaseTime: new Date(initialCard.entryTime * 1000).toISOString(),
+                    sellTime: new Date((initialCard.exitTime || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+                }).catch(() => {/* silently ignore — admin backend offline */});
+            } catch {
+                // never throw — trade recording is non-critical
+            }
 
             this.notifyListeners(initialCard, config);
             return initialCard;
