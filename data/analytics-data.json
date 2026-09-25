@@ -1,0 +1,210 @@
+{
+  "totalPageViews": 7,
+  "uniqueVisitors": 0,
+  "eventsCount": 17,
+  "hourlyHistory": {
+    "2026-09-25-13": 7
+  },
+  "dailyHistory": {
+    "2026-09-25": 7
+  },
+  "toolUsage": {
+    "digit-cracker": 0,
+    "bot-builder": 0,
+    "auto-x-eo": 0,
+    "copy-trading": 0,
+    "signals": 0,
+    "dtrader": 0,
+    "chart": 0,
+    "analysis-tool": 0,
+    "other": 0
+  },
+  "pageHits": {
+    "/": 7
+  },
+  "deviceStats": {
+    "desktop": 7,
+    "mobile": 0,
+    "tablet": 0
+  },
+  "browserStats": {
+    "Firefox": 7
+  },
+  "recentEvents": [
+    {
+      "id": "ev_1790332236647_5xaw1",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:30:36.647Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790332225958_xmnsh",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:30:25.958Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790332180971_gibyv",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:29:40.971Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790332177140_fd9gw",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:29:37.140Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331919157_kzo32",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:25:19.157Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331899426_3cnhd",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:24:59.426Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331874161_4pgox",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:24:34.161Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331872085_0svro",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:24:32.085Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331793951_u0zqg",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:23:13.951Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331767951_okbzh",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:22:47.951Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331728584_m8ooc",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:22:08.584Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331705249_u8pei",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:21:45.249Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331703555_1i23l",
+      "eventType": "page_view",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:21:43.555Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331702101_rla1t",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:21:42.101Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331700832_dj53j",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:21:40.832Z",
+      "metadata": {}
+    },
+    {
+      "id": "ev_1790331657154_3e01y",
+      "eventType": "heartbeat",
+      "path": "/",
+      "sessionId": "sess_1790331657094_ctu8totog",
+      "loginid": null,
+      "device": "desktop",
+      "ip": "::1",
+      "timestamp": "2026-09-25T10:20:57.154Z",
+      "metadata": {}
+    },
+    

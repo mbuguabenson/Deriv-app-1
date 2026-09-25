@@ -1,0 +1,452 @@
+[
+  {
+    "id": "MKP-663571-43",
+    "date": "2026-09-25T01:21:03.570Z",
+    "clientId": "CR2910392",
+    "symbol": "1HZ75V",
+    "volume": 21.9,
+    "amount": 0.44,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-13",
+    "date": "2026-09-23T21:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "BOOM1000",
+    "volume": 30.9,
+    "amount": 0.62,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-12",
+    "date": "2026-09-23T06:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "1HZ75V",
+    "volume": 93.3,
+    "amount": 1.87,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-29",
+    "date": "2026-09-23T06:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "1HZ100V",
+    "volume": 129.2,
+    "amount": 2.58,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-36",
+    "date": "2026-09-22T19:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "BOOM1000",
+    "volume": 65,
+    "amount": 1.3,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-22",
+    "date": "2026-09-22T17:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "BOOM1000",
+    "volume": 116.2,
+    "amount": 2.32,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-40",
+    "date": "2026-09-22T08:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "1HZ75V",
+    "volume": 73.2,
+    "amount": 1.46,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-26",
+    "date": "2026-09-21T21:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "R_75",
+    "volume": 55.3,
+    "amount": 1.11,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-37",
+    "date": "2026-09-21T09:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_75",
+    "volume": 51.3,
+    "amount": 1.03,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-39",
+    "date": "2026-09-21T08:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "R_100",
+    "volume": 76.4,
+    "amount": 1.53,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-7",
+    "date": "2026-09-21T05:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_50",
+    "volume": 86,
+    "amount": 1.72,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-15",
+    "date": "2026-09-21T01:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "BOOM1000",
+    "volume": 13.5,
+    "amount": 0.27,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-30",
+    "date": "2026-09-21T01:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "CRASH1000",
+    "volume": 110.7,
+    "amount": 2.21,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-4",
+    "date": "2026-09-20T23:21:03.570Z",
+    "clientId": "CR2910392",
+    "symbol": "1HZ75V",
+    "volume": 103.9,
+    "amount": 2.08,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-24",
+    "date": "2026-09-20T05:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "R_75",
+    "volume": 21.2,
+    "amount": 0.42,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-17",
+    "date": "2026-09-20T02:21:03.570Z",
+    "clientId": "CR2910392",
+    "symbol": "R_75",
+    "volume": 113.6,
+    "amount": 2.27,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-41",
+    "date": "2026-09-19T17:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "1HZ75V",
+    "volume": 141.7,
+    "amount": 2.83,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-32",
+    "date": "2026-09-19T15:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "BOOM1000",
+    "volume": 54.8,
+    "amount": 1.1,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663570-0",
+    "date": "2026-09-19T00:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "CRASH1000",
+    "volume": 40.7,
+    "amount": 0.81,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-14",
+    "date": "2026-09-18T19:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "R_100",
+    "volume": 77.1,
+    "amount": 1.54,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-18",
+    "date": "2026-09-18T17:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_50",
+    "volume": 53.1,
+    "amount": 1.06,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-5",
+    "date": "2026-09-18T15:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "R_75",
+    "volume": 152,
+    "amount": 3.04,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-16",
+    "date": "2026-09-18T12:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_75",
+    "volume": 79.9,
+    "amount": 1.6,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-42",
+    "date": "2026-09-18T05:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "1HZ100V",
+    "volume": 155,
+    "amount": 3.1,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-27",
+    "date": "2026-09-18T03:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "BOOM1000",
+    "volume": 142.6,
+    "amount": 2.85,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-35",
+    "date": "2026-09-17T16:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "1HZ75V",
+    "volume": 121,
+    "amount": 2.42,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-3",
+    "date": "2026-09-16T04:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "1HZ100V",
+    "volume": 28.9,
+    "amount": 0.58,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-23",
+    "date": "2026-09-16T02:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "R_75",
+    "volume": 124.3,
+    "amount": 2.49,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-44",
+    "date": "2026-09-15T11:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "CRASH1000",
+    "volume": 11.3,
+    "amount": 0.23,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-1",
+    "date": "2026-09-15T04:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "R_100",
+    "volume": 141.1,
+    "amount": 2.82,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-21",
+    "date": "2026-09-15T01:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "1HZ100V",
+    "volume": 140.5,
+    "amount": 2.81,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-6",
+    "date": "2026-09-14T23:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "R_75",
+    "volume": 62.9,
+    "amount": 1.26,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-31",
+    "date": "2026-09-14T08:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "BOOM1000",
+    "volume": 133.6,
+    "amount": 2.67,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-2",
+    "date": "2026-09-14T06:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_75",
+    "volume": 128,
+    "amount": 2.56,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-28",
+    "date": "2026-09-14T05:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "CRASH1000",
+    "volume": 148.9,
+    "amount": 2.98,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-9",
+    "date": "2026-09-14T00:21:03.570Z",
+    "clientId": "CR3918204",
+    "symbol": "1HZ100V",
+    "volume": 99.8,
+    "amount": 2,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-33",
+    "date": "2026-09-13T18:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "R_100",
+    "volume": 69.8,
+    "amount": 1.4,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-11",
+    "date": "2026-09-13T03:21:03.570Z",
+    "clientId": "CR2910392",
+    "symbol": "BOOM1000",
+    "volume": 128.9,
+    "amount": 2.58,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-8",
+    "date": "2026-09-13T00:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "CRASH1000",
+    "volume": 81.9,
+    "amount": 1.64,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-20",
+    "date": "2026-09-12T19:21:03.570Z",
+    "clientId": "CR5928103",
+    "symbol": "1HZ75V",
+    "volume": 154.6,
+    "amount": 3.09,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-19",
+    "date": "2026-09-12T17:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "R_50",
+    "volume": 144.8,
+    "amount": 2.9,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-34",
+    "date": "2026-09-12T17:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "1HZ75V",
+    "volume": 71.7,
+    "amount": 1.43,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-10",
+    "date": "2026-09-12T00:21:03.570Z",
+    "clientId": "CR2910392",
+    "symbol": "1HZ75V",
+    "volume": 27.7,
+    "amount": 0.55,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-25",
+    "date": "2026-09-11T18:21:03.570Z",
+    "clientId": "CR7719204",
+    "symbol": "1HZ75V",
+    "volume": 143.2,
+    "amount": 2.86,
+    "markupRate": "2.0%",
+    "status": "credited"
+  },
+  {
+    "id": "MKP-663571-38",
+    "date": "2026-09-11T13:21:03.570Z",
+    "clientId": "CR1829401",
+    "symbol": "1HZ75V",
+    "volume": 152.2,
+    "amount": 3.04,
+    "markupRate": "2.0%",
+    "status": "credited"
+  }
+]

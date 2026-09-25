@@ -1,0 +1,29 @@
+{
+  "accounts": {
+    "CR1234567": {
+      "loginid": "CR1234567",
+      "accountType": "real",
+      "currency": "USD",
+      "balance": 500,
+      "email": "",
+      "ip": "127.0.0.1",
+      "userAgent": "",
+      "source": "deriv_oauth",
+      "firstSeen": "2026-09-25T10:12:04.292Z",
+      "lastLogin": "2026-09-25T10:12:04.292Z",
+      "loginCount": 1
+    }
+  },
+  "history": [
+    {
+      "id": "log_1790331124292_frrc",
+      "loginid": "CR1234567",
+      "accountType": "real",
+      "currency": "USD",
+      "balance": 500,
+      "ip": "127.0.0.1",
+      "timestamp": "2026-09-25T10:12:04.292Z",
+      "source": "deriv_oauth"
+    }
+  ]
+}

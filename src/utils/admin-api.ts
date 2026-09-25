@@ -8,6 +8,16 @@ import {
     CopyRequest,
 } from './supabase-copy';
 
+export type {
+    SiteConfig,
+    MpesaTransaction,
+    MarkupCommission,
+    SystemLogItem,
+    UploadedBot,
+    PlatformNotification,
+    CopyRequest,
+};
+
 const API_BASE = '/api/admin';
 
 async function safeApiCall<T>(url: string, options?: RequestInit): Promise<T | null> {
@@ -176,3 +186,332 @@ export const deleteUploadedBotApi = async (id: string): Promise<boolean> => {
     });
     return !!res?.success;
 };
+
+// ─── Analytics & Telemetry API ───────────────────────────────────────────────
+export interface AnalyticsStatsData {
+    totalPageViews: number;
+    eventsCount: number;
+    liveActiveCount: number;
+    liveActiveUsers: Array<{
+        sessionId: string;
+        path: string;
+        loginid?: string | null;
+        device: string;
+        ip: string;
+        timestamp: number;
+    }>;
+    deviceStats: { desktop: number; mobile: number; tablet: number };
+    browserStats: Record<string, number>;
+    timeline24h: Array<{ hour: string; views: number }>;
+    topPages: Array<{ path: string; count: number }>;
+    topTools: Array<{ tool: string; count: number }>;
+    recentEvents: Array<{
+        id: string;
+        eventType: string;
+        path: string;
+        sessionId: string;
+        loginid?: string | null;
+        device: string;
+        ip: string;
+        timestamp: string;
+        metadata?: any;
+    }>;
+    lastUpdated: string;
+}
+
+export const fetchAnalyticsStatsApi = async (): Promise<AnalyticsStatsData | null> => {
+    const res = await safeApiCall<{ success: boolean; data: AnalyticsStatsData }>('/api/analytics/stats');
+    return res?.data || null;
+};
+
+// ─── Connected Traders & Logins API ──────────────────────────────────────────
+export interface TraderAccountRecord {
+    loginid: string;
+    accountType: 'real' | 'demo';
+    currency: string;
+    balance: number;
+    email: string;
+    ip: string;
+    userAgent: string;
+    source: string;
+    firstSeen: string;
+    lastLogin: string;
+    loginCount: number;
+    status?: 'active' | 'blocked';
+    blockReason?: string;
+}
+
+export interface TraderLoginsData {
+    totalTraders: number;
+    realTradersCount: number;
+    demoTradersCount: number;
+    accounts: TraderAccountRecord[];
+    recentHistory: Array<{
+        id: string;
+        loginid: string;
+        accountType: 'real' | 'demo';
+        currency: string;
+        balance: number;
+        ip: string;
+        timestamp: string;
+        source: string;
+    }>;
+}
+
+export const fetchTraderLoginsApi = async (): Promise<TraderLoginsData | null> => {
+    const res = await safeApiCall<{ success: boolean; data: TraderLoginsData }>('/api/analytics/logins');
+    return res?.data || null;
+};
+
+// ─── Admin Users Management API ──────────────────────────────────────────────
+export interface AdminUserData {
+    id: string;
+    username: string;
+    role: 'super_admin' | 'administrator' | 'manager' | 'analyst' | 'support';
+    permissions: string[];
+    created_at: string;
+    last_login: string | null;
+    status: 'active' | 'suspended';
+}
+
+export interface AdminAuditItem {
+    id: string;
+    action: string;
+    details: any;
+    actor: string;
+    timestamp: string;
+}
+
+export const fetchAdminUsersApi = async (token?: string): Promise<{ admins: AdminUserData[]; auditLogs: AdminAuditItem[] } | null> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; admins: AdminUserData[]; auditLogs: AdminAuditItem[] }>(
+        `${API_BASE}/users`,
+        { headers }
+    );
+    if (res?.success) return { admins: res.admins || [], auditLogs: res.auditLogs || [] };
+    return null;
+};
+
+export const createAdminUserApi = async (
+    data: { username: string; password: string; role: string; permissions: string[] },
+    token?: string
+): Promise<{ success: boolean; admin?: AdminUserData; error?: string }> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; admin?: AdminUserData; error?: string }>(`${API_BASE}/users`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+    });
+    return res || { success: false, error: 'Network or server error creating admin' };
+};
+
+export const updateAdminUserApi = async (
+    id: string,
+    updates: Partial<{ role: string; permissions: string[]; password?: string; status: 'active' | 'suspended' }>,
+    token?: string
+): Promise<{ success: boolean; error?: string }> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; error?: string }>(`${API_BASE}/users`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ id, updates }),
+    });
+    return res || { success: false, error: 'Network error updating admin' };
+};
+
+export const deleteAdminUserApi = async (
+    id: string,
+    token?: string
+): Promise<{ success: boolean; error?: string }> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; error?: string }>(`${API_BASE}/users?id=${id}`, {
+        method: 'DELETE',
+        headers,
+    });
+    return res || { success: false, error: 'Network error deleting admin' };
+};
+
+export const fetchAdminAuditLogsApi = async (limit = 50): Promise<AdminAuditItem[]> => {
+    const res = await safeApiCall<{ success: boolean; logs: AdminAuditItem[] }>(`${API_BASE}/audit?limit=${limit}`);
+    return res?.logs || [];
+};
+
+// ─── Commission Markup Tracker API ───────────────────────────────────────────
+export interface CommissionUserRecord {
+    clientId: string;
+    commissionUsd: number;
+    volumeUsd: number;
+    tradesCount: number;
+    lastTradeDate: string;
+}
+
+export interface CommissionTimelinePoint {
+    label: string;
+    commission: number;
+    volume: number;
+    trades: number;
+}
+
+export interface CommissionTransactionItem {
+    id: string;
+    date: string;
+    clientId: string;
+    symbol: string;
+    volume: number;
+    amount: number;
+    markupRate: string;
+    status: string;
+}
+
+export interface CommissionAnalyticsData {
+    totalCommissionUsd: number;
+    totalVolumeUsd: number;
+    totalTrades: number;
+    activeUsersCount: number;
+    userBreakdown: CommissionUserRecord[];
+    timeline: CommissionTimelinePoint[];
+    transactions: CommissionTransactionItem[];
+}
+
+export const fetchCommissionAnalyticsApi = async (options: {
+    dateFrom?: string;
+    dateTo?: string;
+    clientId?: string;
+} = {}): Promise<CommissionAnalyticsData | null> => {
+    const query = new URLSearchParams();
+    if (options.dateFrom) query.set('date_from', options.dateFrom);
+    if (options.dateTo) query.set('date_to', options.dateTo);
+    if (options.clientId && options.clientId !== 'all') query.set('client_id', options.clientId);
+
+    const res = await safeApiCall<{ success: boolean; data: CommissionAnalyticsData }>(
+        `${API_BASE}/commission-tracker?${query.toString()}`
+    );
+    return res?.data || null;
+};
+
+export const recordCommissionTransactionApi = async (comm: {
+    clientId: string;
+    symbol: string;
+    volume: number;
+    amount: number;
+    markupRate?: string;
+    status?: string;
+}): Promise<boolean> => {
+    const res = await safeApiCall<{ success: boolean }>(`${API_BASE}/commission-tracker`, {
+        method: 'POST',
+        body: JSON.stringify(comm),
+    });
+    return !!res?.success;
+};
+
+// ─── User Blocking / Blacklist API ───────────────────────────────────────────
+export const blockTraderUserApi = async (
+    loginid: string,
+    reason?: string,
+    token?: string
+): Promise<{ success: boolean; error?: string }> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; error?: string }>(`${API_BASE}/traders`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'block', loginid, reason }),
+    });
+    return res || { success: false, error: 'Network error blocking user' };
+};
+
+export const unblockTraderUserApi = async (
+    loginid: string,
+    token?: string
+): Promise<{ success: boolean; error?: string }> => {
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await safeApiCall<{ success: boolean; error?: string }>(`${API_BASE}/traders`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'unblock', loginid }),
+    });
+    return res || { success: false, error: 'Network error unblocking user' };
+};
+
+// ─── User Trade History API ──────────────────────────────────────────────────
+export interface UserTradeItem {
+    id: string;
+    contractId: string;
+    clientId: string;
+    symbol: string;
+    tradeType: string;
+    tool: string;
+    stake: number;
+    payout: number;
+    profitLoss: number;
+    status: 'WON' | 'LOST';
+    purchaseTime: string;
+    sellTime: string;
+    barrier?: string | null;
+}
+
+export interface UserTradeUserStat {
+    clientId: string;
+    tradesCount: number;
+    volume: number;
+    profitLoss: number;
+    winCount: number;
+    lossCount: number;
+    winRate: number;
+    lastTrade: string;
+}
+
+export interface UserTradeCumulativePoint {
+    time: string;
+    profitLoss: number;
+    cumulative: number;
+}
+
+export interface UserTradesAnalyticsData {
+    totalTrades: number;
+    totalVolume: number;
+    netProfitLoss: number;
+    winCount: number;
+    lossCount: number;
+    winRate: number;
+    userStats: UserTradeUserStat[];
+    symbolStats: Record<string, number>;
+    toolStats: Record<string, number>;
+    cumulativePnL: UserTradeCumulativePoint[];
+    trades: UserTradeItem[];
+}
+
+export const fetchUserTradesAnalyticsApi = async (options: {
+    clientId?: string;
+    tool?: string;
+    outcome?: string;
+    symbol?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+} = {}): Promise<UserTradesAnalyticsData | null> => {
+    const query = new URLSearchParams();
+    if (options.clientId && options.clientId !== 'all') query.set('client_id', options.clientId);
+    if (options.tool && options.tool !== 'all') query.set('tool', options.tool);
+    if (options.outcome && options.outcome !== 'all') query.set('outcome', options.outcome);
+    if (options.symbol && options.symbol !== 'all') query.set('symbol', options.symbol);
+    if (options.dateFrom) query.set('date_from', options.dateFrom);
+    if (options.dateTo) query.set('date_to', options.dateTo);
+    if (options.limit) query.set('limit', String(options.limit));
+    if (options.offset) query.set('offset', String(options.offset));
+
+    const res = await safeApiCall<{ success: boolean; data: UserTradesAnalyticsData }>(
+        `${API_BASE}/trades?${query.toString()}`
+    );
+    return res?.data || null;
+};
+
+export const recordUserTradeApi = async (trade: Partial<UserTradeItem>): Promise<boolean> => {
+    const res = await safeApiCall<{ success: boolean }>(`${API_BASE}/trades`, {
+        method: 'POST',
+        body: JSON.stringify(trade),
+    });
+    return !!res?.success;
+};
+
+

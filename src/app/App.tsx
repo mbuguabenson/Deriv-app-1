@@ -9,6 +9,7 @@ import { useLanguageFromURL } from '@/hooks/useLanguageFromURL';
 import { useOAuthCallback } from '@/hooks/useOAuthCallback';
 import { StoreProvider } from '@/hooks/useStore';
 import { OAuthTokenExchangeService } from '@/services/oauth-token-exchange.service';
+import { SiteAnalyticsService } from '@/services/site-analytics.service';
 import { initializeI18n, TranslationProvider } from '@deriv-com/translations';
 import { getBrandLabel } from '@/components/shared/utils/brand/brand';
 import CoreStoreProvider from './CoreStoreProvider';
@@ -118,6 +119,13 @@ function storeLegacyAccounts(accounts: import('@/hooks/useOAuthCallback').Legacy
             account_type: isDemo ? 'demo' : 'real',
             accountsList,
         });
+
+        SiteAnalyticsService.recordTraderLogin({
+            loginid: realAccount.loginid,
+            accountType: isDemo ? 'demo' : 'real',
+            currency: realAccount.currency || 'USD',
+            source: 'legacy_oauth',
+        });
     }
 }
 
@@ -130,6 +138,11 @@ function storeLegacyAccounts(accounts: import('@/hooks/useOAuthCallback').Legacy
  * 3. Router provider setup
  */
 function App() {
+    // Initialize central site analytics engine (auto tracks pageviews, sessions, and heartbeats)
+    React.useEffect(() => {
+        SiteAnalyticsService.initialize();
+    }, []);
+
     // Handle OAuth callback flow (both PKCE and legacy accounts)
     const { isProcessing, isValid, params, legacyAccounts, error, cleanupURL } = useOAuthCallback();
 

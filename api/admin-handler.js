@@ -2,6 +2,10 @@
 
 const handlers = {
     auth: require('./_lib/admin/auth'),
+    users: require('./_lib/admin/users'),
+    traders: require('./_lib/admin/traders'),
+    audit: require('./_lib/admin/audit'),
+    analytics: require('./analytics-handler'),
     bots: require('./_lib/admin/bots'),
     'copy-requests': require('./_lib/admin/copy-requests'),
     'deriv-apps': require('./_lib/admin/deriv-apps'),
@@ -10,6 +14,10 @@ const handlers = {
     'site-config': require('./_lib/admin/site-config'),
     'system-health': require('./_lib/admin/system-health'),
     transactions: require('./_lib/admin/transactions'),
+    commissions: require('./_lib/admin/commission-tracker'),
+    'commission-tracker': require('./_lib/admin/commission-tracker'),
+    trades: require('./_lib/admin/trades'),
+    'user-trades': require('./_lib/admin/trades'),
 };
 
 module.exports = async function handler(req, res) {

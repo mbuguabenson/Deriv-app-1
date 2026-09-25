@@ -8,6 +8,7 @@ const sessionHandler = require('../api/session-handler');
 const derivAccountsHandler = require('../api/deriv-accounts');
 const derivOtpHandler = require('../api/deriv-otp/[accountId]');
 const supabaseProxyHandler = require('../api/supabase-proxy');
+const analyticsHandler = require('../api/analytics-handler');
 
 const PORT = process.env.PORT || 4000;
 
@@ -82,6 +83,12 @@ const server = http.createServer(async (req, res) => {
                     '/api/admin/logs',
                     '/api/admin/notifications',
                     '/api/admin/bots',
+                    '/api/admin/users',
+                    '/api/admin/traders',
+                    '/api/admin/audit',
+                    '/api/analytics/track',
+                    '/api/analytics/stats',
+                    '/api/analytics/logins',
                     '/api/deriv-accounts',
                     '/api/deriv-otp/{accountId}',
                     '/api/supabase/{table}',
@@ -89,6 +96,9 @@ const server = http.createServer(async (req, res) => {
             });
         }
 
+        if (pathname === '/api/analytics' || pathname.startsWith('/api/analytics/')) {
+            return await analyticsHandler(req, res);
+        }
         if (pathname === '/api/admin' || pathname.startsWith('/api/admin/')) {
             return await adminHandler(req, res);
         }

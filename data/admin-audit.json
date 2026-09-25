@@ -1,0 +1,57 @@
+{
+  "logs": [
+    {
+      "id": "aud_1790331663650_r30yx",
+      "action": "USER_UNBLOCKED",
+      "details": {
+        "loginid": "CR3918204",
+        "actor": "superadmin"
+      },
+      "actor": "superadmin",
+      "timestamp": "2026-09-25T10:21:03.650Z"
+    },
+    {
+      "id": "aud_1790331663642_3pca5",
+      "action": "USER_BLOCKED",
+      "details": {
+        "loginid": "CR3918204",
+        "reason": "High risk trade pattern",
+        "actor": "superadmin"
+      },
+      "actor": "superadmin",
+      "timestamp": "2026-09-25T10:21:03.642Z"
+    },
+    {
+      "id": "aud_1790331124298_pltxh",
+      "action": "ADMIN_DELETED",
+      "details": {
+        "deletedUser": "test_manager",
+        "actor": "super_admin"
+      },
+      "actor": "super_admin",
+      "timestamp": "2026-09-25T10:12:04.298Z"
+    },
+    {
+      "id": "aud_1790331124239_gl94w",
+      "action": "ADMIN_CREATED",
+      "details": {
+        "createdUser": "test_manager",
+        "role": "manager",
+        "actor": "super_admin"
+      },
+      "actor": "super_admin",
+      "timestamp": "2026-09-25T10:12:04.239Z"
+    },
+    {
+      "id": "aud_1790331124218_ba71c",
+      "action": "LOGIN_SUCCESS",
+      "details": {
+        "username": "Admin_profithub",
+        "role": "super_admin",
+        "ip": "127.0.0.1"
+      },
+      "actor": "Admin_profithub",
+      "timestamp": "2026-09-25T10:12:04.218Z"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "sessions": {
+    "ph_adm_777d861d9c52d4c3ea3d0f0c3c4b7f34fa234aba69cbc7df3e5edd8828f2aa7b": {
+      "userId": "usr_superadmin_01",
+      "username": "Admin_profithub",
+      "role": "super_admin",
+      "permissions": [
+        "all"
+      ],
+      "createdAt": "2026-09-25T10:12:04.167Z",
+      "expiresAt": 1790417524166,
+      "ip": "127.0.0.1",
+      "userAgent": "unknown"
+    }
+  }
+}
