@@ -61,7 +61,7 @@ const useActiveAccount = ({
             ...activeAccount,
             balance: addComma(numBal.toFixed(getDecimalPlaces(currentBalanceData?.currency || accCurrency))),
             currencyLabel: isVirtual ? 'Demo' : accCurrency,
-            icon: <CurrencyIcon currency={accCurrency.toLowerCase() || 'usd'} isVirtual={false} />,
+            icon: <CurrencyIcon currency={accCurrency.toLowerCase() || 'usd'} isVirtual={Boolean(isVirtual)} />,
             isVirtual: isVirtual,
             isActive: true,
         };
