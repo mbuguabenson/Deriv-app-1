@@ -154,22 +154,34 @@ const DrawerContent = ({ active_index, is_drawer_open, active_tour, setActiveTab
     }, [is_drawer_open, isDesktop]);
 
     return (
-        <>
-            <Tabs active_index={active_index} onTabItemClick={setActiveTabIndex} top history={{} as any}>
-                <div id='db-run-panel-tab__summary' label={<Localize i18n_default_text='Summary' />}>
-                    <Summary is_drawer_open={is_drawer_open} />
-                </div>
-                <div id='db-run-panel-tab__transactions' label={<Localize i18n_default_text='Transactions' />}>
-                    <Transactions is_drawer_open={is_drawer_open} />
-                </div>
-                <div id='db-run-panel-tab__journal' label={<Localize i18n_default_text='Journal' />}>
-                    <Journal />
-                </div>
-            </Tabs>
+        <div
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                width: '100%',
+                minHeight: 0,
+                overflow: 'hidden',
+            }}
+        >
+            <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <Tabs active_index={active_index} onTabItemClick={setActiveTabIndex} top history={{} as any}>
+                    <div id='db-run-panel-tab__summary' label={<Localize i18n_default_text='Summary' /> as any}>
+                        <Summary is_drawer_open={is_drawer_open} />
+                    </div>
+                    <div id='db-run-panel-tab__transactions' label={<Localize i18n_default_text='Transactions' /> as any}>
+                        <Transactions is_drawer_open={is_drawer_open} />
+                    </div>
+                    <div id='db-run-panel-tab__journal' label={<Localize i18n_default_text='Journal' /> as any}>
+                        <Journal />
+                    </div>
+                </Tabs>
+            </div>
             {((is_drawer_open && active_index !== 2) || active_tour) && <StatisticsSummary {...props} />}
-        </>
+        </div>
     );
 };
+
 
 const DrawerFooter = ({ is_clear_stat_disabled, onClearStatClick }: TDrawerFooter) => (
     <div className='run-panel__footer'>

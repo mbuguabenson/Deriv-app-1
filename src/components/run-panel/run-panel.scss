@@ -43,19 +43,18 @@
         }
 
         .dc-tabs {
-            display: flex !important;
-            flex-direction: column !important;
+            // flex:1 grows this inside the flex-column .dc-drawer__content
+            // height:100% lets grid-template-rows: auto 1fr resolve the 1fr row
+            flex: 1 1 auto !important;
             height: 100% !important;
             min-height: 0 !important;
             width: 100%;
+            overflow: hidden !important;
 
-            // Tab bar stays at fixed height, panel content fills remaining
-            .dc-tabs__panels {
-                flex: 1 1 auto !important;
+            // The content panel fills the second grid row (1fr)
+            .dc-tabs__content {
                 min-height: 0 !important;
                 overflow-y: auto !important;
-                display: flex !important;
-                flex-direction: column !important;
             }
         }
 
