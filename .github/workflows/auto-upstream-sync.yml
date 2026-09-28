@@ -1,0 +1,77 @@
+name: Sync Upstream & Auto-Publish
+
+on:
+  schedule:
+    # Runs daily at 04:00 UTC (07:00 EAT)
+    - cron: '0 4 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add and Fetch Upstream
+        run: |
+          git remote add upstream https://github.com/deriv-com/trading-bot-template.git || git remote set-url upstream https://github.com/deriv-com/trading-bot-template.git
+          git fetch upstream master
+
+      - name: Check for New Upstream Commits
+        id: check_upstream
+        run: |
+          BEHIND_COUNT=$(git rev-list --count HEAD..upstream/master)
+          echo "behind_count=$BEHIND_COUNT" >> $GITHUB_OUTPUT
+          echo "Found $BEHIND_COUNT new commits in upstream/master"
+
+      - name: Set up Node.js
+        if: steps.check_upstream.outputs.behind_count > 0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Attempt Automatic Merge and Build Verification
+        if: steps.check_upstream.outputs.behind_count > 0
+        id: merge_step
+        run: |
+          echo "Creating sync branch..."
+          git checkout -b deriv-sync-updates
+
+          echo "Attempting merge from upstream/master..."
+          if git merge upstream/master -m "chore(upstream): sync updates from deriv-com/trading-bot-template"; then
+            echo "Merge succeeded cleanly. Verifying build..."
+            npm ci || npm install --legacy-peer-deps
+            npm run build
+            echo "Build verified successfully!"
+            git checkout main
+            git merge deriv-sync-updates --ff-only
+            git push origin main
+            echo "Successfully merged and pushed upstream updates to main (Vercel will auto-publish)."
+          else
+            echo "Merge conflicts detected. Creating Pull Request for manual review..."
+            git merge --abort || true
+            git checkout -b deriv-upstream-pr
+            git merge -s recursive -X ours upstream/master -m "chore(upstream): merge updates with local overrides"
+            git push origin deriv-upstream-pr --force
+            gh pr create \
+              --title "🤖 Upstream Deriv Updates Available" \
+              --body "New updates were detected in **deriv-com/trading-bot-template** ($BEHIND_COUNT commits). Please review and merge to publish." \
+              --base main \
+              --head deriv-upstream-pr || true
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
