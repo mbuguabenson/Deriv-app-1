@@ -773,14 +773,8 @@ const AppWrapper = observer(() => {
 
     if (!store) return null;
 
-    // 1. Remove run panel and drawer from dashboard, trading bots, and dtrader
-    const shouldHideRunPanelAndDrawer = [
-        'dashboard',
-        'trading_bots',
-        'free_bots',
-        'trading-bots',
-        'dtrader',
-    ].includes(currentTabKey);
+    // Hide run panel and transaction drawer only on full-screen embeds (like dtrader)
+    const shouldHideRunPanelAndDrawer = ['dtrader'].includes(currentTabKey);
 
     return (
         <React.Fragment>
