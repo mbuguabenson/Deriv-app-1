@@ -185,3 +185,36 @@
         opacity: 0.2;
     }
 }
+
+// ─── Copyright notice ────────────────────────────────────────────────────────
+.app-footer__copyright {
+    margin-right: auto; // in row-reverse layout, pushes copyright to the far left
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 1.15rem;
+    color: var(--text-less-prominent, #94a3b8);
+    white-space: nowrap;
+    user-select: none;
+    padding: 0 0.8rem;
+    line-height: 1;
+
+    &-link {
+        color: var(--text-less-prominent, #94a3b8);
+        text-decoration: none;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        transition: color 0.18s ease;
+
+        &:hover {
+            color: #f5c542;
+            text-decoration: underline;
+        }
+    }
+
+    @include mobile-or-tablet-screen {
+        font-size: 0.95rem;
+        padding: 0 0.4rem;
+    }
+}
+

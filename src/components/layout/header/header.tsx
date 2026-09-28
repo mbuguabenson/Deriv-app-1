@@ -359,14 +359,14 @@ const AppHeader = observer(() => {
                                 id='header-risk-disclaimer-btn'
                                 className='app-header__risk-btn'
                                 title='Risk Disclaimer & Regulatory Warning'
+                                aria-label='Risk Disclaimer & Regulatory Warning'
                                 onClick={() => window.dispatchEvent(new Event('open_risk_disclaimer'))}
                             >
-                                <svg viewBox='0 0 24 24' width='13' height='13' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+                                <svg viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
                                     <path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' />
                                     <line x1='12' y1='8' x2='12' y2='12' />
                                     <line x1='12' y1='16' x2='12.01' y2='16' />
                                 </svg>
-                                <span>Risk Disclaimer</span>
                             </button>
                         )}
                         {!isDesktop && (

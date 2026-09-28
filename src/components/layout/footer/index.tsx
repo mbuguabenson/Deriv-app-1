@@ -124,6 +124,19 @@ const Footer = () => {
             <div className='app-footer__vertical-line' />
             <NetworkStatus />
 
+            {/* Copyright by Benadesigns */}
+            <div className='app-footer__copyright'>
+                <span>© {new Date().getFullYear()}</span>
+                <a
+                    href='https://benadesigns.co.ke'
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='app-footer__copyright-link'
+                >
+                    Copyright by Benadesigns
+                </a>
+            </div>
+
             {/* Language modal */}
             {enableLanguageSettings && isModalOpenFor('DesktopLanguagesModal') && (
                 <DesktopLanguagesModal
