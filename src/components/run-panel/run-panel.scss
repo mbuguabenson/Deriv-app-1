@@ -23,24 +23,40 @@
             }
         }
 
+        // Make the inner container a full-height flex column so content fills height
         .dc-drawer__container {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
             min-height: 0;
             overflow: hidden;
         }
 
+        // The tabs wrapper must fill all available vertical space
         .dc-drawer__content,
         .run-panel__content {
-            display: flex;
-            flex: 1 1 auto;
-            min-height: 0;
+            display: flex !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            flex-direction: column !important;
         }
 
         .dc-tabs {
-            display: grid;
-            grid-template-rows: auto minmax(0, 1fr);
-            height: 100%;
-            min-height: 0;
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+            min-height: 0 !important;
             width: 100%;
+
+            // Tab bar stays at fixed height, panel content fills remaining
+            .dc-tabs__panels {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow-y: auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }
         }
 
         &--mobile {
@@ -171,7 +187,8 @@
 
     &-tab {
         &__content {
-            height: calc(100vh - 42rem);
+            flex: 1 1 auto;
+            min-height: 0;
             overflow: hidden;
 
             &--no-stat {
