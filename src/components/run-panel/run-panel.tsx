@@ -158,10 +158,10 @@ const DrawerContent = ({ active_index, is_drawer_open, active_tour, setActiveTab
             style={{
                 display: 'flex',
                 flexDirection: 'column',
-                height: '100%',
-                width: '100%',
+                flex: '1 1 auto',
                 minHeight: 0,
                 overflow: 'hidden',
+                width: '100%',
             }}
         >
             <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

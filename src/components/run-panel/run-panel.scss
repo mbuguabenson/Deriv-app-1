@@ -32,21 +32,9 @@
             overflow: hidden;
         }
 
-        // The tabs wrapper must fill all available vertical space
-        .dc-drawer__content,
-        .run-panel__content {
-            display: flex !important;
-            flex: 1 1 auto !important;
-            min-height: 0 !important;
-            overflow: hidden !important;
-            flex-direction: column !important;
-        }
-
         .dc-tabs {
-            // flex:1 grows this inside the flex-column .dc-drawer__content
-            // height:100% lets grid-template-rows: auto 1fr resolve the 1fr row
+            // flex:1 grows this inside the flex-column .dc-drawer__content wrapper
             flex: 1 1 auto !important;
-            height: 100% !important;
             min-height: 0 !important;
             width: 100%;
             overflow: hidden !important;

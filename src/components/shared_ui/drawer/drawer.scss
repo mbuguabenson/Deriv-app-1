@@ -61,8 +61,11 @@
     }
 
     &__content {
-        flex-grow: 1;
-        overflow: auto;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
     }
 
     &__footer {
