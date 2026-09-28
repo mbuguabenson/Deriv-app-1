@@ -27,27 +27,37 @@
         & .dc-text {
             text-align: center;
         }
+    }
 
-        .summary-card-inactive-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            min-height: 140px;
+    // Standalone styles for the inactive empty-state wrapper (renders with or without --inactive modifier)
+    .summary-card-inactive-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        min-height: 140px;
+        padding: 2.4rem 1.6rem;
+        text-align: center;
+        color: var(--text-general);
+        font-size: 14px;
+        line-height: 2rem;
+
+        .dc-text {
+            text-align: center;
         }
+    }
 
-        .summary-card-inactive-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-less-prominent);
-            animation: pulse-icon 2s infinite ease-in-out;
-            margin-bottom: 4px;
+    .summary-card-inactive-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-less-prominent);
+        animation: pulse-icon 2s infinite ease-in-out;
+        margin-bottom: 4px;
 
-            svg {
-                fill: currentColor;
-            }
+        svg {
+            fill: currentColor;
         }
     }
 
