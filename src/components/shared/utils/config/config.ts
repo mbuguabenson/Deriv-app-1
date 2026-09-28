@@ -322,7 +322,7 @@ export const DOMAIN_CONFIG: Record<string, DomainConfig> = {
     }),
     ...createHostedDomainEntries({
         primaryDomain: 'profithub.co.ke',
-        aliases: ['www.profithub.co.ke', 'staging.profithub.co.ke'],
+        aliases: ['www.profithub.co.ke', 'staging.profithub.co.ke', 'profithubtool.vercel.app'],
         clientId: '33Mmq9JHMrJaUKT2KIhKZ',
         redirectUri: 'https://profithub.co.ke/',
         features: {
@@ -836,17 +836,21 @@ export const getDomainRedirectUrl = (
  * Falls back to env vars (for local / Replit dev) when the hostname is not
  * listed in DOMAIN_CONFIG.
  */
-export const getDomainConfig = (activeHostname = window.location.hostname): DomainConfig => {
+export const getDomainConfig = (activeHostname = typeof window !== 'undefined' ? window.location.hostname : ''): DomainConfig => {
     const hostname = normalizeHostname(activeHostname);
     const domain_config = getDomainConfigForHost(hostname);
+    const currentOrigin = typeof window !== 'undefined' ? `${window.location.origin}/` : '';
     if (domain_config) {
-        return domain_config;
+        return {
+            ...domain_config,
+            redirectUri: hostname.includes('vercel.app') && currentOrigin ? currentOrigin : domain_config.redirectUri,
+        };
     }
-    // Fallback — used on localhost and Replit dev domains
+    // Fallback — used on localhost, Vercel preview domains, and other hosts
     return {
         clientId: process.env.CLIENT_ID || '34qPhRSX2dxSujd2DQNLv',
         appId: process.env.APP_ID || '121856',
-        redirectUri: process.env.REDIRECT_URI || `${window.location.origin}/`,
+        redirectUri: process.env.REDIRECT_URI || (currentOrigin || 'https://profithubtool.vercel.app/'),
         botsFolder: process.env.BOTS_FOLDER || DEFAULT_BOTS_FOLDER,
         canonicalHost: hostname,
         includeLegacyAppIdInOAuth: true,
@@ -950,12 +954,9 @@ export const WS_SERVERS = {
     PRODUCTION: 'wss://ws.derivws.com/websockets/v3',
 } as const;
 
-// Helper to check if we're on production domains
+// Helper to check if we're on production domains (always use live Deriv OAuth endpoints)
 export const isProduction = () => {
-    if (process.env.APP_ENV === 'production') return true;
-    const hostname = window.location.hostname;
-    if (/localhost(:\d+)?$/i.test(hostname)) return true;
-    return !!DOMAIN_CONFIG[hostname];
+    return true;
 };
 
 // Modern Deriv public options trading WebSocket endpoint for reliable unauthenticated market data
@@ -1218,9 +1219,8 @@ export const generateOAuthURL = async (prompt?: string, domainConfig = getDomain
             ? domainCfg.redirectUri
             : `${domainCfg.redirectUri}/`;
 
-        // Use brand config for the OAuth2 base URL
-        const environment = isProduction() ? 'production' : 'staging';
-        const hostname = brandConfig?.platform.auth2_url?.[environment] || 'https://auth.deriv.com/oauth2/';
+        // Always use live Deriv OAuth2 endpoint (never internal staging-auth)
+        const hostname = brandConfig?.platform.auth2_url?.production || 'https://auth.deriv.com/oauth2/';
 
         if (hostname && clientId) {
             // Generate CSRF token for security

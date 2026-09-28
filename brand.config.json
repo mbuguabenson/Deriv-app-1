@@ -82,7 +82,7 @@
         },
         "auth2_url": {
             "production": "https://auth.deriv.com/oauth2/",
-            "staging": "https://staging-auth.deriv.com/oauth2/"
+            "staging": "https://auth.deriv.com/oauth2/"
         },
         "derivws": {
             "url": {
