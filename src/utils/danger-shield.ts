@@ -59,6 +59,7 @@ class DangerShieldService {
     public init(): void {
         if (this.hasInitialized || typeof window === 'undefined') return;
         this.hasInitialized = true;
+        (window as any).profithubDangerShield = this;
 
         if (!this.isEnforcementAllowed()) {
             return;
@@ -90,21 +91,12 @@ class DangerShieldService {
     private sanitizeConsole(): void {
         try {
             const noop = () => {};
-            // Mute standard verbose logs
+            // Mute standard verbose logs in production
             console.log = noop;
             console.info = noop;
             console.debug = noop;
             console.table = noop;
             console.dir = noop;
-
-            // Clear console every 3 seconds to wipe any cached traces
-            setInterval(() => {
-                try {
-                    console.clear();
-                } catch {
-                    /* ignore */
-                }
-            }, 3000);
         } catch {
             /* ignore */
         }
@@ -171,44 +163,18 @@ class DangerShieldService {
     }
 
     /**
-     * Periodically monitors DevTools detection signals
+     * Detection heartbeat: Only listen for visibility/minimize events to hide shield
      */
     private startDetectionHeartbeat(): void {
         if (this.checkInterval) clearInterval(this.checkInterval);
 
-        // 1. Dimension delta check (docked devtools detection)
-        const checkDimensions = () => {
-            if (!this.isEnforcementAllowed()) return;
-            const threshold = 160;
-            const widthDiff = window.outerWidth - window.innerWidth > threshold;
-            const heightDiff = window.outerHeight - window.innerHeight > threshold;
-
-            if (widthDiff || heightDiff) {
-                this.showShield();
-            } else if (this.isShieldActive) {
-                // If user closes DevTools, allow shield recovery
+        // Never trigger on screen resize, minimization, or browser scaling
+        // When document is minimized/hidden, always ensure shield is hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && this.isShieldActive) {
                 this.hideShield();
             }
-        };
-
-        // 2. Debugger timing inspection (undocked devtools detection)
-        const checkDebugger = () => {
-            if (!this.isEnforcementAllowed()) return;
-            const startTime = performance.now();
-            // eslint-disable-next-line no-debugger
-            debugger;
-            const executionTime = performance.now() - startTime;
-            if (executionTime > 100) {
-                this.showShield();
-            }
-        };
-
-        this.checkInterval = setInterval(() => {
-            checkDimensions();
-            checkDebugger();
-        }, 1000);
-
-        window.addEventListener('resize', checkDimensions, { passive: true });
+        });
     }
 
     /**
@@ -216,6 +182,10 @@ class DangerShieldService {
      */
     public showShield(force = false): void {
         if (this.isShieldActive || (!force && !this.isEnforcementAllowed())) return;
+        // Never show shield if window is minimized or tab is hidden
+        if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) {
+            return;
+        }
         this.isShieldActive = true;
 
         const { domain, whatsAppUrl, telegramUrl } = this.getConfigDetails();
@@ -434,9 +404,14 @@ class DangerShieldService {
                         </a>
                     </div>
                 </div>
-                <button type="button" class="danger-reload-btn" onclick="window.location.reload()">
-                    🔄 Reload Page
-                </button>
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 16px;">
+                    <button type="button" class="danger-reload-btn" onclick="window.profithubDangerShield?.hideShield?.() || this.closest('#profithub-danger-shield')?.remove()">
+                        ✕ Dismiss & Continue
+                    </button>
+                    <button type="button" class="danger-reload-btn" onclick="window.location.reload()">
+                        🔄 Reload Page
+                    </button>
+                </div>
             </div>
         `;
     }

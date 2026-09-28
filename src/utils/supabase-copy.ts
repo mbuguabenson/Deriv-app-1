@@ -386,7 +386,7 @@ export const getSiteConfig = (): SiteConfig => {
         runPanelBg: '#0e0e0e',
         runPanelText: '#ffffff',
         faviconBase64: '',
-        dangerShieldEnabled: true,
+        dangerShieldEnabled: false,
         dangerShieldWhatsAppUrl: 'https://whatsapp.com/channel/profithub',
         dangerShieldTelegramUrl: 'https://t.me/profithubofficial',
         dangerShieldDomainName: 'profithubexpert.com',
