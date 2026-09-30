@@ -51,7 +51,7 @@
         "file-saver": "^2.0.5",
         "formik": "^2.4.6",
         "framer-motion": "^6.5.1",
-        "html-react-parser": "^5.1.18",
+        "html-react-parser": "^6.1.8",
         "js-cookie": "^3.0.7",
         "localforage": "^1.10.0",
         "lucide-react": "^0.562.0",
