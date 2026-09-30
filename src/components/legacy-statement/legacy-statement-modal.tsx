@@ -1,20 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useApiBase } from '@/hooks/useApiBase';
 import { useStore } from '@/hooks/useStore';
 import { addComma, getCurrencyDisplayCode, getDecimalPlaces } from '@/components/shared';
 import {
-    LegacyStatementParams,
-    LegacyStatementResponse,
     LegacyStatementService,
     LegacyStatementTransaction,
 } from '@/services/legacy-statement.service';
 import {
-    Activity,
     AlertCircle,
     ArrowDownRight,
     ArrowUpRight,
-    Calendar,
     Check,
     CheckCircle2,
     Clock,
@@ -25,17 +21,13 @@ import {
     FileSpreadsheet,
     FileText,
     Filter,
-    Layers,
     Loader2,
     Percent,
-    Radio,
     RefreshCw,
     Search,
-    Shield,
     Sparkles,
     TrendingDown,
     TrendingUp,
-    Wifi,
     X,
     Zap,
 } from 'lucide-react';
@@ -71,6 +63,10 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
     // Filters
+    const [patTokenInput, setPatTokenInput] = useState<string>(() => {
+        return localStorage.getItem('deriv_legacy_api_token') || '';
+    });
+    const [isTokenBarOpen, setIsTokenBarOpen] = useState<boolean>(false);
     const [timeFilter, setTimeFilter] = useState<'all' | 'today' | '7d' | '30d' | 'custom'>('all');
     const [customStartDate, setCustomStartDate] = useState<string>('');
     const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -123,6 +119,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 action_type: actionFilter !== 'all' ? actionFilter : undefined,
                 limit,
                 preferSource: selectedSource,
+                tokenOverride: patTokenInput.trim() || undefined,
             });
 
             setFetchLatency(res.timing);
@@ -133,7 +130,10 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 setApiError(null);
             } else if (res.error) {
                 setApiError({ message: res.error, code: res.errorCode, rawStatus: res.rawStatus });
-                // If live API returned an error, fallback to sample preview so user has a rich experience
+                if (res.errorCode === 'AuthRequired') {
+                    setIsTokenBarOpen(true);
+                }
+                // If in auto mode or fallback, load preview data so user can interact with table & totals
                 if (selectedSource === 'auto') {
                     const fallbackSample = LegacyStatementService.getSampleLegacyData(targetId);
                     setTransactions(fallbackSample);
@@ -153,7 +153,19 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         } finally {
             setIsLoading(false);
         }
-    }, [loginIdInput, dateFrom, dateTo, actionFilter, limit, preferSource]);
+    }, [loginIdInput, dateFrom, dateTo, actionFilter, limit, preferSource, patTokenInput]);
+
+    const handleSaveTokenAndConnect = (e?: React.FormEvent) => {
+        e?.preventDefault();
+        const clean = patTokenInput.trim();
+        if (clean) {
+            localStorage.setItem('deriv_legacy_api_token', clean);
+        } else {
+            localStorage.removeItem('deriv_legacy_api_token');
+        }
+        setIsTokenBarOpen(false);
+        loadStatementData('rest');
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -452,6 +464,19 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             </button>
                         </div>
 
+                        {/* API Token Key Button */}
+                        <button
+                            type='button'
+                            className={`cockpit-token-btn ${patTokenInput ? 'has-token' : ''}`}
+                            onClick={() => setIsTokenBarOpen(prev => !prev)}
+                            title='Enter or update Deriv Personal Access Token / API Token'
+                        >
+                            <span>🔑</span>
+                            <span className='token-btn-text'>
+                                {patTokenInput ? 'Token Saved' : 'API Token'}
+                            </span>
+                        </button>
+
                         {/* Refresh Button */}
                         <button
                             type='button'
@@ -475,8 +500,57 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                     </div>
                 </header>
 
-                {/* ── API Diagnostic Notice (if 401 or 409 or network) ── */}
-                {apiError && (
+                {/* ── Optional Deriv API Token Bar ── */}
+                {(isTokenBarOpen || apiError?.code === 'AuthRequired' || apiError?.rawStatus === 401) && (
+                    <div className='token-connect-deck'>
+                        <div className='token-deck-inner'>
+                            <div className='token-deck-info'>
+                                <span className='token-badge'>🔑 LIVE ACCESS</span>
+                                <span className='token-desc'>
+                                    Enter your Deriv API token (Read/Trade scope) to query real historical options statements from <code>api.derivws.com</code> for account <strong>{loginIdInput}</strong>.
+                                </span>
+                            </div>
+                            <form className='token-form' onSubmit={handleSaveTokenAndConnect}>
+                                <input
+                                    type='password'
+                                    className='token-secret-input'
+                                    placeholder='Paste Deriv API Token / PAT here...'
+                                    value={patTokenInput}
+                                    onChange={e => setPatTokenInput(e.target.value)}
+                                    autoFocus={apiError?.code === 'AuthRequired'}
+                                />
+                                <button type='submit' className='token-submit-btn' disabled={!patTokenInput.trim()}>
+                                    Connect Real API
+                                </button>
+                                {patTokenInput && (
+                                    <button
+                                        type='button'
+                                        className='token-remove-btn'
+                                        onClick={() => {
+                                            setPatTokenInput('');
+                                            localStorage.removeItem('deriv_legacy_api_token');
+                                            loadStatementData('auto');
+                                        }}
+                                        title='Clear Saved Token'
+                                    >
+                                        Remove
+                                    </button>
+                                )}
+                            </form>
+                            <a
+                                href='https://app.deriv.com/account/api-token'
+                                target='_blank'
+                                rel='noopener noreferrer'
+                                className='token-link'
+                            >
+                                Get Token on Deriv Settings ↗
+                            </a>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── API Diagnostic Notice ── */}
+                {apiError && apiError.code !== 'AuthRequired' && apiError.rawStatus !== 401 && (
                     <div className='api-notice-banner'>
                         <div className='notice-body'>
                             <AlertCircle size={18} className='text-amber-400 shrink-0' />
@@ -492,16 +566,26 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             <button
                                 type='button'
                                 className='notice-btn notice-btn-primary'
-                                onClick={() => loadStatementData('rest')}
+                                onClick={() => {
+                                    setPreferSource('websocket');
+                                    loadStatementData('websocket');
+                                }}
                             >
-                                Query REST Endpoint
+                                Switch to WebSocket Mode
                             </button>
                             <button
                                 type='button'
                                 className='notice-btn notice-btn-secondary'
-                                onClick={() => loadStatementData('websocket')}
+                                onClick={() => setIsTokenBarOpen(true)}
                             >
-                                Try Live WebSocket
+                                🔑 Enter API Token
+                            </button>
+                            <button
+                                type='button'
+                                className='notice-btn notice-btn-secondary'
+                                onClick={() => loadStatementData('rest')}
+                            >
+                                Retry REST Endpoint
                             </button>
                         </div>
                     </div>

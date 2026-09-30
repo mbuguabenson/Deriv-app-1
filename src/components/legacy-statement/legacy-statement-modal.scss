@@ -259,6 +259,45 @@
             }
         }
 
+        .cockpit-token-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: rgba(245, 197, 66, 0.08);
+            border: 1px solid rgba(245, 197, 66, 0.35);
+            color: #f5c542;
+            height: 36px;
+            padding: 0 0.75rem;
+            border-radius: 8px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+
+            &:hover {
+                background: rgba(245, 197, 66, 0.18);
+                border-color: #f5c542;
+                box-shadow: 0 0 12px rgba(245, 197, 66, 0.25);
+                transform: translateY(-1px);
+            }
+
+            &.has-token {
+                background: rgba(16, 185, 129, 0.1);
+                border-color: rgba(16, 185, 129, 0.4);
+                color: #34d399;
+
+                &:hover {
+                    background: rgba(16, 185, 129, 0.2);
+                    border-color: #34d399;
+                    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+                }
+            }
+
+            .token-btn-text {
+                letter-spacing: 0.02em;
+            }
+        }
+
         .cockpit-icon-btn {
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -297,6 +336,154 @@
                 border-color: rgba(239, 68, 68, 0.45);
                 color: #ef4444;
             }
+        }
+    }
+}
+
+// ── Token Connect Bar Deck ──
+.token-connect-deck {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(20, 20, 35, 0.95) 100%);
+    border-bottom: 1px solid rgba(245, 197, 66, 0.28);
+    backdrop-filter: blur(14px);
+    padding: 0.75rem 1.6rem;
+    animation: slideDownDeck 0.22s ease-out;
+
+    @keyframes slideDownDeck {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .token-deck-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.2rem;
+        flex-wrap: wrap;
+
+        @media (max-width: 900px) {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+
+    .token-deck-info {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+
+        .token-badge {
+            background: rgba(245, 197, 66, 0.15);
+            border: 1px solid rgba(245, 197, 66, 0.35);
+            color: #f5c542;
+            font-size: 0.68rem;
+            font-weight: 800;
+            padding: 0.2rem 0.55rem;
+            border-radius: 6px;
+            letter-spacing: 0.05em;
+        }
+
+        .token-desc {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+
+            code {
+                background: rgba(255, 255, 255, 0.08);
+                color: #f5c542;
+                padding: 0.12rem 0.35rem;
+                border-radius: 4px;
+                font-family: monospace;
+            }
+
+            strong {
+                color: #ffffff;
+            }
+        }
+    }
+
+    .token-form {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+
+        .token-secret-input {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            color: #ffffff;
+            font-family: monospace;
+            font-size: 0.82rem;
+            padding: 0.42rem 0.8rem;
+            border-radius: 7px;
+            width: 260px;
+            transition: all 0.18s ease;
+
+            &:focus {
+                border-color: #f5c542;
+                outline: none;
+                box-shadow: 0 0 10px rgba(245, 197, 66, 0.2);
+            }
+
+            &::placeholder {
+                color: #64748b;
+            }
+        }
+
+        .token-submit-btn {
+            background: linear-gradient(135deg, #f5c542 0%, #eab308 100%);
+            border: none;
+            color: #0b0f19;
+            font-size: 0.78rem;
+            font-weight: 800;
+            padding: 0.44rem 0.95rem;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+
+            &:hover:not(:disabled) {
+                background: linear-gradient(135deg, #fde047 0%, #f5c542 100%);
+                box-shadow: 0 0 12px rgba(245, 197, 66, 0.4);
+                transform: translateY(-1px);
+            }
+
+            &:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+        }
+
+        .token-remove-btn {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.42rem 0.7rem;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+
+            &:hover {
+                background: rgba(239, 68, 68, 0.25);
+                border-color: #ef4444;
+            }
+        }
+    }
+
+    .token-link {
+        color: #94a3b8;
+        font-size: 0.76rem;
+        text-decoration: underline;
+        transition: color 0.18s ease;
+
+        &:hover {
+            color: #f5c542;
         }
     }
 }

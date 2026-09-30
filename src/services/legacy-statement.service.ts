@@ -28,6 +28,7 @@ export interface LegacyStatementParams {
     action_type?: string; // Filter: buy, sell, deposit, withdrawal, all
     limit?: number; // Default: 100, Min: 1, Max: 999
     offset?: number; // Default: 0
+    tokenOverride?: string; // Optional user-provided token (PAT or OAuth Bearer)
     preferSource?: 'auto' | 'rest' | 'websocket' | 'sample';
 }
 
@@ -65,24 +66,73 @@ const MAX_EPOCH_2038 = 2147483647;
 
 export class LegacyStatementService {
     /**
+     * Finds and validates a usable authentication token from all available sources
+     */
+    public static resolveToken(targetLoginId?: string, overrideToken?: string): string {
+        if (overrideToken && !isInvalidBearerToken(overrideToken)) {
+            return overrideToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 1. Explicitly stored custom legacy API token
+        const customToken =
+            localStorage.getItem('deriv_legacy_api_token') || sessionStorage.getItem('deriv_legacy_api_token');
+        if (customToken && !isInvalidBearerToken(customToken)) {
+            return customToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 2. Token from accountsMap for this specific loginId
+        const accountsMap = getAccountsList();
+        if (targetLoginId && accountsMap[targetLoginId] && !isInvalidBearerToken(accountsMap[targetLoginId])) {
+            return accountsMap[targetLoginId].trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 3. Token for currently active login ID
+        const activeId = getActiveLoginId();
+        if (activeId && accountsMap[activeId] && !isInvalidBearerToken(accountsMap[activeId])) {
+            return accountsMap[activeId].trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 4. Token from getActiveToken() or getBotNewAPIToken()
+        const activeToken = getActiveToken();
+        if (activeToken && !isInvalidBearerToken(activeToken)) {
+            return activeToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        const botToken = getBotNewAPIToken();
+        if (botToken && !isInvalidBearerToken(botToken)) {
+            return botToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 5. OAuth2 PKCE Bearer access_token
+        const oauthToken = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true })?.access_token;
+        if (oauthToken && !isInvalidBearerToken(oauthToken)) {
+            return oauthToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        // 6. Direct storage keys fallback
+        const directKeys = ['token', 'authToken', 'active_token', 'token1', 'legacy_dtrader_token', 'deriv_api_token'];
+        for (const k of directKeys) {
+            const val = localStorage.getItem(k) || sessionStorage.getItem(k);
+            if (val && !isInvalidBearerToken(val)) {
+                return val.trim().replace(/^Bearer\s+/i, '');
+            }
+        }
+
+        // 7. Any valid token in accountsMap
+        const anyToken = Object.values(accountsMap).find(t => t && !isInvalidBearerToken(t));
+        if (anyToken) {
+            return anyToken.trim().replace(/^Bearer\s+/i, '');
+        }
+
+        return '';
+    }
+
+    /**
      * Resolves authentication headers according to Deriv Legacy REST specifications:
      * - Authorization: Bearer <token>
      * - Deriv-App-ID: <app_id> (sent to ensure gateway authorization)
      */
-    private static getHeaders(overrideToken?: string): Record<string, string> {
-        let token = overrideToken;
-
-        if (!token) {
-            token =
-                getBotNewAPIToken() ||
-                getActiveToken() ||
-                OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true })?.access_token ||
-                localStorage.getItem('token') ||
-                localStorage.getItem('authToken') ||
-                localStorage.getItem('active_token') ||
-                '';
-        }
-
+    public static getHeaders(token: string): Record<string, string> {
         const appId = getAppId() || localStorage.getItem('config.app_id') || '121856';
 
         const headers: Record<string, string> = {
@@ -91,7 +141,7 @@ export class LegacyStatementService {
             'Deriv-App-ID': String(appId),
         };
 
-        if (token && !isInvalidBearerToken(token)) {
+        if (token) {
             const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
             headers['Authorization'] = `Bearer ${cleanToken}`;
         }
@@ -113,6 +163,17 @@ export class LegacyStatementService {
                 source: 'live_rest',
                 error: 'Invalid loginid. Must match ^[A-Z]+[0-9]+$ (e.g. CR8416851)',
                 errorCode: 'ValidationError',
+            };
+        }
+
+        const token = this.resolveToken(rawLoginId, params.tokenOverride);
+        if (!token) {
+            return {
+                transactions: [],
+                count: 0,
+                source: 'live_rest',
+                error: 'Deriv API Token required. Please enter your API token above or log in to query live statement.',
+                errorCode: 'AuthRequired',
             };
         }
 
@@ -141,11 +202,7 @@ export class LegacyStatementService {
         }
 
         const url = `${LEGACY_STATEMENT_ENDPOINT}?${urlParams.toString()}`;
-
-        const accountsMap = getAccountsList();
-        const accountToken = accountsMap[rawLoginId];
-        const headers = this.getHeaders(accountToken);
-
+        const headers = this.getHeaders(token);
         const startTime = Date.now();
 
         try {
@@ -201,16 +258,24 @@ export class LegacyStatementService {
 
             // Error parsing
             const apiError = data?.errors?.[0];
-            const errorCode = apiError?.code || (res.status === 409 ? 'MigrationPending' : `HTTP_${res.status}`);
-            const errorMessage =
-                apiError?.message ||
-                data?.message ||
-                data?.rawText ||
-                (res.status === 409
-                    ? 'User migration is pending or has failed on the legacy options platform.'
-                    : res.status === 401
-                    ? 'Authorization required. Please log in or provide a valid Deriv API token.'
-                    : `Request failed with status ${res.status}`);
+            const isAuthError =
+                res.status === 401 ||
+                String(data?.rawText || '').includes('Missing authorization header') ||
+                String(data?.rawText || '').includes('Invalid token');
+
+            const errorCode = isAuthError
+                ? 'AuthRequired'
+                : (apiError?.code || (res.status === 409 ? 'MigrationPending' : `HTTP_${res.status}`));
+
+            let errorMessage = apiError?.message || data?.message || data?.rawText;
+
+            if (isAuthError) {
+                errorMessage = `Deriv API authentication required for account ${rawLoginId}. Please enter your Personal Access Token (PAT) with Read scope or switch to WebSocket mode.`;
+            } else if (res.status === 409) {
+                errorMessage = 'User migration is pending or has failed on the legacy options platform.';
+            } else if (!errorMessage) {
+                errorMessage = `Request failed with status ${res.status}`;
+            }
 
             return {
                 transactions: [],
@@ -245,7 +310,7 @@ export class LegacyStatementService {
                     transactions: [],
                     count: 0,
                     source: 'live_websocket',
-                    error: 'WebSocket connection not yet established. Connecting...',
+                    error: 'WebSocket connection not yet active. Please reconnect.',
                     errorCode: 'NotConnected',
                 };
             }
@@ -307,7 +372,7 @@ export class LegacyStatementService {
                     transactions: [],
                     count: 0,
                     source: 'live_websocket',
-                    error: wsRes.error.message || 'Deriv statement query failed',
+                    error: wsRes.error.message || 'Deriv WebSocket statement query failed',
                     errorCode: wsRes.error.code || 'WSError',
                 };
             }
@@ -326,17 +391,16 @@ export class LegacyStatementService {
             transactions: [],
             count: 0,
             source: 'live_websocket',
-            error: 'No statement data returned from WebSocket query.',
+            error: 'No transactions found in active account.',
             errorCode: 'EmptyResponse',
         };
     }
 
     /**
      * Unified Query:
-     * Executes real API calls:
      * 1. Runs REST endpoint `https://api.derivws.com/trading/v1/options/legacy/statement`
-     * 2. If REST returns 401 or 409 or empty, automatically merges/checks live WebSocket
-     * 3. Falls back to sample simulation only if user explicitly requests sample or if no live credentials exist.
+     * 2. If REST fails with 401 or AuthRequired or 409, tries live WebSocket
+     * 3. Falls back to sample simulation only when user explicitly chooses sample or if no live credentials exist.
      */
     public static async getLegacyStatement(params: LegacyStatementParams): Promise<LegacyStatementResponse> {
         if (params.preferSource === 'sample') {
@@ -344,7 +408,7 @@ export class LegacyStatementService {
                 transactions: this.getSampleLegacyData(params.loginid),
                 count: 8,
                 source: 'sample_preview',
-                timing: 15,
+                timing: 12,
             };
         }
 
@@ -363,13 +427,13 @@ export class LegacyStatementService {
             return restResult;
         }
 
-        // If REST failed with 401 (auth) or 409 (migration), try Live WebSocket
+        // If REST failed with auth or migration, try live WebSocket
         const wsResult = await this.getWebSocketStatement(params);
         if (wsResult.transactions.length > 0) {
             return wsResult;
         }
 
-        // Return the REST error or WS error
+        // If both empty/failed, return whichever gave a clearer error
         return restResult.error ? restResult : wsResult;
     }
 
