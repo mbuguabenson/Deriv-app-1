@@ -2294,3 +2294,96 @@
     0%, 100% { box-shadow: 0 0 25px rgba(0, 245, 255, 0.4); transform: scale(1); }
     50% { box-shadow: 0 0 45px rgba(0, 245, 255, 0.8); transform: scale(1.06); }
 }
+
+// ─── Modern 2-Column AI Trading Cockpit Styles ─────────────────────────────────
+
+.b254-cockpit-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.42fr) minmax(360px, 0.98fr);
+    gap: 1.25rem;
+    align-items: start;
+    width: 100%;
+
+    @media (max-width: 1200px) {
+        grid-template-columns: 1fr;
+    }
+}
+
+.b254-cockpit-left {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+}
+
+.b254-cockpit-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+    position: sticky;
+    top: 1rem;
+
+    @media (max-width: 1200px) {
+        position: static;
+    }
+
+    .b254-trading-panel {
+        margin: 0;
+    }
+}
+
+.b254-intel-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .b254-intel-tabs {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.25rem;
+        background: rgba(15, 23, 42, 0.6);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+        .intel-tab-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+
+            &:hover {
+                color: #e2e8f0;
+                background: rgba(255, 255, 255, 0.05);
+            }
+
+            &.active {
+                color: #00f5ff;
+                background: rgba(0, 245, 255, 0.1);
+                border-color: rgba(0, 245, 255, 0.25);
+                box-shadow: 0 0 12px rgba(0, 245, 255, 0.15);
+            }
+        }
+    }
+
+    .b254-intel-content {
+        padding: 0.5rem;
+
+        .b254-statistical-cards-grid {
+            margin: 0;
+        }
+
+        .b254-market-understanding-card {
+            margin: 0;
+        }
+    }
+}
+

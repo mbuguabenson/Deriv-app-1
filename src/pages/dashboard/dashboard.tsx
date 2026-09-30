@@ -3,6 +3,7 @@ import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 import Text from '@/components/shared_ui/text';
 import { useStore } from '@/hooks/useStore';
+import { getActiveLoginId } from '@/utils/token-bridge';
 import { localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 import OnboardTourHandler from '../tutorials/dbot-tours/onboarding-tour';
@@ -21,6 +22,8 @@ const DashboardComponent = observer(({ handleTabChange }: TMobileIconGuide) => {
     const has_dashboard_strategies = !!dashboard_strategies?.length;
     const { isDesktop, isTablet } = useDevice();
 
+    const activeId = client.loginid || getActiveLoginId() || (client.is_logged_in ? 'User' : 'Guest');
+
     return (
         <React.Fragment>
             <div
@@ -29,6 +32,35 @@ const DashboardComponent = observer(({ handleTabChange }: TMobileIconGuide) => {
                 })}
             >
                 <div className='tab__dashboard__content'>
+                    <div className='tab__dashboard__welcome-bar'>
+                        <div className='welcome-bar__left'>
+                            <span className={classNames('welcome-bar__dot', { 'welcome-bar__dot--online': client.is_logged_in })} />
+                            <span className='welcome-bar__label'>{localize('Welcome, User:')}</span>
+                            <span className='welcome-bar__id'>{activeId}</span>
+                        </div>
+                        {client.is_logged_in && (
+                            <div className='welcome-bar__badge-group'>
+                                <span
+                                    className={classNames('welcome-bar__badge', {
+                                        'welcome-bar__badge--demo': client.is_virtual,
+                                        'welcome-bar__badge--real': !client.is_virtual,
+                                    })}
+                                >
+                                    {client.is_virtual ? localize('Demo Account') : localize('Real Account')}
+                                </span>
+                                {client.balance && (
+                                    <span className='welcome-bar__balance'>
+                                        {client.currency}{' '}
+                                        {Number(client.balance).toLocaleString('en-US', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                        })}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     {client.is_logged_in && (
                         <Announcements is_mobile={!isDesktop} is_tablet={isTablet} handleTabChange={handleTabChange} />
                     )}
@@ -58,7 +90,7 @@ const DashboardComponent = observer(({ handleTabChange }: TMobileIconGuide) => {
                                 className={classNames('subtitle', { 'subtitle__has-list': has_dashboard_strategies })}
                             >
                                 {localize(
-                                    'Import a bot from your computer or Google Drive, build it from scratch, or start with a quick strategy.'
+                                    'Import a bot from your computer, build it from scratch, or start with a quick strategy.'
                                 )}
                             </Text>
                         </div>

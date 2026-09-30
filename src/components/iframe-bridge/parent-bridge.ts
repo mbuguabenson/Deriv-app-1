@@ -99,7 +99,21 @@ export class ParentBridgeClient {
             localStorage.getItem('active_loginid') ||
             localStorage.getItem('client.loginid') ||
             '';
-        const targetToken = getActiveToken(targetLoginId) || getActiveToken() || '';
+        const targetToken = getLegacyDTraderToken(targetLoginId) || getActiveToken(targetLoginId) || getActiveToken() || '';
+        const currency = sessionManager.getSession()?.currency || localStorage.getItem('client.currency') || 'USD';
+        const appIdStr = String(sessionManager.getSession()?.appId || getAppId() || '121856');
+
+        // Immediately send auth payload to window synchronously upon attach without waiting for OTP network prefetch
+        if (this.iframeWindow && (targetToken || targetLoginId)) {
+            this.sendAuthPayloadToWindow(
+                this.iframeWindow,
+                targetToken,
+                targetLoginId,
+                currency,
+                appIdStr
+            );
+        }
+
         if (targetToken) {
             import('@/services/derivws-accounts.service')
                 .then(({ DerivWSAccountsService }) => {
@@ -108,8 +122,6 @@ export class ParentBridgeClient {
                             if (url) {
                                 this.cachedOtpUrl = url;
                                 if (this.iframeWindow) {
-                                    const currency = sessionManager.getSession()?.currency || localStorage.getItem('client.currency') || 'USD';
-                                    const appIdStr = String(sessionManager.getSession()?.appId || getAppId() || '121856');
                                     this.sendAuthPayloadToWindow(
                                         this.iframeWindow,
                                         targetToken,
@@ -128,14 +140,14 @@ export class ParentBridgeClient {
                 .catch(() => {});
         }
 
-        // Proactively send auth handshakes to iframe continuously for 30s
+        // Proactively send auth handshakes to iframe continuously
         this.startProactiveAuthLoop();
 
         this.safeTimeout(() => {
             if (this.stateMachine.getState() === BridgeState.LOADING_IFRAME) {
                 this.stateMachine.transitionTo(BridgeState.WAITING_READY);
             }
-        }, 500);
+        }, 150);
     }
 
     private sendAuthPayloadToWindow(
@@ -150,9 +162,9 @@ export class ParentBridgeClient {
         try {
             // For Deriv DTrader iframe, if legacy token is available prefer it, otherwise use active token (OAuth2 or PAT)
             let tokenToUse = tok;
-            if (tok && tok.startsWith('ey')) {
-                const legacy = getLegacyDTraderToken(loginid) || localStorage.getItem('token1');
-                if (legacy) {
+            if (!tokenToUse || tokenToUse.startsWith('ey')) {
+                const legacy = getLegacyDTraderToken(loginid) || localStorage.getItem('token1') || localStorage.getItem('legacy_dtrader_token');
+                if (legacy && !legacy.startsWith('ey')) {
                     tokenToUse = legacy;
                 }
             }
@@ -376,7 +388,7 @@ export class ParentBridgeClient {
         if (this.retryIntervalId) clearInterval(this.retryIntervalId);
 
         let attempts = 0;
-        const maxAttempts = 6; // ~6s @ 1000ms
+        const maxAttempts = 10; // ~4s @ 400ms
 
         const postAuth = async () => {
             if (!this.iframeWindow) return;
@@ -387,7 +399,7 @@ export class ParentBridgeClient {
                     localStorage.getItem('active_loginid') ||
                     localStorage.getItem('client.loginid') ||
                     '';
-                const syncToken = getActiveToken(loginid) || getLegacyDTraderToken(loginid) || '';
+                const syncToken = getLegacyDTraderToken(loginid) || getActiveToken(loginid) || '';
                 const currency = session?.currency || localStorage.getItem('client.currency') || 'USD';
                 const appIdStr = String(session?.appId || getAppId() || '121856');
 
@@ -415,7 +427,7 @@ export class ParentBridgeClient {
                 return;
             }
             postAuth();
-        }, 1000);
+        }, 400);
     }
 
     public detach() {
@@ -523,7 +535,7 @@ export class ParentBridgeClient {
                 localStorage.getItem('active_loginid') ||
                 localStorage.getItem('client.loginid') ||
                 'DOT100000';
-            const syncToken = getActiveToken() || '';
+            const syncToken = getLegacyDTraderToken(loginid) || getActiveToken(loginid) || getActiveToken() || '';
             const currency = session?.currency || localStorage.getItem('client.currency') || 'USD';
             const appIdStr = String(session?.appId || getAppId() || '121856');
 

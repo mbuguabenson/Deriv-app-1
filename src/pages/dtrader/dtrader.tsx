@@ -7,6 +7,7 @@ import {
     getActiveLoginId,
     getActiveToken,
     getLegacyDTraderToken,
+    isLegacyToken,
 } from '@/utils/token-bridge';
 import './dtrader.scss';
 
@@ -14,10 +15,14 @@ const DTraderPage: React.FC = observer(() => {
     const { client, ui } = useStore() ?? {};
 
     const activeLoginId = client?.loginid || getActiveLoginId();
+    const legacyToken = getLegacyDTraderToken(activeLoginId);
     const token =
+        (legacyToken && isLegacyToken(legacyToken) ? legacyToken : null) ||
+        (client?.token && isLegacyToken(client.token) ? client.token : null) ||
+        (getAccountsList()[activeLoginId] && isLegacyToken(getAccountsList()[activeLoginId]) ? getAccountsList()[activeLoginId] : null) ||
         getActiveToken(activeLoginId) ||
-        getLegacyDTraderToken(activeLoginId) ||
-        getAccountsList()[activeLoginId] ||
+        localStorage.getItem('token1') ||
+        localStorage.getItem('legacy_dtrader_token') ||
         '';
     const theme = ui?.is_dark_mode_on ? 'dark' : 'light';
 

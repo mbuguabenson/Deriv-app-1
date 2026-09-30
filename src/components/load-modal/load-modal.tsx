@@ -9,7 +9,6 @@ import { useDevice } from '@deriv-com/ui';
 import MobileFullPageModal from '../shared_ui/mobile-full-page-modal';
 import Modal from '../shared_ui/modal';
 import Tabs from '../shared_ui/tabs';
-import GoogleDrive from './google-drive';
 import Local from './local';
 import LocalFooter from './local-footer';
 import Recent from './recent';
@@ -46,7 +45,6 @@ const LoadModal: React.FC = observer(() => {
                 onClickClose={() => {
                     setPreviewOnPopup(false);
                     toggleLoadModal();
-                    // Removed close event tracking as per V2 requirements
                 }}
                 height_offset='80px'
                 page_overlay
@@ -55,27 +53,23 @@ const LoadModal: React.FC = observer(() => {
                     <div label={localize('Local')}>
                         <Local />
                     </div>
-                    <div label='Google Drive'>
-                        <GoogleDrive />
-                    </div>
                 </Tabs>
             </MobileFullPageModal>
         );
     }
 
-    const is_file_loaded = !!loaded_local_file && tab_name === tabs_title.TAB_LOCAL;
-    const has_recent_strategies = recent_strategies.length > 0 && tab_name === tabs_title.TAB_RECENT;
+    const is_file_loaded = !!loaded_local_file;
+    const has_recent_strategies = !is_file_loaded && recent_strategies.length > 0 && active_index === 0;
 
     return (
         <Modal
             title={header_text}
             className='load-strategy'
             width='720px'
-            height='500px'
+            height='auto'
             is_open={is_load_modal_open}
             toggleModal={() => {
                 toggleLoadModal();
-                // Removed close event tracking as per V2 requirements
             }}
             onEntered={onEntered}
             elements_to_ignore={[document.querySelector('.injectionDiv')]}
@@ -87,9 +81,6 @@ const LoadModal: React.FC = observer(() => {
                     </div>
                     <div label={localize('Local')}>
                         <Local />
-                    </div>
-                    <div label='Google Drive'>
-                        <GoogleDrive />
                     </div>
                 </Tabs>
             </Modal.Body>

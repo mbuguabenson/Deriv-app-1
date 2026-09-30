@@ -11,19 +11,28 @@ const RecentFooter = observer(() => {
     const { setOpenSettings } = dashboard;
 
     return (
-        <Button
-            text={localize('Open')}
-            onClick={() => {
-                loadStrategyOnBotBuilder();
-                toggleLoadModal();
-                setOpenSettings(NOTIFICATION_TYPE.BOT_IMPORT);
-            }}
-            is_loading={is_open_button_loading}
-            has_effect
-            primary
-            large
-            disabled={is_open_button_disabled}
-        />
+        <>
+            <Button
+                text={localize('Cancel')}
+                onClick={() => toggleLoadModal()}
+                has_effect
+                secondary
+                large
+            />
+            <Button
+                text={localize('Load Bot')}
+                onClick={() => {
+                    loadStrategyOnBotBuilder();
+                    toggleLoadModal();
+                    setOpenSettings(NOTIFICATION_TYPE.BOT_IMPORT);
+                }}
+                is_loading={is_open_button_loading}
+                has_effect
+                primary
+                large
+                disabled={is_open_button_disabled}
+            />
+        </>
     );
 });
 

@@ -353,6 +353,24 @@ const AppHeader = observer(() => {
                 <Wrapper variant='right'>
                     <div style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? '8px' : '4px', paddingRight: isDesktop ? '1.6rem' : '0.4rem' }}>
                         <HeaderSpeedToggle />
+                        <button
+                            type='button'
+                            id='header-legacy-statement-btn'
+                            className='app-header__legacy-btn'
+                            title='Options Trading (Legacy) Statement — Access previous trade history before system upgrade'
+                            aria-label='Options Trading (Legacy) Statement'
+                            onClick={() => window.dispatchEvent(new Event('open_legacy_statement'))}
+                        >
+                            <span className='legacy-btn__icon'>
+                                <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'>
+                                    <ellipse cx='12' cy='5' rx='9' ry='3' />
+                                    <path d='M21 12c0 1.66-4 3-9 3s-9-1.34-9-3' />
+                                    <path d='M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5' />
+                                </svg>
+                            </span>
+                            {isDesktop && <span className='legacy-btn__text'>Legacy Data</span>}
+                            {isDesktop && <span className='legacy-btn__badge'>REST</span>}
+                        </button>
                         {isDesktop && (
                             <button
                                 type='button'

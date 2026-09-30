@@ -159,6 +159,7 @@ export const B254Page: React.FC = observer(() => {
     const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
     const [scanAllMarkets, setScanAllMarkets] = useState<boolean>(true);
     const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(false);
+    const [activeAnalyticsTab, setActiveAnalyticsTab] = useState<'analytics' | 'intelligence'>('analytics');
 
     // ── Session Trading Stats ──
     const [totalProfit, setTotalProfit] = useState<number>(() => {
@@ -1213,47 +1214,77 @@ export const B254Page: React.FC = observer(() => {
                         </button>
                     </div>
 
-                    {/* Live SVG Bezier Spline Chart with Barrier Thresholds */}
-                    <LiveDigitChart
-                        digits={currentMarketData.digits}
-                        currentPrice={currentMarketData.currentPrice}
-                        lastDigit={currentMarketData.lastDigit}
-                        symbolLabel={currentMarketData.label}
-                    />
+                    {/* ── Modern 2-Column AI Trading Cockpit ── */}
+                    <div className='b254-cockpit-grid'>
+                        {/* ── Left Column: Live Waveform, AI Scoring, & Tabbed Intel ── */}
+                        <div className='b254-cockpit-left'>
+                            {/* Live SVG Bezier Spline Chart with Barrier Thresholds */}
+                            <LiveDigitChart
+                                digits={currentMarketData.digits}
+                                currentPrice={currentMarketData.currentPrice}
+                                lastDigit={currentMarketData.lastDigit}
+                                symbolLabel={currentMarketData.label}
+                            />
 
-                    {/* Statistical Cards 1, 2, 3 (Digit Power 0-9), and 4 (Multi-Horizon Breakdown) */}
-                    <StatisticalCards
-                        multiHorizon={multiHorizon}
-                        digitPower={digitPower}
-                    />
+                            {/* 100-Point Transparent Score HUD, 8-Point Checklist & Glowing Entry Digit Matcher */}
+                            <SignalScoringHud
+                                signal={currentSignal}
+                                currentLastDigit={currentMarketData.lastDigit}
+                            />
 
-                    {/* 100-Point Transparent Score HUD, 8-Point Checklist & Glowing Entry Digit Matcher */}
-                    <SignalScoringHud
-                        signal={currentSignal}
-                        currentLastDigit={currentMarketData.lastDigit}
-                    />
+                            {/* Clean Tabbed Market Intelligence & Analytics */}
+                            <div className='b254-glass b254-intel-panel'>
+                                <div className='b254-intel-tabs'>
+                                    <button
+                                        className={`intel-tab-btn ${activeAnalyticsTab === 'analytics' ? 'active' : ''}`}
+                                        onClick={() => setActiveAnalyticsTab('analytics')}
+                                    >
+                                        <Sparkles size={14} />
+                                        <span>Digit Power & Horizon Trends</span>
+                                    </button>
+                                    <button
+                                        className={`intel-tab-btn ${activeAnalyticsTab === 'intelligence' ? 'active' : ''}`}
+                                        onClick={() => setActiveAnalyticsTab('intelligence')}
+                                    >
+                                        <Radio size={14} />
+                                        <span>Market AI Regime & Insights</span>
+                                    </button>
+                                </div>
 
-                    {/* Clear Market Understanding Card & Diagnostics */}
-                    <MarketUnderstandingCard
-                        explanation={currentSignal?.marketExplanation || 'Analyzing multi-timeframe tick streams...'}
-                        whyNotTradeReasons={currentSignal?.whyNotTradeReasons || []}
-                        regime={regime}
-                        marketLabel={currentMarketData.label}
-                    />
+                                <div className='b254-intel-content'>
+                                    {activeAnalyticsTab === 'analytics' ? (
+                                        <StatisticalCards
+                                            multiHorizon={multiHorizon}
+                                            digitPower={digitPower}
+                                        />
+                                    ) : (
+                                        <MarketUnderstandingCard
+                                            explanation={currentSignal?.marketExplanation || 'Analyzing multi-timeframe tick streams...'}
+                                            whyNotTradeReasons={currentSignal?.whyNotTradeReasons || []}
+                                            regime={regime}
+                                            marketLabel={currentMarketData.label}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
-                    {/* Automated Trading Execution & Manual Risk Control Panel */}
-                    <TradingControlPanel
-                        config={config}
-                        autoState={autoState}
-                        currency={currency}
-                        onUpdateConfig={updateConfig}
-                        onStartAutoTrading={handleStartAutoTrading}
-                        onPauseAutoTrading={handlePauseAutoTrading}
-                        onResumeAutoTrading={handleResumeAutoTrading}
-                        onStopAutoTrading={handleStopAutoTrading}
-                        onEmergencyStop={handleEmergencyStop}
-                        onResetStats={handleResetStats}
-                    />
+                        {/* ── Right Column: Prime Execution & Manual Risk Controls ── */}
+                        <div className='b254-cockpit-right'>
+                            <TradingControlPanel
+                                config={config}
+                                autoState={autoState}
+                                currency={currency}
+                                onUpdateConfig={updateConfig}
+                                onStartAutoTrading={handleStartAutoTrading}
+                                onPauseAutoTrading={handlePauseAutoTrading}
+                                onResumeAutoTrading={handleResumeAutoTrading}
+                                onStopAutoTrading={handleStopAutoTrading}
+                                onEmergencyStop={handleEmergencyStop}
+                                onResetStats={handleResetStats}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 

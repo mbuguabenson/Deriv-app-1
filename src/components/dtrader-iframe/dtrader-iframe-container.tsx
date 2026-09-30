@@ -64,33 +64,45 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
     const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
     const [iframeKey, setIframeKey] = useState<number>(0);
 
-    // Robust token resolver checking all local storage sources for tokens (both legacy and modern OAuth2 JWT)
+    // Robust token resolver checking all local storage sources for tokens (prioritizes clean legacy WebSocket tokens for DTrader)
     const resolveToken = useCallback((explicitToken?: string, loginid?: string) => {
-        if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
         const targetId =
             loginid ||
             localStorage.getItem('active_loginid') ||
             localStorage.getItem('client.loginid') ||
             getActiveLoginId() ||
             '';
-        const active = getActiveToken(targetId);
-        if (active && !isInvalidBearerToken(active)) return active;
-        const accounts = getAccountsList();
-        if (targetId && accounts[targetId] && !isInvalidBearerToken(accounts[targetId])) {
-            return accounts[targetId];
-        }
-        for (const k in accounts) {
-            if (accounts[k] && !isInvalidBearerToken(accounts[k])) return accounts[k];
-        }
+
+        // 1. Prefer explicit token ONLY if it is already a valid legacy token (not OAuth2 JWT)
+        if (explicitToken && isLegacyToken(explicitToken)) return explicitToken;
+
+        // 2. Look for isolated legacy Deriv token for DTrader (works directly on /websockets/v3)
         const legacy = getLegacyDTraderToken(targetId);
-        if (legacy && !isInvalidBearerToken(legacy)) return legacy;
+        if (legacy && isLegacyToken(legacy)) return legacy;
+
         const candidate =
             localStorage.getItem('legacy_dtrader_token') ||
             localStorage.getItem('token1') ||
-            localStorage.getItem('bot_new_api_token') ||
             localStorage.getItem('active_token') ||
+            localStorage.getItem('authToken') ||
             localStorage.getItem('token');
-        if (candidate && !isInvalidBearerToken(candidate)) return candidate;
+        if (candidate && isLegacyToken(candidate)) return candidate;
+
+        const accounts = getAccountsList();
+        if (targetId && accounts[targetId] && isLegacyToken(accounts[targetId])) {
+            return accounts[targetId];
+        }
+        for (const k in accounts) {
+            if (accounts[k] && isLegacyToken(accounts[k])) return accounts[k];
+        }
+
+        // 3. Fallback to explicitToken if provided (even if JWT or alternative)
+        if (explicitToken && !isInvalidBearerToken(explicitToken)) return explicitToken;
+
+        // 4. Fallback to activeToken
+        const active = getActiveToken(targetId);
+        if (active && !isInvalidBearerToken(active)) return active;
+
         return '';
     }, []);
 
@@ -185,26 +197,72 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         };
     }, [currentLoginId, currentToken, resolveToken]);
 
-    // Build the query parameter URL for Embedded Mode
+    // Build the query parameter URL for Embedded Mode with complete multi-account support
     const iframeSrc = useMemo(() => {
         try {
             const url = new URL(baseUrl);
 
-            if (currentToken && !isInvalidBearerToken(currentToken)) {
-                const acc = currentLoginId || 'CR100000';
-                // Supply all standard, OAuth, and legacy parameter names to ensure
-                // seamless authentication regardless of how child stores read them
-                url.searchParams.set('token', currentToken);
-                url.searchParams.set('token1', currentToken);
-                url.searchParams.set('access_token', currentToken);
-                url.searchParams.set('account', acc);
-                url.searchParams.set('loginid', acc);
-                url.searchParams.set('acct1', acc);
-                url.searchParams.set('cur1', 'USD');
-                url.searchParams.set('currency', 'USD');
+            // 1. Resolve active account and its token
+            const activeId =
+                currentLoginId ||
+                localStorage.getItem('active_loginid') ||
+                localStorage.getItem('client.loginid') ||
+                getActiveLoginId() ||
+                '';
+
+            const activeToken = resolveToken(currentToken, activeId);
+
+            // 2. Resolve client accounts list with currencies
+            let clientAccounts: Record<string, { token?: string; currency?: string }> = {};
+            try {
+                const stored = localStorage.getItem('client.accounts') || localStorage.getItem('clientAccounts');
+                if (stored) clientAccounts = JSON.parse(stored);
+            } catch {}
+
+            const rawAccountsList = getAccountsList();
+
+            // If we have an active token and account, build full Deriv multi-account query string
+            if (activeId && activeToken && !isInvalidBearerToken(activeToken)) {
+                // Set active account as acct1 / token1 / cur1
+                url.searchParams.set('acct1', activeId);
+                url.searchParams.set('token1', activeToken);
+                const activeCur = clientAccounts[activeId]?.currency || localStorage.getItem('client.currency') || 'USD';
+                url.searchParams.set('cur1', activeCur);
+
+                // Add all other accounts so DTrader's account switcher and balance updates work seamlessly
+                let index = 2;
+                const allAccountIds = Array.from(
+                    new Set<string>([...Object.keys(clientAccounts), ...Object.keys(rawAccountsList)])
+                );
+
+                allAccountIds.forEach(accId => {
+                    if (accId === activeId) return; // already acct1
+                    const accToken =
+                        clientAccounts[accId]?.token && isLegacyToken(clientAccounts[accId]?.token)
+                            ? clientAccounts[accId].token
+                            : rawAccountsList[accId] && isLegacyToken(rawAccountsList[accId])
+                              ? rawAccountsList[accId]
+                              : '';
+                    if (accToken && !isInvalidBearerToken(accToken)) {
+                        url.searchParams.set(`acct${index}`, accId);
+                        url.searchParams.set(`token${index}`, accToken);
+                        url.searchParams.set(`cur${index}`, clientAccounts[accId]?.currency || 'USD');
+                        index++;
+                    }
+                });
+
+                // Supply standard single-parameter aliases for embeds
+                url.searchParams.set('token', activeToken);
+                url.searchParams.set('access_token', activeToken);
+                url.searchParams.set('account', activeId);
+                url.searchParams.set('loginid', activeId);
+                url.searchParams.set('currency', activeCur);
                 url.searchParams.set('is_embedded', 'true');
             }
 
+            // Set app_id matching parent application
+            const effectiveAppId = appId || '121856';
+            url.searchParams.set('app_id', String(effectiveAppId));
             url.searchParams.set('theme', currentTheme);
 
             if (isMobileApp) {
@@ -215,14 +273,14 @@ export const DTraderIframeContainer: React.FC<DTraderIframeContainerProps> = ({
         } catch {
             return baseUrl;
         }
-    }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp]);
+    }, [baseUrl, currentToken, currentLoginId, currentTheme, isMobileApp, appId, resolveToken]);
 
-    // Safety fallback timeout: ensure loading overlay clears even if iframe onLoad is delayed
+    // Safety fallback timeout: ensure loading overlay clears quickly
     useEffect(() => {
         const timer = setTimeout(() => {
             setIsLoading(false);
             setIsIframeLoaded(true);
-        }, 2500);
+        }, 1200);
         return () => clearTimeout(timer);
     }, [iframeKey, iframeSrc]);
 

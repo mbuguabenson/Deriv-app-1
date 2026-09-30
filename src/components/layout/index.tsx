@@ -12,6 +12,7 @@ import Body from './main-body';
 import { RiskDisclaimer } from '../shared_ui/risk-disclaimer/risk-disclaimer';
 import AccountInfoModal from './footer/AccountInfoModal';
 import { StatementReportModal } from '@/components/statement-report';
+import { LegacyStatementModal } from '@/components/legacy-statement';
 import { WalletManagementModal } from '@/components/wallet-management';
 import { getSiteConfig, initSiteConfigSync, SiteConfig } from '@/utils/supabase-copy';
 import './layout.scss';
@@ -219,20 +220,24 @@ const MaintenanceOverlay = () => {
 const Layout = observer(() => {
     const [isAccountInfoOpen, setIsAccountInfoOpen] = useState(false);
     const [isStatementReportOpen, setIsStatementReportOpen] = useState(false);
+    const [isLegacyStatementOpen, setIsLegacyStatementOpen] = useState(false);
     const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
     useEffect(() => {
         const handleOpenAccountInfo = () => setIsAccountInfoOpen(true);
         const handleOpenStatement = () => setIsStatementReportOpen(true);
+        const handleOpenLegacyStatement = () => setIsLegacyStatementOpen(true);
         const handleOpenWallet = () => setIsWalletModalOpen(true);
 
         window.addEventListener('open_account_info', handleOpenAccountInfo);
         window.addEventListener('open_statement_report', handleOpenStatement);
+        window.addEventListener('open_legacy_statement', handleOpenLegacyStatement);
         window.addEventListener('open_wallet_management', handleOpenWallet);
 
         return () => {
             window.removeEventListener('open_account_info', handleOpenAccountInfo);
             window.removeEventListener('open_statement_report', handleOpenStatement);
+            window.removeEventListener('open_legacy_statement', handleOpenLegacyStatement);
             window.removeEventListener('open_wallet_management', handleOpenWallet);
         };
     }, []);
@@ -402,6 +407,9 @@ const Layout = observer(() => {
             <AccountInfoModal isOpen={isAccountInfoOpen} onClose={() => setIsAccountInfoOpen(false)} />
             {isStatementReportOpen && (
                 <StatementReportModal isOpen={isStatementReportOpen} onClose={() => setIsStatementReportOpen(false)} />
+            )}
+            {isLegacyStatementOpen && (
+                <LegacyStatementModal isOpen={isLegacyStatementOpen} onClose={() => setIsLegacyStatementOpen(false)} />
             )}
             {isWalletModalOpen && (
                 <WalletManagementModal isOpen={isWalletModalOpen} onClose={() => setIsWalletModalOpen(false)} />

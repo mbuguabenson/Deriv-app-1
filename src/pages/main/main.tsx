@@ -773,8 +773,8 @@ const AppWrapper = observer(() => {
 
     if (!store) return null;
 
-    // Hide run panel and transaction drawer only on full-screen embeds (like dtrader)
-    const shouldHideRunPanelAndDrawer = ['dtrader'].includes(currentTabKey);
+    // Hide run panel and transaction drawer only on full-screen embeds (like dtrader) and dashboard
+    const shouldHideRunPanelAndDrawer = ['dtrader', 'dashboard'].includes(currentTabKey);
 
     return (
         <React.Fragment>

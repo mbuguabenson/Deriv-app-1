@@ -135,12 +135,10 @@ export default class LoadModalStore {
 
     get tab_name(): string {
         if (this.core.ui.is_mobile) {
-            if (this.active_index === 0) return tabs_title.TAB_LOCAL;
-            if (this.active_index === 1) return tabs_title.TAB_GOOGLE;
+            return tabs_title.TAB_LOCAL;
         }
         if (this.active_index === 0) return tabs_title.TAB_RECENT;
         if (this.active_index === 1) return tabs_title.TAB_LOCAL;
-        if (this.active_index === 2) return tabs_title.TAB_GOOGLE;
         return '';
     }
 

@@ -12,7 +12,6 @@ import ThemedScrollbars from '@/components/shared_ui/themed-scrollbars';
 import { config, save_types } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import {
-    DerivLightGoogleDriveIcon,
     DerivLightLocalDeviceIcon,
     DerivLightMyComputerIcon,
 } from '@deriv/quill-icons/Illustration';
@@ -67,9 +66,7 @@ const SaveModalForm: React.FC<TSaveModalForm> = ({
                     <Form className={classNames({ 'form--active-keyboard': is_onscreen_keyboard_active })}>
                         <div className='modal__content'>
                             <Text size='xs' lineHeight='l'>
-                                {localize(
-                                    'Enter your bot name, choose to save on your computer or Google Drive, and hit '
-                                )}
+                                {localize('Enter your bot name, choose to save on your computer, and hit ')}
                                 <strong>{localize('Save.')}</strong>
                             </Text>
                             <div className='modal__content-row'>
@@ -93,8 +90,8 @@ const SaveModalForm: React.FC<TSaveModalForm> = ({
                                 <RadioGroup
                                     className='radio-group__save-type'
                                     name='is_local'
-                                    selected={is_authorised && !is_local ? save_types.GOOGLE_DRIVE : save_types.LOCAL}
-                                    onToggle={() => setFieldValue('is_local', !is_local)}
+                                    selected={save_types.LOCAL}
+                                    onToggle={() => {}}
                                 >
                                     <RadioGroup.Item
                                         id='local'
@@ -113,24 +110,6 @@ const SaveModalForm: React.FC<TSaveModalForm> = ({
                                             ) as any
                                         }
                                         value={save_types.LOCAL}
-                                    />
-                                    <RadioGroup.Item
-                                        id='drive'
-                                        label={
-                                            (
-                                                <IconRadio
-                                                    text={'Google Drive'}
-                                                    icon={<DerivLightGoogleDriveIcon height='48px' width='48px' />}
-                                                    google_drive_connected={is_authorised}
-                                                    onDriveConnect={onDriveConnect}
-                                                />
-                                            ) as any
-                                        }
-                                        value={save_types.GOOGLE_DRIVE}
-                                        disabled={!is_authorised}
-                                        className={classNames({
-                                            'dc-radio-group__item-disabled': !is_authorised,
-                                        })}
                                     />
                                 </RadioGroup>
                             </div>

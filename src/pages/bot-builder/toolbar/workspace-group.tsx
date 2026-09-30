@@ -17,11 +17,12 @@ import { useDevice } from '@deriv-com/ui';
 import ToolbarIcon from './toolbar-icon';
 
 const WorkspaceGroup = observer(() => {
-    const { dashboard, toolbar, load_modal, scanner, entry_scanner } = useStore();
+    const { dashboard, toolbar, load_modal, scanner, entry_scanner, save_modal } = useStore();
     const { setPreviewOnPopup, setChartModalVisibility, setTradingViewModalVisibility, setProfihubModalVisibility } =
         dashboard;
     const { has_redo_stack, has_undo_stack, onResetClick, onSortClick, onUndoClick, onZoomInOutClick } = toolbar;
     const { toggleLoadModal } = load_modal;
+    const { toggleSaveModal } = save_modal;
     const { setScannerVisibility } = scanner;
     const { isDesktop } = useDevice();
 
@@ -54,6 +55,35 @@ const WorkspaceGroup = observer(() => {
                             }}
                         >
                             <LabelPairedFolderOpenMdRegularIcon />
+                        </span>
+                    }
+                />
+                <ToolbarIcon
+                    popover_message={localize('Save bot')}
+                    icon={
+                        <span
+                            className='toolbar__icon'
+                            id='db-toolbar__save-button'
+                            data-testid='dt_toolbar_save_button'
+                            onClick={() => {
+                                toggleSaveModal();
+                            }}
+                        >
+                            <svg
+                                width='20'
+                                height='20'
+                                viewBox='0 0 24 24'
+                                fill='none'
+                                stroke='currentColor'
+                                strokeWidth='2'
+                                strokeLinecap='round'
+                                strokeLinejoin='round'
+                                style={{ verticalAlign: 'middle' }}
+                            >
+                                <path d='M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z' />
+                                <polyline points='17 21 17 13 7 13 7 21' />
+                                <polyline points='7 3 7 8 15 8' />
+                            </svg>
                         </span>
                     }
                 />
