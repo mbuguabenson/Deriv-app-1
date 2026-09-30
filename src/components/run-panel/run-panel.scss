@@ -43,11 +43,17 @@
             min-height: 0 !important;
             width: 100%;
             overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
 
             // The content panel fills the second grid row (1fr)
             .dc-tabs__content {
+                flex: 1 1 auto !important;
+                height: 100% !important;
                 min-height: 0 !important;
-                overflow-y: auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
             }
         }
 

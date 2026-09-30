@@ -1003,7 +1003,10 @@ export default class RunPanelStore {
         observer.unregisterAll('bot.stop_button_click');
         observer.unregisterAll('bot.trade_again');
         observer.unregisterAll('contract.status');
-        observer.unregisterAll('bot.contract');
+        observer.unregister('bot.contract', this.onBotContractEvent);
+        if (this.root_store?.summary_card?.onBotContractEvent) {
+            observer.unregister('bot.contract', this.root_store.summary_card.onBotContractEvent);
+        }
         observer.unregisterAll('Error');
         observer.unregisterAll('bot.setPurchaseInProgress');
     };

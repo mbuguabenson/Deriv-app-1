@@ -3,7 +3,6 @@ import classnames from 'classnames';
 import { observer } from 'mobx-react-lite';
 import Download from '@/components/download';
 import Button from '@/components/shared_ui/button';
-import DataList from '@/components/shared_ui/data-list';
 import Text from '@/components/shared_ui/text';
 import { TContractInfo } from '@/components/summary/summary-card.types';
 import { contract_stages } from '@/constants/contract-stage';
@@ -137,49 +136,28 @@ const Transactions = observer(({ is_drawer_open }: TTransactions) => {
             >
                 <div className='transactions__scrollbar'>
                     {transaction_list?.length ? (
-                        <DataList
-                            className='transactions'
-                            data_source={transaction_list}
-                            rowRenderer={props => (
-                                <TransactionItem
-                                    onClickTransaction={onClickTransaction}
-                                    active_transaction_id={active_transaction_id}
-                                    {...props}
-                                />
-                            )}
-                            keyMapper={row => {
-                                switch (row.type) {
-                                    case transaction_elements.CONTRACT: {
-                                        return (
-                                            row.data?.transaction_ids?.buy ||
-                                            row.data?.contract_id ||
-                                            row.data?.id ||
-                                            `txn_${Math.random()}`
-                                        );
-                                    }
-                                    case transaction_elements.DIVIDER: {
-                                        return row.data;
-                                    }
-                                    default: {
-                                        return null;
-                                    }
-                                }
-                            }}
-                            getRowSize={({ index }) => {
-                                const row = transaction_list?.[index];
-                                switch (row.type) {
-                                    case transaction_elements.CONTRACT: {
-                                        return 50;
-                                    }
-                                    case transaction_elements.DIVIDER: {
-                                        return 21;
-                                    }
-                                    default: {
-                                        return 0;
-                                    }
-                                }
-                            }}
-                        />
+                        <ThemedScrollbars className='transactions__themed-scrollbars' autohide>
+                            <div className='transactions__items-list'>
+                                {transaction_list.map((row, index) => {
+                                    const key =
+                                        row.type === transaction_elements.CONTRACT
+                                            ? row.data?.transaction_ids?.buy ||
+                                              row.data?.contract_id ||
+                                              row.data?.id ||
+                                              `contract_${index}`
+                                            : `divider_${index}_${row.data || ''}`;
+
+                                    return (
+                                        <TransactionItem
+                                            key={key}
+                                            row={row}
+                                            onClickTransaction={onClickTransaction}
+                                            active_transaction_id={active_transaction_id}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </ThemedScrollbars>
                     ) : (
                         <>
                             {contract_stage >= contract_stages.STARTING ? (

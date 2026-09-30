@@ -1,6 +1,6 @@
-import { action, computed, makeObservable, observable, reaction } from 'mobx';
+import { action, computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 import { formatDate, isEnded } from '@/components/shared';
-import { LogTypes } from '@/external/bot-skeleton';
+import { api_base, LogTypes, observer as globalObserver, observer } from '@/external/bot-skeleton';
 import { ProposalOpenContract } from '@deriv/api-types';
 // @ts-ignore
 import { TPortfolioPosition, TStores } from '@deriv/stores/types';
@@ -22,13 +22,69 @@ export default class TransactionsStore {
     root_store: RootStore;
     core: TStores;
     disposeReactionsFn: () => void;
+    private pocSubscription: any = null;
 
     constructor(root_store: RootStore, core: TStores) {
         this.root_store = root_store;
         this.core = core;
         this.is_transaction_details_modal_open = false;
-        this.elements = getStoredItemsByUser(this.TRANSACTION_CACHE, this.core?.client?.loginid, []);
+
+        const activeUser =
+            this.core?.client?.loginid ||
+            (typeof localStorage !== 'undefined'
+                ? localStorage.getItem('active_loginid') || localStorage.getItem('client.loginid')
+                : '') ||
+            'default';
+        const storedMap = getStoredItemsByKey(this.TRANSACTION_CACHE, {});
+        this.elements = storedMap[activeUser]?.length
+            ? { [activeUser]: storedMap[activeUser], ...storedMap }
+            : getStoredItemsByUser(this.TRANSACTION_CACHE, activeUser, []);
+
         this.disposeReactionsFn = this.registerReactions();
+
+        // ── Permanent Observers so trades are never dropped ──
+        observer.register('bot.contract', this.onBotContractEvent);
+        globalObserver.register('bot.contract', this.onBotContractEvent);
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('bot_contract_event', (e: any) => {
+                if (e?.detail) this.onBotContractEvent(e.detail);
+            });
+            window.addEventListener('contract_purchased', (e: any) => {
+                if (e?.detail) this.onBotContractEvent(e.detail);
+            });
+            window.addEventListener('contract_settled', (e: any) => {
+                if (e?.detail) this.onBotContractEvent(e.detail);
+            });
+            window.addEventListener('transaction_recorded', (e: any) => {
+                if (e?.detail) this.onBotContractEvent(e.detail);
+            });
+        }
+
+        // Direct live Deriv WebSocket proposal_open_contract listener
+        const hookWebSocketPOC = () => {
+            try {
+                if (api_base?.api?.onMessage) {
+                    if (this.pocSubscription?.unsubscribe) {
+                        this.pocSubscription.unsubscribe();
+                    }
+                    this.pocSubscription = api_base.api.onMessage().subscribe(({ data }: any) => {
+                        if (data?.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
+                            const poc = data.proposal_open_contract;
+                            this.onBotContractEvent({
+                                accountID: poc.account_id || api_base?.account_info?.loginid,
+                                ...poc,
+                            });
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('[TransactionsStore] WS POC hook error:', err);
+            }
+        };
+
+        hookWebSocketPOC();
+        observer.register('api.authorize', hookWebSocketPOC);
 
         makeObservable(this, {
             elements: observable,
@@ -44,6 +100,7 @@ export default class TransactionsStore {
             total_won_accumulator: observable,
             total_lost_accumulator: observable,
             transactions: computed,
+            active_loginid: computed,
             contracts: computed,
             onBotContractEvent: action.bound,
             pushTransaction: action.bound,
@@ -73,12 +130,33 @@ export default class TransactionsStore {
     is_called_proposal_open_contract = false;
     is_transaction_details_modal_open = false;
 
+    get active_loginid(): string {
+        return (
+            this.core?.client?.loginid ||
+            (typeof localStorage !== 'undefined'
+                ? localStorage.getItem('active_loginid') || localStorage.getItem('client.loginid')
+                : '') ||
+            'default'
+        );
+    }
+
     get transactions(): TTransaction[] {
-        if (!this.core?.client?.loginid) return [];
-        const raw_elements = this.elements[this.core.client.loginid] ?? [];
-        // Keep every bulk contract as its own drawer row. The card can still
-        // display bulk metadata without hiding individual trades.
-        return raw_elements;
+        const id = this.active_loginid;
+        const list = this.elements[id];
+        if (list && list.length > 0) return list;
+
+        if (id !== 'default' && this.elements['default']?.length > 0) {
+            return this.elements['default'];
+        }
+        if (this.elements['']?.length > 0) {
+            return this.elements[''];
+        }
+        for (const k of Object.keys(this.elements)) {
+            if (this.elements[k]?.length > 0) {
+                return this.elements[k];
+            }
+        }
+        return [];
     }
 
     get contracts(): TContractInfo[] {
@@ -109,7 +187,14 @@ export default class TransactionsStore {
     pushTransaction(data: TContractInfo) {
         const is_completed = isEnded(data as ProposalOpenContract);
         const { run_id } = this.root_store.run_panel;
-        const current_account = this.core?.client?.loginid as string;
+        const current_account =
+            (data as any)?.accountID ||
+            (data as any)?.loginid ||
+            this.core?.client?.loginid ||
+            (typeof localStorage !== 'undefined'
+                ? localStorage.getItem('active_loginid') || localStorage.getItem('client.loginid')
+                : '') ||
+            'default';
 
         const contract: TContractInfo = {
             ...data,
@@ -122,7 +207,7 @@ export default class TransactionsStore {
                 : undefined,
             exit_tick: (data as any).exit_spot ?? data.exit_tick ?? undefined,
             exit_tick_time: data.exit_tick_time && formatDate(data.exit_tick_time, 'YYYY-M-D HH:mm:ss [GMT]'),
-            profit: is_completed ? data.profit : 0,
+            profit: is_completed ? (typeof data.profit === 'number' ? data.profit : parseFloat(data.profit as any || '0')) : 0,
         };
 
         if (!this.elements[current_account]) {
@@ -274,19 +359,16 @@ export default class TransactionsStore {
     }
 
     registerReactions() {
-        const { client } = this.core;
-
         let storageDebounceTimer: ReturnType<typeof setTimeout> | null = null;
         // Write transactions to session storage with debounce to prevent UI freezes on high-frequency bulk trades
         const disposeTransactionElementsListener = reaction(
-            () => this.elements[client?.loginid as string]?.length,
+            () => this.transactions.length,
             () => {
                 if (storageDebounceTimer) clearTimeout(storageDebounceTimer);
                 storageDebounceTimer = setTimeout(() => {
+                    const activeId = this.active_loginid;
                     const stored_transactions = getStoredItemsByKey(this.TRANSACTION_CACHE, {});
-                    stored_transactions[client.loginid as string] = (
-                        this.elements[client?.loginid as string] ?? []
-                    ).slice(0, 200);
+                    stored_transactions[activeId] = (this.transactions ?? []).slice(0, 200);
                     setStoredItemsByKey(this.TRANSACTION_CACHE, stored_transactions);
                 }, 500);
             }
