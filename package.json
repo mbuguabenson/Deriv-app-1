@@ -186,7 +186,7 @@
         "sass-embedded-linux-riscv64": "1.85.1",
         "sass-embedded-linux-x64": "1.85.1",
         "sass-embedded-win32-arm64": "1.85.1",
-        "sass-embedded-win32-ia32": "1.85.1",
+        "sass-embedded-win32-ia32": "1.89.0",
         "sass-embedded-win32-x64": "1.85.1"
     },
     "overrides": {
