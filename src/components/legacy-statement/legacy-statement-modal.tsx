@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useApiBase } from '@/hooks/useApiBase';
 import { useStore } from '@/hooks/useStore';
@@ -10,12 +10,15 @@ import {
     LegacyStatementTransaction,
 } from '@/services/legacy-statement.service';
 import {
-    AlertTriangle,
+    Activity,
+    AlertCircle,
     ArrowDownRight,
     ArrowUpRight,
     Calendar,
+    Check,
     CheckCircle2,
     Clock,
+    Copy,
     Database,
     Download,
     ExternalLink,
@@ -24,13 +27,17 @@ import {
     Filter,
     Layers,
     Loader2,
+    Percent,
+    Radio,
     RefreshCw,
     Search,
-    ShieldAlert,
-    SlidersHorizontal,
+    Shield,
+    Sparkles,
     TrendingDown,
     TrendingUp,
+    Wifi,
     X,
+    Zap,
 } from 'lucide-react';
 import './legacy-statement-modal.scss';
 
@@ -44,7 +51,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const { accountList, activeLoginid } = useApiBase();
     const { client } = useStore() ?? {};
 
-    // Target login ID (defaults to active user or requested CR8416851)
+    // Target login ID (defaults to active user account or CR8416851)
     const [loginIdInput, setLoginIdInput] = useState<string>(() => {
         return (
             initialLoginId ||
@@ -57,9 +64,11 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
 
     const [transactions, setTransactions] = useState<LegacyStatementTransaction[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [errorInfo, setErrorInfo] = useState<{ message: string; code?: string } | null>(null);
-    const [isSampleMode, setIsSampleMode] = useState<boolean>(false);
-    const [lastFetchTiming, setLastFetchTiming] = useState<number | undefined>();
+    const [activeSource, setActiveSource] = useState<'live_rest' | 'live_websocket' | 'sample_preview'>('live_rest');
+    const [preferSource, setPreferSource] = useState<'auto' | 'rest' | 'websocket' | 'sample'>('auto');
+    const [apiError, setApiError] = useState<{ message: string; code?: string; rawStatus?: number } | null>(null);
+    const [fetchLatency, setFetchLatency] = useState<number | undefined>();
+    const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
     // Filters
     const [timeFilter, setTimeFilter] = useState<'all' | 'today' | '7d' | '30d' | 'custom'>('all');
@@ -73,7 +82,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const displayCurrency = (localStorage.getItem('converter_display_currency') as 'USD' | 'KES') || 'USD';
     const rate = parseFloat(localStorage.getItem('converter_kes_rate') || '129.5');
 
-    // Compute epoch seconds for date filters
+    // Compute epoch timestamps for time filters
     const { dateFrom, dateTo } = useMemo(() => {
         const now = Math.floor(Date.now() / 1000);
         if (timeFilter === 'all') {
@@ -98,25 +107,13 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         return { dateFrom: 0, dateTo: now };
     }, [timeFilter, customStartDate, customEndDate]);
 
-    // Fetch Statement via Official Legacy REST API
-    const fetchLegacyStatement = useCallback(async (forcedSample = false) => {
+    // Fetch Statement via Real Deriv API
+    const loadStatementData = useCallback(async (sourceOverride?: 'auto' | 'rest' | 'websocket' | 'sample') => {
         const targetId = (loginIdInput || 'CR8416851').trim().toUpperCase();
-
-        if (forcedSample) {
-            setIsLoading(true);
-            setErrorInfo(null);
-            setTimeout(() => {
-                const sample = LegacyStatementService.getSampleLegacyData(targetId);
-                setTransactions(sample);
-                setIsSampleMode(true);
-                setIsLoading(false);
-            }, 300);
-            return;
-        }
+        const selectedSource = sourceOverride || preferSource;
 
         setIsLoading(true);
-        setErrorInfo(null);
-        setIsSampleMode(false);
+        setApiError(null);
 
         try {
             const res = await LegacyStatementService.getLegacyStatement({
@@ -125,40 +122,46 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 date_to: dateTo,
                 action_type: actionFilter !== 'all' ? actionFilter : undefined,
                 limit,
+                preferSource: selectedSource,
             });
 
-            setLastFetchTiming(res.timing);
+            setFetchLatency(res.timing);
+            setActiveSource(res.source);
 
             if (res.transactions && res.transactions.length > 0) {
                 setTransactions(res.transactions);
-                setErrorInfo(null);
+                setApiError(null);
             } else if (res.error) {
-                setErrorInfo({ message: res.error, code: res.errorCode });
-                // Fallback to sample preview so user can immediately examine UI
-                const sample = LegacyStatementService.getSampleLegacyData(targetId);
-                setTransactions(sample);
-                setIsSampleMode(true);
+                setApiError({ message: res.error, code: res.errorCode, rawStatus: res.rawStatus });
+                // If live API returned an error, fallback to sample preview so user has a rich experience
+                if (selectedSource === 'auto') {
+                    const fallbackSample = LegacyStatementService.getSampleLegacyData(targetId);
+                    setTransactions(fallbackSample);
+                    setActiveSource('sample_preview');
+                } else {
+                    setTransactions([]);
+                }
             } else {
                 setTransactions([]);
             }
         } catch (err: any) {
-            console.error('[LegacyStatementModal] Fetch error:', err);
-            setErrorInfo({ message: err?.message || 'Connection failed', code: 'Unknown' });
-            const sample = LegacyStatementService.getSampleLegacyData(targetId);
-            setTransactions(sample);
-            setIsSampleMode(true);
+            console.error('[LegacyStatementModal] Load error:', err);
+            setApiError({ message: err?.message || 'Error communicating with Deriv API', code: 'Unknown' });
+            const fallbackSample = LegacyStatementService.getSampleLegacyData(targetId);
+            setTransactions(fallbackSample);
+            setActiveSource('sample_preview');
         } finally {
             setIsLoading(false);
         }
-    }, [loginIdInput, dateFrom, dateTo, actionFilter, limit]);
+    }, [loginIdInput, dateFrom, dateTo, actionFilter, limit, preferSource]);
 
     useEffect(() => {
         if (isOpen) {
-            fetchLegacyStatement();
+            loadStatementData();
         }
-    }, [isOpen, fetchLegacyStatement]);
+    }, [isOpen, loadStatementData]);
 
-    // Keyboard navigation (Escape to close)
+    // Escape key listener
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isOpen) {
@@ -169,7 +172,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Filter transactions by Action & Search Query
+    // Filter transactions by Search Query
     const filteredTransactions = useMemo(() => {
         let result = transactions;
 
@@ -200,23 +203,30 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         return result;
     }, [transactions, actionFilter, searchQuery]);
 
-    // Financial Metrics & TOTALS Calculation
+    // Financial Metrics & TOTALS
     const totals = useMemo(() => {
         let totalCredit = 0;
         let totalDebit = 0;
         let buyCount = 0;
         let sellCount = 0;
+        let depositCount = 0;
+        let withdrawalCount = 0;
+        let profitableTrades = 0;
 
         filteredTransactions.forEach(t => {
             const amt = Number(t.amount) || 0;
             if (amt > 0) {
                 totalCredit += amt;
+                profitableTrades++;
             } else if (amt < 0) {
                 totalDebit += Math.abs(amt);
             }
 
-            if (t.action_type === 'buy') buyCount++;
-            if (t.action_type === 'sell') sellCount++;
+            const action = (t.action_type || '').toLowerCase();
+            if (action === 'buy') buyCount++;
+            if (action === 'sell') sellCount++;
+            if (action === 'deposit') depositCount++;
+            if (action === 'withdrawal') withdrawalCount++;
         });
 
         const netProfitLoss = totalCredit - totalDebit;
@@ -227,6 +237,9 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 ? Number(filteredTransactions[filteredTransactions.length - 1].balance_after) || 0
                 : 0;
 
+        const totalTrades = buyCount + sellCount;
+        const winRate = totalTrades > 0 ? Math.round((profitableTrades / totalTrades) * 100) : 0;
+
         return {
             totalCredit,
             totalDebit,
@@ -236,6 +249,9 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             count: filteredTransactions.length,
             buyCount,
             sellCount,
+            depositCount,
+            withdrawalCount,
+            winRate,
         };
     }, [filteredTransactions]);
 
@@ -251,17 +267,26 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
 
     // Format Date Display
     const formatTimestamp = (epoch: number) => {
-        if (!epoch) return '—';
-        const date = new Date(epoch > 1e11 ? epoch : epoch * 1000);
-        return date.toLocaleString('en-GB', {
+        if (!epoch) return { date: '—', time: '—' };
+        const d = new Date(epoch > 1e11 ? epoch : epoch * 1000);
+        const dateStr = d.toLocaleDateString('en-GB', {
             day: '2-digit',
             month: 'short',
             year: 'numeric',
+        });
+        const timeStr = d.toLocaleTimeString('en-GB', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: false,
-        });
+        }) + ' UTC';
+        return { date: dateStr, time: timeStr };
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard?.writeText(text);
+        setCopiedRef(text);
+        setTimeout(() => setCopiedRef(null), 1800);
     };
 
     // Export CSV
@@ -273,20 +298,23 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             'Contract ID',
             'Currency',
             'Transaction time',
-            'Transaction',
+            'Transaction Details',
             'Credit/Debit',
             'Balance',
         ];
-        const rows = filteredTransactions.map(t => [
-            t.action_type.toUpperCase(),
-            t.reference_id || t.transaction_id,
-            t.contract_id || '',
-            t.currency || 'USD',
-            formatTimestamp(t.transaction_time),
-            `"${(t.longcode || t.shortcode || t.action_type).replace(/"/g, '""')}"`,
-            t.amount,
-            t.balance_after,
-        ]);
+        const rows = filteredTransactions.map(t => {
+            const timeObj = formatTimestamp(t.transaction_time);
+            return [
+                t.action_type.toUpperCase(),
+                t.reference_id || t.transaction_id,
+                t.contract_id || '',
+                t.currency || 'USD',
+                `"${timeObj.date} ${timeObj.time}"`,
+                `"${(t.longcode || t.shortcode || t.action_type).replace(/"/g, '""')}"`,
+                t.amount,
+                t.balance_after,
+            ];
+        });
 
         const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -316,222 +344,290 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     if (!isOpen) return null;
 
     return (
-        <div className='legacy-statement-modal__overlay' onClick={onClose}>
-            <div className='legacy-statement-modal__container' onClick={e => e.stopPropagation()}>
-                {/* Header Bar */}
-                <div className='legacy-statement-modal__header'>
-                    <div className='legacy-statement-modal__header-left'>
-                        <div className='legacy-icon-glow'>
-                            <Database size={20} className='text-amber-400' />
+        <div className='legacy-cockpit__overlay' onClick={onClose}>
+            <div className='legacy-cockpit__modal' onClick={e => e.stopPropagation()}>
+                {/* ── Top Institutional Header ── */}
+                <header className='cockpit-header'>
+                    <div className='cockpit-header__left'>
+                        <div className='cockpit-header__icon-glow'>
+                            <Database size={22} className='text-amber-400' />
+                            <div className='cockpit-header__pulse-ring' />
                         </div>
-                        <div>
-                            <div className='legacy-title-row'>
-                                <h2>Options Trading (Legacy)</h2>
-                                <span className='legacy-endpoint-tag'>
+                        <div className='cockpit-header__info'>
+                            <div className='title-row'>
+                                <h1 className='cockpit-title'>Options Trading (Legacy)</h1>
+                                <span className='gateway-endpoint-pill'>
                                     <code>/trading/v1/options/legacy/statement</code>
                                 </span>
-                                {isSampleMode && <span className='legacy-sample-badge'>Sample Preview</span>}
+                                <div className={`gateway-status-pill source-${activeSource}`}>
+                                    <span className='status-dot' />
+                                    <span>
+                                        {activeSource === 'live_rest'
+                                            ? 'Real REST Gateway (200 OK)'
+                                            : activeSource === 'live_websocket'
+                                            ? 'Live WebSocket Feed'
+                                            : 'Sample Simulation'}
+                                    </span>
+                                    {fetchLatency !== undefined && (
+                                        <span className='latency-tag'>{fetchLatency}ms</span>
+                                    )}
+                                </div>
                             </div>
-                            <p className='legacy-subtitle'>
-                                Historical transaction statement & trade history from the legacy options platform before system upgrade.
+                            <p className='cockpit-desc'>
+                                Institutional Options Statement & Financial Movements prior to migration upgrade &bull; Direct access to api.derivws.com
                             </p>
                         </div>
                     </div>
 
-                    <div className='legacy-statement-modal__header-actions'>
-                        {/* Login ID Input / Switcher */}
-                        <div className='legacy-loginid-box'>
-                            <span className='loginid-label'>Account:</span>
+                    <div className='cockpit-header__right'>
+                        {/* Account Selector & Input */}
+                        <div className='account-switcher-box'>
+                            <span className='box-label'>Account:</span>
                             <input
                                 type='text'
-                                className='loginid-input'
+                                className='box-input'
                                 value={loginIdInput}
                                 onChange={e => setLoginIdInput(e.target.value.toUpperCase())}
                                 placeholder='CR8416851'
-                                title='Deriv legacy login ID (e.g. CR8416851)'
+                                title='Enter Deriv Legacy Login ID'
                             />
+                            {accountList && accountList.length > 0 && (
+                                <select
+                                    className='box-select'
+                                    value={loginIdInput}
+                                    onChange={e => setLoginIdInput(e.target.value)}
+                                    title='Switch account'
+                                >
+                                    {accountList.map(acc => (
+                                        <option key={acc.loginid} value={acc.loginid}>
+                                            {acc.loginid} ({acc.currency || 'USD'})
+                                        </option>
+                                    ))}
+                                    <option value='CR8416851'>CR8416851</option>
+                                </select>
+                            )}
                         </div>
 
-                        {/* Account Selector dropdown if accounts exist */}
-                        {accountList && accountList.length > 0 && (
-                            <select
-                                className='legacy-account-quick-select'
-                                value={loginIdInput}
-                                onChange={e => setLoginIdInput(e.target.value)}
-                                title='Select account'
+                        {/* Mode Selector Toggle */}
+                        <div className='source-mode-toggle' title='Select data gateway'>
+                            <button
+                                type='button'
+                                className={`mode-btn ${preferSource === 'auto' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setPreferSource('auto');
+                                    loadStatementData('auto');
+                                }}
                             >
-                                {accountList.map(acc => (
-                                    <option key={acc.loginid} value={acc.loginid}>
-                                        {acc.loginid} ({acc.currency || 'USD'})
-                                    </option>
-                                ))}
-                                <option value='CR8416851'>CR8416851 (Default)</option>
-                            </select>
-                        )}
+                                <Zap size={12} /> Auto
+                            </button>
+                            <button
+                                type='button'
+                                className={`mode-btn ${preferSource === 'rest' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setPreferSource('rest');
+                                    loadStatementData('rest');
+                                }}
+                            >
+                                REST API
+                            </button>
+                            <button
+                                type='button'
+                                className={`mode-btn ${preferSource === 'websocket' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setPreferSource('websocket');
+                                    loadStatementData('websocket');
+                                }}
+                            >
+                                WebSocket
+                            </button>
+                            <button
+                                type='button'
+                                className={`mode-btn ${preferSource === 'sample' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setPreferSource('sample');
+                                    loadStatementData('sample');
+                                }}
+                            >
+                                Sample
+                            </button>
+                        </div>
 
+                        {/* Refresh Button */}
                         <button
                             type='button'
-                            className='legacy-action-icon-btn'
-                            onClick={() => fetchLegacyStatement(false)}
+                            className='cockpit-icon-btn'
+                            onClick={() => loadStatementData()}
                             disabled={isLoading}
-                            title='Refresh legacy statement from api.derivws.com'
+                            title='Refresh real statement data'
                         >
-                            <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+                            <RefreshCw size={15} className={isLoading ? 'animate-spin text-amber-400' : ''} />
                         </button>
 
+                        {/* Close Modal Button */}
                         <button
                             type='button'
-                            className='legacy-modal-close-btn'
+                            className='cockpit-close-btn'
                             onClick={onClose}
                             aria-label='Close Legacy Statement'
                         >
                             <X size={18} />
                         </button>
                     </div>
-                </div>
+                </header>
 
-                {/* API Notice / Migration Warning Banner */}
-                {errorInfo && (
-                    <div className='legacy-alert-banner'>
-                        <div className='legacy-alert-content'>
-                            {errorInfo.code === 'MigrationPending' ? (
-                                <ShieldAlert size={18} className='text-amber-400 shrink-0' />
-                            ) : (
-                                <AlertTriangle size={18} className='text-amber-400 shrink-0' />
-                            )}
-                            <div className='legacy-alert-text'>
-                                <strong>
-                                    {errorInfo.code === 'MigrationPending'
-                                        ? 'Deriv Migration In Progress (409): '
-                                        : 'Legacy API Notice: '}
-                                </strong>
-                                <span>{errorInfo.message}</span>
-                                <span className='legacy-alert-hint'>
-                                    Showing pre-upgrade trade history simulation for {loginIdInput}. Click Refresh to query Deriv servers.
+                {/* ── API Diagnostic Notice (if 401 or 409 or network) ── */}
+                {apiError && (
+                    <div className='api-notice-banner'>
+                        <div className='notice-body'>
+                            <AlertCircle size={18} className='text-amber-400 shrink-0' />
+                            <div className='notice-text'>
+                                <strong>Deriv Gateway Diagnostic ({apiError.code || `HTTP ${apiError.rawStatus}`}):</strong>{' '}
+                                <span>{apiError.message}</span>
+                                <span className='notice-hint'>
+                                    Displaying interactive pre-upgrade options history simulation for account {loginIdInput}. Click Refresh or switch to WebSocket mode to retry live feed.
                                 </span>
                             </div>
                         </div>
-                        <div className='legacy-alert-btns'>
+                        <div className='notice-actions'>
                             <button
                                 type='button'
-                                className='btn-test-sample'
-                                onClick={() => fetchLegacyStatement(true)}
+                                className='notice-btn notice-btn-primary'
+                                onClick={() => loadStatementData('rest')}
                             >
-                                Reload Sample Data
+                                Query REST Endpoint
                             </button>
                             <button
                                 type='button'
-                                className='btn-live-retry'
-                                onClick={() => fetchLegacyStatement(false)}
+                                className='notice-btn notice-btn-secondary'
+                                onClick={() => loadStatementData('websocket')}
                             >
-                                Retry Live API
+                                Try Live WebSocket
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* Summary / TOTALS Cards Strip */}
-                <div className='legacy-totals-strip'>
-                    {/* Net P&L Card */}
-                    <div className={`legacy-stat-card ${totals.netProfitLoss >= 0 ? 'card-positive' : 'card-negative'}`}>
-                        <div className='stat-card-top'>
-                            <span className='stat-label'>TOTAL NET PROFIT / LOSS</span>
-                            {totals.netProfitLoss >= 0 ? (
-                                <TrendingUp size={16} className='text-emerald-400' />
-                            ) : (
-                                <TrendingDown size={16} className='text-rose-400' />
-                            )}
+                {/* ── TOTALS Analytical KPI Deck ── */}
+                <section className='cockpit-kpi-deck'>
+                    {/* 1. Net Profit / Cash Flow */}
+                    <div className={`kpi-card ${totals.netProfitLoss >= 0 ? 'kpi-card--profit' : 'kpi-card--loss'}`}>
+                        <div className='kpi-card__glow' />
+                        <div className='kpi-card__header'>
+                            <span className='kpi-label'>NET STATEMENT P&L</span>
+                            <span className='kpi-chip'>
+                                {totals.netProfitLoss >= 0 ? (
+                                    <>
+                                        <TrendingUp size={13} /> Profit
+                                    </>
+                                ) : (
+                                    <>
+                                        <TrendingDown size={13} /> Loss
+                                    </>
+                                )}
+                            </span>
                         </div>
-                        <div className={`stat-value ${totals.netProfitLoss >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className='kpi-card__value'>
                             {formatAmount(totals.netProfitLoss)}
                         </div>
-                        <div className='stat-sub'>
-                            Across {totals.count} filtered legacy transactions
+                        <div className='kpi-card__footer'>
+                            <span>{totals.count} transactions in timeframe</span>
+                            <span className='win-rate-pill'>
+                                <Percent size={11} /> {totals.winRate}% Profitable
+                            </span>
                         </div>
                     </div>
 
-                    {/* Total In / Credit */}
-                    <div className='legacy-stat-card card-credit'>
-                        <div className='stat-card-top'>
-                            <span className='stat-label'>TOTAL CREDIT (+)</span>
-                            <ArrowUpRight size={16} className='text-emerald-400' />
+                    {/* 2. Total Credit Inflow (+) */}
+                    <div className='kpi-card kpi-card--credit'>
+                        <div className='kpi-card__glow' />
+                        <div className='kpi-card__header'>
+                            <span className='kpi-label'>TOTAL CREDIT (+)</span>
+                            <span className='kpi-chip chip-green'>
+                                <ArrowUpRight size={13} /> Inflow
+                            </span>
                         </div>
-                        <div className='stat-value text-emerald-400'>
+                        <div className='kpi-card__value text-emerald-400'>
                             +{formatAmount(totals.totalCredit)}
                         </div>
-                        <div className='stat-sub'>
-                            Payouts, settlements & deposits
+                        <div className='kpi-card__footer'>
+                            <span>{totals.sellCount} option settlements / {totals.depositCount} deposits</span>
                         </div>
                     </div>
 
-                    {/* Total Out / Debit */}
-                    <div className='legacy-stat-card card-debit'>
-                        <div className='stat-card-top'>
-                            <span className='stat-label'>TOTAL DEBIT (-)</span>
-                            <ArrowDownRight size={16} className='text-rose-400' />
+                    {/* 3. Total Debit Outflow (-) */}
+                    <div className='kpi-card kpi-card--debit'>
+                        <div className='kpi-card__glow' />
+                        <div className='kpi-card__header'>
+                            <span className='kpi-label'>TOTAL DEBIT (-)</span>
+                            <span className='kpi-chip chip-red'>
+                                <ArrowDownRight size={13} /> Outflow
+                            </span>
                         </div>
-                        <div className='stat-value text-rose-400'>
+                        <div className='kpi-card__value text-rose-400'>
                             -{formatAmount(totals.totalDebit)}
                         </div>
-                        <div className='stat-sub'>
-                            Stakes, contracts bought & withdrawals
+                        <div className='kpi-card__footer'>
+                            <span>{totals.buyCount} contracts bought / {totals.withdrawalCount} withdrawals</span>
                         </div>
                     </div>
 
-                    {/* Account Balance */}
-                    <div className='legacy-stat-card card-balance'>
-                        <div className='stat-card-top'>
-                            <span className='stat-label'>CLOSING BALANCE</span>
-                            <CheckCircle2 size={16} className='text-sky-400' />
+                    {/* 4. Closing Ledger Balance */}
+                    <div className='kpi-card kpi-card--balance'>
+                        <div className='kpi-card__glow' />
+                        <div className='kpi-card__header'>
+                            <span className='kpi-label'>CLOSING BALANCE</span>
+                            <span className='kpi-chip chip-cyan'>
+                                <CheckCircle2 size={13} /> Verified
+                            </span>
                         </div>
-                        <div className='stat-value text-sky-400'>
+                        <div className='kpi-card__value text-cyan-400'>
                             {formatAmount(totals.latestBalance)}
                         </div>
-                        <div className='stat-sub'>
-                            {totals.buyCount} buys &bull; {totals.sellCount} sells
+                        <div className='kpi-card__footer'>
+                            <span>Ledger account: {loginIdInput}</span>
                         </div>
                     </div>
-                </div>
+                </section>
 
-                {/* Filter & Search Toolbar */}
-                <div className='legacy-toolbar'>
-                    <div className='legacy-toolbar-filters'>
-                        {/* Time Filter Pills */}
-                        <div className='time-filter-group'>
-                            <span className='filter-icon-label'>
-                                <Clock size={13} /> Time:
+                {/* ── Interactive Command & Filter Deck ── */}
+                <section className='cockpit-filters-bar'>
+                    <div className='filters-group-left'>
+                        {/* Time Period Filter Pills */}
+                        <div className='time-segment-control'>
+                            <span className='segment-label'>
+                                <Clock size={13} /> Period:
                             </span>
                             <button
                                 type='button'
-                                className={`time-pill ${timeFilter === 'all' ? 'active' : ''}`}
+                                className={`segment-pill ${timeFilter === 'all' ? 'active' : ''}`}
                                 onClick={() => setTimeFilter('all')}
                             >
                                 All time
                             </button>
                             <button
                                 type='button'
-                                className={`time-pill ${timeFilter === 'today' ? 'active' : ''}`}
+                                className={`segment-pill ${timeFilter === 'today' ? 'active' : ''}`}
                                 onClick={() => setTimeFilter('today')}
                             >
                                 Today
                             </button>
                             <button
                                 type='button'
-                                className={`time-pill ${timeFilter === '7d' ? 'active' : ''}`}
+                                className={`segment-pill ${timeFilter === '7d' ? 'active' : ''}`}
                                 onClick={() => setTimeFilter('7d')}
                             >
                                 Last 7 Days
                             </button>
                             <button
                                 type='button'
-                                className={`time-pill ${timeFilter === '30d' ? 'active' : ''}`}
+                                className={`segment-pill ${timeFilter === '30d' ? 'active' : ''}`}
                                 onClick={() => setTimeFilter('30d')}
                             >
                                 Last 30 Days
                             </button>
                             <button
                                 type='button'
-                                className={`time-pill ${timeFilter === 'custom' ? 'active' : ''}`}
+                                className={`segment-pill ${timeFilter === 'custom' ? 'active' : ''}`}
                                 onClick={() => setTimeFilter('custom')}
                             >
                                 Custom
@@ -540,70 +636,71 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
 
                         {/* Custom Date Pickers */}
                         {timeFilter === 'custom' && (
-                            <div className='custom-date-inputs'>
+                            <div className='custom-range-picker'>
                                 <input
                                     type='date'
-                                    className='legacy-date-input'
+                                    className='picker-input'
                                     value={customStartDate}
                                     onChange={e => setCustomStartDate(e.target.value)}
-                                    title='Start Date'
+                                    title='Start date'
                                 />
-                                <span className='date-sep'>to</span>
+                                <span className='picker-sep'>→</span>
                                 <input
                                     type='date'
-                                    className='legacy-date-input'
+                                    className='picker-input'
                                     value={customEndDate}
                                     onChange={e => setCustomEndDate(e.target.value)}
-                                    title='End Date'
+                                    title='End date'
                                 />
                             </div>
                         )}
 
                         {/* Action Type Filter */}
-                        <div className='legacy-select-filter'>
-                            <Filter size={13} />
+                        <div className='select-pill-wrapper'>
+                            <Filter size={13} className='text-amber-400' />
                             <select
                                 value={actionFilter}
                                 onChange={e => setActionFilter(e.target.value)}
-                                title='Filter by action type'
+                                title='Filter transaction action'
                             >
                                 <option value='all'>All Types</option>
-                                <option value='buy'>Buy</option>
-                                <option value='sell'>Sell</option>
+                                <option value='buy'>Buy (Options)</option>
+                                <option value='sell'>Sell (Settlements)</option>
                                 <option value='deposit'>Deposit</option>
                                 <option value='withdrawal'>Withdrawal</option>
                             </select>
                         </div>
 
                         {/* Limit Selector */}
-                        <div className='legacy-select-filter'>
+                        <div className='select-pill-wrapper'>
                             <select
                                 value={limit}
                                 onChange={e => setLimit(Number(e.target.value))}
-                                title='Maximum transactions to return'
+                                title='Maximum transactions count'
                             >
-                                <option value={50}>50 limit</option>
-                                <option value={100}>100 limit</option>
-                                <option value={250}>250 limit</option>
-                                <option value={500}>500 limit</option>
+                                <option value={50}>50 rows</option>
+                                <option value={100}>100 rows</option>
+                                <option value={250}>250 rows</option>
+                                <option value={500}>500 rows</option>
                                 <option value={999}>999 max</option>
                             </select>
                         </div>
 
-                        {/* Search Input */}
-                        <div className='legacy-search-box'>
-                            <Search size={14} className='search-icon' />
+                        {/* Instant Search Bar */}
+                        <div className='cockpit-search-box'>
+                            <Search size={14} className='search-icon text-slate-400' />
                             <input
                                 type='text'
-                                placeholder='Search Ref. ID, symbol, action...'
+                                placeholder='Filter by Ref ID, symbol, contract...'
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                             />
                             {searchQuery && (
                                 <button
                                     type='button'
-                                    className='clear-search'
+                                    className='search-clear-btn'
                                     onClick={() => setSearchQuery('')}
+                                    title='Clear search'
                                 >
                                     ✕
                                 </button>
@@ -611,10 +708,10 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                         </div>
                     </div>
 
-                    <div className='legacy-toolbar-actions'>
+                    <div className='filters-group-right'>
                         <button
                             type='button'
-                            className='legacy-btn-export'
+                            className='export-action-btn'
                             onClick={exportCSV}
                             disabled={!filteredTransactions.length}
                             title='Export filtered ledger to CSV'
@@ -624,53 +721,58 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                         </button>
                         <button
                             type='button'
-                            className='legacy-btn-export'
+                            className='export-action-btn'
                             onClick={exportJSON}
                             disabled={!filteredTransactions.length}
-                            title='Export raw statement to JSON'
+                            title='Export raw JSON statement'
                         >
                             <Download size={14} />
                             <span>JSON</span>
                         </button>
                     </div>
-                </div>
+                </section>
 
-                {/* Table Content */}
-                <div className='legacy-table-scroll-container'>
+                {/* ── Main Data Grid Area ── */}
+                <main className='cockpit-grid-container'>
                     {isLoading ? (
-                        <div className='legacy-loading-state'>
-                            <Loader2 size={36} className='animate-spin text-amber-400' />
-                            <h3>Accessing Legacy Options Statement...</h3>
-                            <p>Querying https://api.derivws.com/trading/v1/options/legacy/statement for {loginIdInput}</p>
+                        <div className='cockpit-loading-view'>
+                            <div className='loading-spinner-wrap'>
+                                <Loader2 size={42} className='animate-spin text-amber-400' />
+                                <div className='spinner-glow' />
+                            </div>
+                            <h3 className='loading-title'>Accessing Deriv Options Legacy Statement...</h3>
+                            <p className='loading-sub'>
+                                Querying GET https://api.derivws.com/trading/v1/options/legacy/statement?loginid={loginIdInput}
+                            </p>
                         </div>
                     ) : filteredTransactions.length === 0 ? (
-                        <div className='legacy-empty-state'>
-                            <FileText size={44} className='text-zinc-600' />
-                            <h3>No Historical Transactions Found</h3>
+                        <div className='cockpit-empty-view'>
+                            <FileText size={48} className='text-slate-600' />
+                            <h3>No Transactions Found</h3>
                             <p>
                                 {searchQuery || actionFilter !== 'all' || timeFilter !== 'all'
-                                    ? 'No records match the selected time filter or search query.'
-                                    : `Account ${loginIdInput} does not have recorded options trades on the legacy platform.`}
+                                    ? 'No records match your selected timeframe or filter terms.'
+                                    : `Account ${loginIdInput} has no historical options records logged.`}
                             </p>
                             <button
                                 type='button'
-                                className='btn-test-sample mt-3'
-                                onClick={() => fetchLegacyStatement(true)}
+                                className='btn-load-sample'
+                                onClick={() => loadStatementData('sample')}
                             >
-                                Load Sample Legacy Data
+                                <Sparkles size={14} /> Load Pre-Upgrade Sample History
                             </button>
                         </div>
                     ) : (
-                        <table className='legacy-statement-table'>
+                        <table className='cockpit-table'>
                             <thead>
                                 <tr>
-                                    <th>Type</th>
-                                    <th>Ref. ID</th>
-                                    <th>Currency</th>
-                                    <th>Transaction time</th>
-                                    <th>Transaction</th>
-                                    <th className='text-right'>Credit/Debit</th>
-                                    <th className='text-right'>Balance</th>
+                                    <th className='th-type'>Type</th>
+                                    <th className='th-ref'>Ref. ID</th>
+                                    <th className='th-curr'>Currency</th>
+                                    <th className='th-time'>Transaction time</th>
+                                    <th className='th-desc'>Transaction</th>
+                                    <th className='th-amount text-right'>Credit/Debit</th>
+                                    <th className='th-balance text-right'>Balance</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -678,51 +780,65 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                     const isCredit = Number(tx.amount) > 0;
                                     const isDebit = Number(tx.amount) < 0;
                                     const actionType = (tx.action_type || 'transaction').toLowerCase();
-                                    const refId = tx.reference_id || tx.transaction_id;
+                                    const refId = String(tx.reference_id || tx.transaction_id || '');
+                                    const timeObj = formatTimestamp(tx.transaction_time);
 
                                     return (
-                                        <tr key={`${tx.transaction_id}-${idx}`}>
+                                        <tr key={`${tx.transaction_id}-${idx}`} className='cockpit-row'>
                                             {/* 1. Type */}
-                                            <td className='col-type'>
-                                                <span className={`legacy-action-pill pill-${actionType}`}>
-                                                    {tx.action_type.toUpperCase()}
+                                            <td className='td-type'>
+                                                <span className={`action-badge badge-${actionType}`}>
+                                                    {actionType.toUpperCase()}
                                                 </span>
                                             </td>
 
                                             {/* 2. Ref. ID */}
-                                            <td className='col-ref'>
-                                                <code className='ref-code'>#{refId}</code>
+                                            <td className='td-ref'>
+                                                <div className='ref-wrapper'>
+                                                    <code className='ref-tag'>#{refId}</code>
+                                                    <button
+                                                        type='button'
+                                                        className='copy-btn'
+                                                        onClick={() => copyToClipboard(refId)}
+                                                        title='Copy Ref ID'
+                                                    >
+                                                        {copiedRef === refId ? (
+                                                            <Check size={11} className='text-emerald-400' />
+                                                        ) : (
+                                                            <Copy size={11} />
+                                                        )}
+                                                    </button>
+                                                </div>
                                                 {tx.contract_id && (
-                                                    <span className='sub-contract-id' title='Contract ID'>
-                                                        CID: {tx.contract_id}
-                                                    </span>
+                                                    <div className='sub-cid'>CID: {tx.contract_id}</div>
                                                 )}
                                             </td>
 
                                             {/* 3. Currency */}
-                                            <td className='col-currency'>
-                                                <span className='currency-badge'>{tx.currency || 'USD'}</span>
+                                            <td className='td-curr'>
+                                                <span className='curr-tag'>{tx.currency || 'USD'}</span>
                                             </td>
 
                                             {/* 4. Transaction time */}
-                                            <td className='col-time'>
-                                                <div className='time-primary'>
-                                                    {formatTimestamp(tx.transaction_time)}
+                                            <td className='td-time'>
+                                                <div className='time-split'>
+                                                    <span className='date-part'>{timeObj.date}</span>
+                                                    <span className='clock-part'>{timeObj.time}</span>
                                                 </div>
                                             </td>
 
                                             {/* 5. Transaction Details */}
-                                            <td className='col-desc'>
-                                                <div className='tx-details-wrapper'>
+                                            <td className='td-desc'>
+                                                <div className='desc-cell-wrap'>
                                                     {tx.symbol && (
-                                                        <span className='tx-symbol-pill'>{tx.symbol}</span>
+                                                        <span className='symbol-badge'>{tx.symbol}</span>
                                                     )}
                                                     {tx.bet_type && (
-                                                        <span className='tx-bet-pill'>{tx.bet_type}</span>
+                                                        <span className='contract-type-badge'>{tx.bet_type}</span>
                                                     )}
                                                     <span
-                                                        className='tx-longcode'
-                                                        title={tx.longcode || tx.shortcode || 'Legacy movement'}
+                                                        className='contract-longcode'
+                                                        title={tx.longcode || tx.shortcode || 'Option transaction'}
                                                     >
                                                         {tx.longcode || tx.shortcode || 'Options Platform Transaction'}
                                                     </span>
@@ -731,78 +847,92 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
 
                                             {/* 6. Credit/Debit */}
                                             <td
-                                                className={`col-amount text-right ${
-                                                    isCredit ? 'val-credit' : isDebit ? 'val-debit' : 'val-zero'
+                                                className={`td-amount text-right ${
+                                                    isCredit ? 'amount-credit' : isDebit ? 'amount-debit' : 'amount-zero'
                                                 }`}
                                             >
                                                 {formatAmount(Number(tx.amount) || 0, tx.currency)}
                                             </td>
 
                                             {/* 7. Balance */}
-                                            <td className='col-balance text-right'>
-                                                {formatAmount(Number(tx.balance_after) || 0, tx.currency)}
+                                            <td className='td-balance text-right'>
+                                                <span className='balance-num'>
+                                                    {formatAmount(Number(tx.balance_after) || 0, tx.currency)}
+                                                </span>
                                             </td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
 
-                            {/* TOTALS Footer Row */}
-                            <tfoot>
-                                <tr className='legacy-totals-row'>
-                                    <td colSpan={5} className='totals-label-cell'>
-                                        <div className='totals-header-group'>
+                            {/* ── Sticky TOTALS Footer ── */}
+                            <tfoot className='cockpit-tfoot'>
+                                <tr className='totals-row'>
+                                    <td colSpan={5} className='totals-info-cell'>
+                                        <div className='totals-indicator-wrap'>
                                             <span className='totals-tag'>TOTALS</span>
-                                            <span className='totals-count-text'>
-                                                {totals.count} {totals.count === 1 ? 'transaction' : 'transactions'} in selected time
+                                            <span className='totals-summary-text'>
+                                                <strong>{totals.count}</strong> transactions in selected timeframe
                                             </span>
-                                            <span className='totals-breakdown-sub'>
-                                                ({totals.buyCount} buys, {totals.sellCount} sells)
-                                            </span>
+                                            <div className='totals-sub-stats'>
+                                                <span className='buy-stat'>Buys: {totals.buyCount}</span>
+                                                <span className='stat-sep'>&bull;</span>
+                                                <span className='sell-stat'>Sells: {totals.sellCount}</span>
+                                                <span className='stat-sep'>&bull;</span>
+                                                <span className='winrate-stat'>Win Rate: {totals.winRate}%</span>
+                                            </div>
                                         </div>
                                     </td>
-                                    <td className={`totals-amount-cell text-right ${totals.netProfitLoss >= 0 ? 'val-credit' : 'val-debit'}`}>
-                                        <div className='totals-net-value'>{formatAmount(totals.netProfitLoss)}</div>
-                                        <div className='totals-sub-cashflow'>
-                                            <span className='credit-part'>+{formatAmount(totals.totalCredit)}</span>
-                                            <span className='divider'>/</span>
-                                            <span className='debit-part'>-{formatAmount(totals.totalDebit)}</span>
+                                    <td
+                                        className={`totals-cashflow-cell text-right ${
+                                            totals.netProfitLoss >= 0 ? 'amount-credit' : 'amount-debit'
+                                        }`}
+                                    >
+                                        <div className='net-totals-value'>
+                                            {formatAmount(totals.netProfitLoss)}
+                                        </div>
+                                        <div className='totals-breakdown-row'>
+                                            <span className='credit-sub'>+{formatAmount(totals.totalCredit)}</span>
+                                            <span className='sub-sep'>/</span>
+                                            <span className='debit-sub'>-{formatAmount(totals.totalDebit)}</span>
                                         </div>
                                     </td>
-                                    <td className='totals-balance-cell text-right'>
-                                        <div className='totals-closing-label'>Closing Balance</div>
-                                        <div className='totals-closing-val'>{formatAmount(totals.latestBalance)}</div>
+                                    <td className='totals-closing-cell text-right'>
+                                        <div className='closing-label'>Closing Balance</div>
+                                        <div className='closing-value'>
+                                            {formatAmount(totals.latestBalance)}
+                                        </div>
                                     </td>
                                 </tr>
                             </tfoot>
                         </table>
                     )}
-                </div>
+                </main>
 
-                {/* Footer Bar */}
-                <div className='legacy-statement-modal__footer'>
-                    <div className='footer-meta'>
-                        <span className='endpoint-meta-dot' />
-                        <span>
-                            Endpoint: <code>GET https://api.derivws.com/trading/v1/options/legacy/statement</code> &bull; Base: Deriv Options Legacy API
+                {/* ── Bottom Institutional Status Bar ── */}
+                <footer className='cockpit-footer'>
+                    <div className='footer-left'>
+                        <span className='live-beacon' />
+                        <span className='footer-text'>
+                            Deriv Options Legacy Statement &bull; Official REST Gateway: <code>https://api.derivws.com/trading/v1/options/legacy/statement</code>
                         </span>
                         <a
                             href='https://developers.deriv.com/docs/options-legacy/legacy-statement/'
                             target='_blank'
                             rel='noopener noreferrer'
-                            className='api-doc-link'
+                            className='doc-link'
                         >
-                            <span>Documentation</span>
+                            <span>Official Documentation</span>
                             <ExternalLink size={12} />
                         </a>
                     </div>
 
-                    <div className='footer-buttons'>
-                        <button type='button' className='btn-legacy-close' onClick={onClose}>
-                            Close
+                    <div className='footer-right'>
+                        <button type='button' className='btn-close-cockpit' onClick={onClose}>
+                            Close Statement
                         </button>
                     </div>
-                </div>
+                </footer>
             </div>
         </div>
     );
