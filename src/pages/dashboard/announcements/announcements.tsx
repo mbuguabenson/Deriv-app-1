@@ -67,25 +67,43 @@ const Announcements = observer(({ is_mobile, is_tablet, handleTabChange }: TAnno
 
     const updateNotifications = () => {
         let data: Record<string, boolean> | null = null;
-        data = JSON.parse(localStorage.getItem('bot-announcements') ?? '{}');
+        try {
+            data = JSON.parse(localStorage.getItem('bot-announcements') ?? '{}');
+        } catch {
+            data = {};
+        }
         const tmp_notifications: TNotifications[] = [];
-        const temp_localstorage_data: Record<string, boolean> | null = {};
+        const temp_localstorage_data: Record<string, boolean> = {};
         const loggedInAccountId = localStorage.getItem('active_loginid');
-        let allUserAccounts = localStorage.getItem('client_account_details');
-        let accountDate = null;
-        if (allUserAccounts) {
-            allUserAccounts = JSON.parse(allUserAccounts);
-            const currentAccount = allUserAccounts?.find(account => account.loginid == loggedInAccountId);
-            accountDate = new Date(currentAccount.created_at * 1000);
+        const rawUserAccounts = localStorage.getItem('client_account_details');
+        let accountDate: Date | null = null;
+
+        if (rawUserAccounts) {
+            try {
+                const allUserAccounts = JSON.parse(rawUserAccounts);
+                if (Array.isArray(allUserAccounts)) {
+                    const currentAccount = allUserAccounts.find(
+                        (account: any) => account?.loginid === loggedInAccountId
+                    );
+                    if (currentAccount?.created_at) {
+                        const parsedDate = new Date(currentAccount.created_at * 1000);
+                        if (!isNaN(parsedDate.getTime())) {
+                            accountDate = parsedDate;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('[Announcements] Failed to parse client_account_details:', err);
+            }
         }
 
-        BOT_ANNOUNCEMENTS_LIST.map(item => {
+        BOT_ANNOUNCEMENTS_LIST.forEach(item => {
             let is_not_read = true;
             if (data && Object.prototype.hasOwnProperty.call(data, item.id)) {
                 is_not_read = data[item.id];
             }
             const notificationDate = new Date(item.date);
-            if (accountDate && notificationDate > accountDate) {
+            if (!accountDate || notificationDate > accountDate) {
                 tmp_notifications.push({
                     id: item.id,
                     icon: <item.icon announce={is_not_read} />,
@@ -93,7 +111,7 @@ const Announcements = observer(({ is_mobile, is_tablet, handleTabChange }: TAnno
                     message: <MessageAnnounce message={item.message} date={item.date} announce={is_not_read} />,
                     buttonAction: performButtonAction(item, modalButtonAction, handleRedirect),
                     actionText: item.actionText,
-                });
+                } as any);
                 temp_localstorage_data[item.id] = is_not_read;
             }
         });
