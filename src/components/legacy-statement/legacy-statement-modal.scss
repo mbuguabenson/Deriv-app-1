@@ -208,17 +208,62 @@
                 }
             }
 
+            .manual-account-input-wrap {
+                display: flex;
+                align-items: center;
+                gap: 0.3rem;
+
+                .btn-apply-manual {
+                    background: rgba(245, 197, 66, 0.2);
+                    border: 1px solid rgba(245, 197, 66, 0.4);
+                    color: #f5c542;
+                    border-radius: 4px;
+                    padding: 0.1rem 0.45rem;
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+
+                    &:hover {
+                        background: rgba(245, 197, 66, 0.35);
+                    }
+                }
+
+                .btn-cancel-manual {
+                    background: transparent;
+                    border: none;
+                    color: #94a3b8;
+                    cursor: pointer;
+                    font-size: 0.75rem;
+                    padding: 0 0.2rem;
+                    line-height: 1;
+
+                    &:hover {
+                        color: #f87171;
+                    }
+                }
+            }
+
             .box-select {
                 background: transparent;
                 border: none;
                 outline: none;
-                color: #94a3b8;
-                font-size: 0.78rem;
+                color: #e2e8f0;
+                font-size: 0.8rem;
+                font-weight: 600;
                 cursor: pointer;
+
+                optgroup {
+                    background: #0b0f19;
+                    color: #f5c542;
+                    font-weight: 700;
+                    font-size: 0.72rem;
+                }
 
                 option {
                     background: #0f141f;
-                    color: #fff;
+                    color: #ffffff;
+                    font-weight: normal;
                 }
             }
         }

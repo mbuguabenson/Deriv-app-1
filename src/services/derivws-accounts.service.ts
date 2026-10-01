@@ -87,6 +87,9 @@ export class DerivWSAccountsService {
     private static readonly MAX_ACCOUNTS_FETCH_COOLDOWN_MS = 300_000; // 5 min max
     private static readonly BASE_ACCOUNTS_FETCH_COOLDOWN_MS = 30_000;  // 30s initial
 
+    // Circuit breaker for OTP endpoints to prevent thread-locking retry loops on 401 Unauthorized
+    private static _otpFailureCache = new Map<string, { failedAt: number; error: string }>();
+
     /**
      * Gets the DerivWS base URL based on environment.
      */
@@ -337,6 +340,17 @@ export class DerivWSAccountsService {
             throw new Error('Deriv account id is required to request an authenticated WebSocket.');
         }
 
+        // DOT accounts are legacy token identifiers, not REST Options API accounts
+        if (accountId.startsWith('DOT')) {
+            throw new Error(`Account ${accountId} does not use Options REST OTP. Use direct WebSocket.`);
+        }
+
+        const cacheKey = `${accountId}_${(accessToken || '').slice(-8)}`;
+        const cachedFailure = this._otpFailureCache.get(cacheKey);
+        if (cachedFailure && Date.now() - cachedFailure.failedAt < 30000) {
+            throw new Error(cachedFailure.error);
+        }
+
         const authHeaders = this.getAuthenticatedHeaders(accessToken);
 
         // 1. Try local serverless proxy first to bypass CORS on browser origins like hazelhub.vercel.app
@@ -352,10 +366,14 @@ export class DerivWSAccountsService {
                     const otpResponse: OTPResponse = await proxyResp.json();
                     const websocketURL = otpResponse?.data?.url;
                     if (websocketURL) {
+                        this._otpFailureCache.delete(cacheKey);
                         console.log('[DerivWS] Successfully acquired OTP WebSocket URL via proxy');
                         return websocketURL;
                     }
                 } else {
+                    if (proxyResp.status === 401 || proxyResp.status === 403) {
+                        this._otpFailureCache.set(cacheKey, { failedAt: Date.now(), error: `OTP proxy auth error: ${proxyResp.status}` });
+                    }
                     console.warn(`[DerivWS] OTP proxy returned status ${proxyResp.status}, falling back to direct endpoint`);
                 }
             } catch (proxyErr) {
@@ -382,6 +400,10 @@ export class DerivWSAccountsService {
                 } catch {
                     // Keep the HTTP status message when the body is not JSON.
                 }
+
+                if (response.status === 401 || response.status === 403 || response.status === 404) {
+                    this._otpFailureCache.set(cacheKey, { failedAt: Date.now(), error: message });
+                }
                 throw new Error(message);
             }
 
@@ -391,8 +413,13 @@ export class DerivWSAccountsService {
             if (!websocketURL) {
                 throw new Error('WebSocket URL not found in OTP response');
             }
+
+            this._otpFailureCache.delete(cacheKey);
             return websocketURL;
-        } catch (error) {
+        } catch (error: any) {
+            if (String(error?.message || '').includes('401') || String(error?.message || '').includes('Unauthorized')) {
+                this._otpFailureCache.set(cacheKey, { failedAt: Date.now(), error: error?.message || 'Unauthorized (401)' });
+            }
             console.error('[DerivWS] Error fetching OTP:', error);
             throw error;
         }

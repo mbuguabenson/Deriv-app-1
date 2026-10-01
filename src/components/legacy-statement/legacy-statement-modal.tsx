@@ -7,6 +7,10 @@ import {
     LegacyStatementService,
     LegacyStatementTransaction,
 } from '@/services/legacy-statement.service';
+import { getAccountsList, getActiveLoginId } from '@/utils/token-bridge';
+import { api_base } from '@/external/bot-skeleton';
+import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
+import { isDemoAccount } from '@/utils/account-helpers';
 import {
     AlertCircle,
     ArrowDownRight,
@@ -25,7 +29,6 @@ import {
     Percent,
     RefreshCw,
     Search,
-    Sparkles,
     TrendingDown,
     TrendingUp,
     X,
@@ -43,21 +46,218 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const { accountList, activeLoginid } = useApiBase();
     const { client } = useStore() ?? {};
 
-    // Target login ID (defaults to active user account or CR8416851)
+    // Comprehensive discovery of ALL user accounts from all storage & store sources
+    const { realAccounts, demoAccounts, allAccounts } = useMemo(() => {
+        const list: Array<{ loginid: string; currency: string; is_virtual: boolean }> = [];
+        const seen = new Set<string>();
+
+        const add = (id?: string, curr?: string, virtual?: boolean) => {
+            if (!id || typeof id !== 'string') return;
+            const clean = id.trim().toUpperCase();
+            if (!clean || clean === 'DEFAULT' || clean === 'NULL' || clean === 'UNDEFINED') return;
+
+            // Validate account prefix
+            if (!/^[A-Z]{2,4}[0-9]+$/i.test(clean) && !clean.startsWith('DOT')) {
+                return;
+            }
+
+            const isVirt =
+                virtual !== undefined
+                    ? Boolean(virtual)
+                    : clean.startsWith('VR') || clean.startsWith('VRT') || clean.startsWith('DOT') || isDemoAccount(clean);
+
+            const existing = list.find(a => a.loginid === clean);
+            if (existing) {
+                if (curr && curr !== 'USD' && (!existing.currency || existing.currency === 'USD')) {
+                    existing.currency = curr;
+                }
+                return;
+            }
+            seen.add(clean);
+            list.push({
+                loginid: clean,
+                currency: curr || 'USD',
+                is_virtual: isVirt,
+            });
+        };
+
+        // 1. Client Store account_list
+        if (client?.account_list && Array.isArray(client.account_list)) {
+            client.account_list.forEach((acc: any) => add(acc.loginid, acc.currency, acc.is_virtual));
+        }
+
+        // 2. Client Store accounts object
+        if (client?.accounts && typeof client.accounts === 'object') {
+            Object.entries(client.accounts).forEach(([id, acc]: [string, any]) => {
+                add(id, acc?.currency, acc?.is_virtual);
+            });
+        }
+
+        // 3. useApiBase accountList stream
+        if (accountList && Array.isArray(accountList)) {
+            accountList.forEach((acc: any) => add(acc.loginid, acc.currency, acc.is_virtual));
+        }
+
+        // 4. api_base.account_info account_list
+        try {
+            const apiInfoList = (api_base as any)?.account_info?.account_list;
+            if (Array.isArray(apiInfoList)) {
+                apiInfoList.forEach((acc: any) => add(acc.loginid, acc.currency, acc.is_virtual));
+            }
+        } catch {}
+
+        // 5. DerivWSAccountsService getStoredAccounts() (checks deriv_accounts in local & session)
+        try {
+            const derivAccounts = DerivWSAccountsService.getStoredAccounts();
+            if (Array.isArray(derivAccounts)) {
+                derivAccounts.forEach((acc: any) => {
+                    const id = acc.account_id || acc.loginid;
+                    const isVirt = acc.account_type === 'demo' || isDemoAccount(id);
+                    add(id, acc.currency, isVirt);
+                });
+            }
+        } catch {}
+
+        // 6. token-bridge getAccountsList()
+        try {
+            const map = getAccountsList();
+            Object.keys(map).forEach(id => add(id));
+        } catch {}
+
+        // 7. localStorage and sessionStorage 'client.accounts' and 'clientAccounts'
+        if (typeof window !== 'undefined') {
+            const storages = [window.localStorage, window.sessionStorage];
+            storages.forEach(storage => {
+                ['client.accounts', 'clientAccounts'].forEach(key => {
+                    try {
+                        const raw = storage.getItem(key);
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                                Object.entries(parsed).forEach(([id, acc]: [string, any]) => {
+                                    add(id, acc?.currency, acc?.is_virtual);
+                                });
+                            }
+                        }
+                    } catch {}
+                });
+            });
+
+            // 8. localStorage and sessionStorage 'client_account_details'
+            storages.forEach(storage => {
+                try {
+                    const rawDetails = storage.getItem('client_account_details');
+                    if (rawDetails) {
+                        const parsed = JSON.parse(rawDetails);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach((acc: any) => add(acc.loginid || acc.account_id, acc.currency, acc.is_virtual));
+                        }
+                    }
+                } catch {}
+            });
+
+            // 9. localStorage and sessionStorage 'accountsList'
+            storages.forEach(storage => {
+                try {
+                    const raw = storage.getItem('accountsList');
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed === 'object') {
+                            Object.keys(parsed).forEach(id => add(id));
+                        }
+                    }
+                } catch {}
+            });
+
+            // 10. Copy Trading accounts ('deriv_copier_accounts' & 'deriv_copier_master_config')
+            try {
+                const rawCopier = localStorage.getItem('deriv_copier_accounts');
+                if (rawCopier) {
+                    const parsed = JSON.parse(rawCopier);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach((acc: any) => add(acc.loginid, acc.currency, acc.is_virtual));
+                    }
+                }
+                const rawMaster = localStorage.getItem('deriv_copier_master_config');
+                if (rawMaster) {
+                    const parsedMaster = JSON.parse(rawMaster);
+                    if (parsedMaster?.loginid) {
+                        add(parsedMaster.loginid, parsedMaster.currency, parsedMaster.is_virtual);
+                    }
+                }
+            } catch {}
+
+            // 11. Numbered OAuth keys acct1..acct25 in localStorage & sessionStorage
+            storages.forEach(storage => {
+                for (let i = 1; i <= 25; i++) {
+                    const acct = storage.getItem(`acct${i}`);
+                    const cur = storage.getItem(`cur${i}`);
+                    if (acct) add(acct, cur || 'USD');
+                }
+            });
+
+            // 12. Active login IDs
+            const active =
+                activeLoginid ||
+                client?.loginid ||
+                localStorage.getItem('active_loginid') ||
+                sessionStorage.getItem('active_loginid');
+            if (active) add(active, client?.currency);
+
+            // 13. Deep scan of all localStorage keys for any CR accounts
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && /^[A-Z]{2,4}[0-9]+$/i.test(key)) {
+                        add(key);
+                    }
+                }
+            } catch {}
+        }
+
+        // Separate real and demo accounts
+        const real = list.filter(a => !a.is_virtual);
+        const demo = list.filter(a => a.is_virtual);
+
+        // Sort real accounts alphabetically / numerically
+        real.sort((a, b) => a.loginid.localeCompare(b.loginid));
+        demo.sort((a, b) => a.loginid.localeCompare(b.loginid));
+
+        return {
+            realAccounts: real,
+            demoAccounts: demo,
+            allAccounts: [...real, ...demo],
+        };
+    }, [client?.account_list, client?.accounts, client?.currency, accountList, activeLoginid]);
+
+    // Target login ID (defaults to active user account, first real account, or first discovered account)
     const [loginIdInput, setLoginIdInput] = useState<string>(() => {
         return (
             initialLoginId ||
             activeLoginid ||
             localStorage.getItem('active_loginid') ||
             client?.loginid ||
-            'CR8416851'
+            ''
         );
     });
+
+    const [isManualInput, setIsManualInput] = useState<boolean>(false);
+
+    // Auto-select real account or active account when discovered
+    useEffect(() => {
+        if (!loginIdInput && allAccounts.length > 0) {
+            const activeId = activeLoginid || localStorage.getItem('active_loginid') || client?.loginid;
+            const match = allAccounts.find(a => a.loginid === activeId) || realAccounts[0] || allAccounts[0];
+            if (match && match.loginid !== loginIdInput) {
+                setLoginIdInput(match.loginid);
+            }
+        }
+    }, [allAccounts, realAccounts, loginIdInput, activeLoginid, client?.loginid]);
 
     const [transactions, setTransactions] = useState<LegacyStatementTransaction[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [activeSource, setActiveSource] = useState<'live_rest' | 'live_websocket' | 'sample_preview'>('live_rest');
-    const [preferSource, setPreferSource] = useState<'auto' | 'rest' | 'websocket' | 'sample'>('auto');
+    const [preferSource, setPreferSource] = useState<'auto' | 'rest' | 'websocket'>('auto');
     const [apiError, setApiError] = useState<{ message: string; code?: string; rawStatus?: number } | null>(null);
     const [fetchLatency, setFetchLatency] = useState<number | undefined>();
     const [copiedRef, setCopiedRef] = useState<string | null>(null);
@@ -71,7 +271,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const [customStartDate, setCustomStartDate] = useState<string>('');
     const [customEndDate, setCustomEndDate] = useState<string>('');
     const [actionFilter, setActionFilter] = useState<string>('all');
-    const [limit, setLimit] = useState<number>(100);
+    const [limit, setLimit] = useState<number>(0); // 0 = Unlimited (All Transactions)
     const [searchQuery, setSearchQuery] = useState<string>('');
 
     // Currency conversion display
@@ -103,57 +303,70 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         return { dateFrom: 0, dateTo: now };
     }, [timeFilter, customStartDate, customEndDate]);
 
-    // Fetch Statement via Real Deriv API
-    const loadStatementData = useCallback(async (sourceOverride?: 'auto' | 'rest' | 'websocket' | 'sample') => {
-        const targetId = (loginIdInput || 'CR8416851').trim().toUpperCase();
-        const selectedSource = sourceOverride || preferSource;
+    // Fetch Statement via Real Deriv API (Strictly Real Account Data - NO Sample Simulation)
+    const loadStatementData = useCallback(
+        async (
+            targetIdOverride?: string,
+            sourceOverride?: 'auto' | 'rest' | 'websocket',
+            limitOverride?: number
+        ) => {
+            const effectiveId =
+                targetIdOverride ||
+                loginIdInput ||
+                allAccounts[0]?.loginid ||
+                activeLoginid ||
+                getActiveLoginId() ||
+                '';
+            const targetId = effectiveId.trim().toUpperCase();
+            if (!targetId) {
+                setTransactions([]);
+                setIsLoading(false);
+                return;
+            }
 
-        setIsLoading(true);
-        setApiError(null);
+            const selectedSource = sourceOverride || preferSource;
+            const queryLimit = limitOverride !== undefined ? limitOverride : limit;
 
-        try {
-            const res = await LegacyStatementService.getLegacyStatement({
-                loginid: targetId,
-                date_from: dateFrom,
-                date_to: dateTo,
-                action_type: actionFilter !== 'all' ? actionFilter : undefined,
-                limit,
-                preferSource: selectedSource,
-                tokenOverride: patTokenInput.trim() || undefined,
-            });
+            setIsLoading(true);
+            setApiError(null);
 
-            setFetchLatency(res.timing);
-            setActiveSource(res.source);
+            try {
+                const res = await LegacyStatementService.getLegacyStatement({
+                    loginid: targetId,
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    action_type: actionFilter !== 'all' ? actionFilter : undefined,
+                    limit: queryLimit,
+                    preferSource: selectedSource,
+                    tokenOverride: patTokenInput.trim() || undefined,
+                });
 
-            if (res.transactions && res.transactions.length > 0) {
-                setTransactions(res.transactions);
-                setApiError(null);
-            } else if (res.error) {
-                setApiError({ message: res.error, code: res.errorCode, rawStatus: res.rawStatus });
-                if (res.errorCode === 'AuthRequired') {
-                    setIsTokenBarOpen(true);
-                }
-                // If in auto mode or fallback, load preview data so user can interact with table & totals
-                if (selectedSource === 'auto') {
-                    const fallbackSample = LegacyStatementService.getSampleLegacyData(targetId);
-                    setTransactions(fallbackSample);
-                    setActiveSource('sample_preview');
+                setFetchLatency(res.timing);
+                setActiveSource(res.source);
+
+                if (res.transactions && res.transactions.length > 0) {
+                    setTransactions(res.transactions);
+                    setApiError(null);
+                } else if (res.error) {
+                    setApiError({ message: res.error, code: res.errorCode, rawStatus: res.rawStatus });
+                    if (res.errorCode === 'AuthRequired') {
+                        setIsTokenBarOpen(true);
+                    }
+                    setTransactions([]);
                 } else {
                     setTransactions([]);
+                    setApiError(null);
                 }
-            } else {
+            } catch (err: any) {
+                console.error('[LegacyStatementModal] Load error:', err);
+                setApiError({ message: err?.message || 'Error communicating with Deriv API', code: 'Unknown' });
                 setTransactions([]);
+            } finally {
+                setIsLoading(false);
             }
-        } catch (err: any) {
-            console.error('[LegacyStatementModal] Load error:', err);
-            setApiError({ message: err?.message || 'Error communicating with Deriv API', code: 'Unknown' });
-            const fallbackSample = LegacyStatementService.getSampleLegacyData(targetId);
-            setTransactions(fallbackSample);
-            setActiveSource('sample_preview');
-        } finally {
-            setIsLoading(false);
-        }
-    }, [loginIdInput, dateFrom, dateTo, actionFilter, limit, preferSource, patTokenInput]);
+        },
+        [loginIdInput, allAccounts, activeLoginid, dateFrom, dateTo, actionFilter, limit, preferSource, patTokenInput]
+    );
 
     const handleSaveTokenAndConnect = (e?: React.FormEvent) => {
         e?.preventDefault();
@@ -164,7 +377,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             localStorage.removeItem('deriv_legacy_api_token');
         }
         setIsTokenBarOpen(false);
-        loadStatementData('rest');
+        loadStatementData(undefined, 'rest');
     };
 
     useEffect(() => {
@@ -395,28 +608,76 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                         {/* Account Selector & Input */}
                         <div className='account-switcher-box'>
                             <span className='box-label'>Account:</span>
-                            <input
-                                type='text'
-                                className='box-input'
-                                value={loginIdInput}
-                                onChange={e => setLoginIdInput(e.target.value.toUpperCase())}
-                                placeholder='CR8416851'
-                                title='Enter Deriv Legacy Login ID'
-                            />
-                            {accountList && accountList.length > 0 && (
+                            {!isManualInput && allAccounts && allAccounts.length > 0 ? (
                                 <select
                                     className='box-select'
                                     value={loginIdInput}
-                                    onChange={e => setLoginIdInput(e.target.value)}
-                                    title='Switch account'
+                                    onChange={e => {
+                                        const newAcc = e.target.value;
+                                        if (newAcc === '__MANUAL__') {
+                                            setIsManualInput(true);
+                                            return;
+                                        }
+                                        setLoginIdInput(newAcc);
+                                        loadStatementData(newAcc);
+                                    }}
+                                    title='Switch account to view statement'
                                 >
-                                    {accountList.map(acc => (
-                                        <option key={acc.loginid} value={acc.loginid}>
-                                            {acc.loginid} ({acc.currency || 'USD'})
-                                        </option>
-                                    ))}
-                                    <option value='CR8416851'>CR8416851</option>
+                                    {realAccounts.length > 0 && (
+                                        <optgroup label='Real Accounts (CR)'>
+                                            {realAccounts.map(acc => (
+                                                <option key={acc.loginid} value={acc.loginid}>
+                                                    {acc.loginid} ({acc.currency || 'USD'}) — Real
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    )}
+                                    {demoAccounts.length > 0 && (
+                                        <optgroup label='Demo Accounts'>
+                                            {demoAccounts.map(acc => (
+                                                <option key={acc.loginid} value={acc.loginid}>
+                                                    {acc.loginid} ({acc.currency || 'USD'}) — Demo
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    )}
+                                    <option value='__MANUAL__'>➕ Enter Custom ID...</option>
                                 </select>
+                            ) : (
+                                <div className='manual-account-input-wrap'>
+                                    <input
+                                        type='text'
+                                        className='box-input'
+                                        value={loginIdInput}
+                                        onChange={e => setLoginIdInput(e.target.value.toUpperCase())}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                loadStatementData(loginIdInput);
+                                            }
+                                        }}
+                                        placeholder='CR...'
+                                        title='Enter Deriv Account ID and press Enter'
+                                        autoFocus
+                                    />
+                                    <button
+                                        type='button'
+                                        className='btn-apply-manual'
+                                        onClick={() => loadStatementData(loginIdInput)}
+                                        title='Query account'
+                                    >
+                                        Go
+                                    </button>
+                                    {allAccounts.length > 0 && (
+                                        <button
+                                            type='button'
+                                            className='btn-cancel-manual'
+                                            onClick={() => setIsManualInput(false)}
+                                            title='Back to account list'
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
 
@@ -451,16 +712,6 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                 }}
                             >
                                 WebSocket
-                            </button>
-                            <button
-                                type='button'
-                                className={`mode-btn ${preferSource === 'sample' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setPreferSource('sample');
-                                    loadStatementData('sample');
-                                }}
-                            >
-                                Sample
                             </button>
                         </div>
 
@@ -759,14 +1010,20 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                         <div className='select-pill-wrapper'>
                             <select
                                 value={limit}
-                                onChange={e => setLimit(Number(e.target.value))}
-                                title='Maximum transactions count'
+                                onChange={e => {
+                                    const newLim = Number(e.target.value);
+                                    setLimit(newLim);
+                                    loadStatementData(undefined, undefined, newLim);
+                                }}
+                                title='Transactions count limit'
                             >
+                                <option value={0}>Unlimited (All Rows)</option>
                                 <option value={50}>50 rows</option>
                                 <option value={100}>100 rows</option>
                                 <option value={250}>250 rows</option>
                                 <option value={500}>500 rows</option>
-                                <option value={999}>999 max</option>
+                                <option value={1000}>1,000 rows</option>
+                                <option value={2500}>2,500 rows</option>
                             </select>
                         </div>
 
@@ -841,9 +1098,9 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             <button
                                 type='button'
                                 className='btn-load-sample'
-                                onClick={() => loadStatementData('sample')}
+                                onClick={() => loadStatementData()}
                             >
-                                <Sparkles size={14} /> Load Pre-Upgrade Sample History
+                                <RefreshCw size={14} /> Refresh Real Statement
                             </button>
                         </div>
                     ) : (

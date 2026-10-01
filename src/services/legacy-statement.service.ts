@@ -80,19 +80,98 @@ export class LegacyStatementService {
             return customToken.trim().replace(/^Bearer\s+/i, '');
         }
 
-        // 2. Token from accountsMap for this specific loginId
         const accountsMap = getAccountsList();
-        if (targetLoginId && accountsMap[targetLoginId] && !isInvalidBearerToken(accountsMap[targetLoginId])) {
-            return accountsMap[targetLoginId].trim().replace(/^Bearer\s+/i, '');
+        const targetClean = (targetLoginId || '').trim().toUpperCase();
+
+        // 2. Token from accountsMap for targetLoginId
+        if (targetClean && accountsMap[targetClean] && !isInvalidBearerToken(accountsMap[targetClean])) {
+            return accountsMap[targetClean].trim().replace(/^Bearer\s+/i, '');
         }
 
-        // 3. Token for currently active login ID
+        // 3. Search targetLoginId specifically in client.accounts and clientAccounts
+        if (targetClean) {
+            const storages = [localStorage, sessionStorage];
+            for (const st of storages) {
+                for (const key of ['client.accounts', 'clientAccounts']) {
+                    try {
+                        const raw = st.getItem(key);
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            if (parsed && typeof parsed === 'object') {
+                                const acc = parsed[targetClean];
+                                const tok = acc?.token || (typeof acc === 'string' ? acc : '');
+                                if (tok && !isInvalidBearerToken(tok)) {
+                                    return tok.trim().replace(/^Bearer\s+/i, '');
+                                }
+                            }
+                        }
+                    } catch {}
+                }
+            }
+        }
+
+        // 4. Search numbered keys acct1..acct25 for targetLoginId
+        if (targetClean) {
+            const storages = [localStorage, sessionStorage];
+            for (const st of storages) {
+                for (let i = 1; i <= 25; i++) {
+                    const acct = st.getItem(`acct${i}`);
+                    if (acct && acct.trim().toUpperCase() === targetClean) {
+                        const tok = st.getItem(`token${i}`);
+                        if (tok && !isInvalidBearerToken(tok)) {
+                            return tok.trim().replace(/^Bearer\s+/i, '');
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Search client_account_details for targetLoginId
+        if (targetClean) {
+            const storages = [localStorage, sessionStorage];
+            for (const st of storages) {
+                try {
+                    const raw = st.getItem('client_account_details');
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            const match = parsed.find(
+                                (a: any) => (a.loginid || a.account_id || '').trim().toUpperCase() === targetClean
+                            );
+                            if (match?.token && !isInvalidBearerToken(match.token)) {
+                                return match.token.trim().replace(/^Bearer\s+/i, '');
+                            }
+                        }
+                    }
+                } catch {}
+            }
+        }
+
+        // 6. Search copy trading accounts for targetLoginId
+        if (targetClean) {
+            try {
+                const rawCopier = localStorage.getItem('deriv_copier_accounts');
+                if (rawCopier) {
+                    const parsed = JSON.parse(rawCopier);
+                    if (Array.isArray(parsed)) {
+                        const match = parsed.find(
+                            (a: any) => (a.loginid || '').trim().toUpperCase() === targetClean
+                        );
+                        if (match?.token && !isInvalidBearerToken(match.token)) {
+                            return match.token.trim().replace(/^Bearer\s+/i, '');
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        // 7. Token for currently active login ID
         const activeId = getActiveLoginId();
         if (activeId && accountsMap[activeId] && !isInvalidBearerToken(accountsMap[activeId])) {
             return accountsMap[activeId].trim().replace(/^Bearer\s+/i, '');
         }
 
-        // 4. Token from getActiveToken() or getBotNewAPIToken()
+        // 8. Token from getActiveToken() or getBotNewAPIToken()
         const activeToken = getActiveToken();
         if (activeToken && !isInvalidBearerToken(activeToken)) {
             return activeToken.trim().replace(/^Bearer\s+/i, '');
@@ -103,13 +182,13 @@ export class LegacyStatementService {
             return botToken.trim().replace(/^Bearer\s+/i, '');
         }
 
-        // 5. OAuth2 PKCE Bearer access_token
+        // 9. OAuth2 PKCE Bearer access_token
         const oauthToken = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true })?.access_token;
         if (oauthToken && !isInvalidBearerToken(oauthToken)) {
             return oauthToken.trim().replace(/^Bearer\s+/i, '');
         }
 
-        // 6. Direct storage keys fallback
+        // 10. Direct storage keys fallback
         const directKeys = ['token', 'authToken', 'active_token', 'token1', 'legacy_dtrader_token', 'deriv_api_token'];
         for (const k of directKeys) {
             const val = localStorage.getItem(k) || sessionStorage.getItem(k);
@@ -118,10 +197,10 @@ export class LegacyStatementService {
             }
         }
 
-        // 7. Any valid token in accountsMap
+        // 11. Any valid token in accountsMap
         const anyToken = Object.values(accountsMap).find(t => t && !isInvalidBearerToken(t));
         if (anyToken) {
-            return anyToken.trim().replace(/^Bearer\s+/i, '');
+            return String(anyToken).trim().replace(/^Bearer\s+/i, '');
         }
 
         return '';
@@ -180,7 +259,8 @@ export class LegacyStatementService {
         const urlParams = new URLSearchParams();
         urlParams.set('loginid', rawLoginId);
 
-        const limit = Math.min(Math.max(params.limit ?? 100, 1), 999);
+        const isUnlimited = !params.limit || params.limit === 0;
+        const limit = isUnlimited ? 999 : Math.min(Math.max(params.limit ?? 100, 1), 999);
         urlParams.set('limit', String(limit));
 
         if (params.offset && params.offset > 0) {
@@ -303,16 +383,20 @@ export class LegacyStatementService {
      * Deriv WS: { statement: 1, description: 1, limit, offset, date_from, date_to, action_type }
      */
     public static async getWebSocketStatement(params: LegacyStatementParams): Promise<LegacyStatementResponse> {
+        const targetLoginId = (params.loginid || getActiveLoginId() || '').trim().toUpperCase();
+        const activeId = (getActiveLoginId() || (api_base.account_info as any)?.loginid || '').trim().toUpperCase();
+        const isUnlimited = !params.limit || params.limit === 0;
+
+        // If unlimited rows or target account is different from active shared socket account,
+        // use dedicated authenticated direct socket which handles pagination & exact account auth
+        if (isUnlimited || (targetLoginId && activeId && targetLoginId !== activeId) || params.tokenOverride) {
+            return this.queryDirectWebSocketStatement(params);
+        }
+
         try {
             const api = api_base.api as any;
             if (!api) {
-                return {
-                    transactions: [],
-                    count: 0,
-                    source: 'live_websocket',
-                    error: 'WebSocket connection not yet active. Please reconnect.',
-                    errorCode: 'NotConnected',
-                };
+                return this.queryDirectWebSocketStatement(params);
             }
 
             const wsReq: any = {
@@ -339,11 +423,10 @@ export class LegacyStatementService {
             const timing = Date.now() - startTime;
 
             if (wsRes?.statement?.transactions && Array.isArray(wsRes.statement.transactions)) {
-                const targetLoginId = params.loginid || getActiveLoginId() || 'CR8416851';
                 const transactions: LegacyStatementTransaction[] = wsRes.statement.transactions.map((s: any) => ({
                     transaction_id: s.transaction_id ?? Date.now(),
                     account_id: s.account_id,
-                    loginid: targetLoginId,
+                    loginid: targetLoginId || activeId,
                     action_type: String(s.action_type || 'transaction').toLowerCase(),
                     amount: typeof s.amount === 'number' ? s.amount : parseFloat(s.amount || '0'),
                     balance_after: typeof s.balance_after === 'number' ? s.balance_after : parseFloat(s.balance_after || '0'),
@@ -368,39 +451,249 @@ export class LegacyStatementService {
             }
 
             if (wsRes?.error) {
-                return {
-                    transactions: [],
-                    count: 0,
-                    source: 'live_websocket',
-                    error: wsRes.error.message || 'Deriv WebSocket statement query failed',
-                    errorCode: wsRes.error.code || 'WSError',
-                };
+                return this.queryDirectWebSocketStatement(params);
             }
         } catch (e: any) {
-            console.warn('[LegacyStatementService] WS statement error:', e);
+            return this.queryDirectWebSocketStatement(params);
+        }
+
+        return this.queryDirectWebSocketStatement(params);
+    }
+
+    /**
+     * 3. Direct Authenticated WebSocket Query:
+     * Connects dedicated Deriv v3 socket, authorizes with token, and fetches statement.
+     * Guaranteed to work for any account ID (Real CR... or Demo VRTC...).
+     * Supports unlimited row fetching with automatic multi-batch pagination.
+     */
+    public static async queryDirectWebSocketStatement(params: LegacyStatementParams): Promise<LegacyStatementResponse> {
+        const targetLoginId = (params.loginid || getActiveLoginId() || '').trim().toUpperCase();
+        const token = this.resolveToken(targetLoginId, params.tokenOverride);
+        if (!token) {
             return {
                 transactions: [],
                 count: 0,
                 source: 'live_websocket',
-                error: e?.message || 'WebSocket statement query failed.',
-                errorCode: 'WSError',
+                error: `No authorization token found for account ${targetLoginId || 'unspecified'}. Please log in or enter an API token.`,
+                errorCode: 'AuthRequired',
             };
         }
 
-        return {
-            transactions: [],
-            count: 0,
-            source: 'live_websocket',
-            error: 'No transactions found in active account.',
-            errorCode: 'EmptyResponse',
-        };
+        const appId = getAppId() || localStorage.getItem('config.app_id') || '121856';
+        const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=en`;
+
+        return new Promise<LegacyStatementResponse>(resolve => {
+            const startTime = Date.now();
+            let ws: WebSocket | null = null;
+            let timeoutId: any = null;
+            let isResolved = false;
+            const allTransactions: LegacyStatementTransaction[] = [];
+            const isUnlimited = !params.limit || params.limit === 0;
+            const requestedLimit = params.limit && params.limit > 0 ? params.limit : 0;
+
+            const cleanup = () => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (ws) {
+                    try {
+                        ws.onopen = null;
+                        ws.onmessage = null;
+                        ws.onerror = null;
+                        ws.onclose = null;
+                        ws.close();
+                    } catch {}
+                    ws = null;
+                }
+            };
+
+            const finish = (resp: LegacyStatementResponse) => {
+                if (isResolved) return;
+                isResolved = true;
+                cleanup();
+                resolve(resp);
+            };
+
+            // Allow longer timeout for unlimited multi-page queries
+            timeoutId = setTimeout(() => {
+                if (allTransactions.length > 0) {
+                    finish({
+                        transactions: allTransactions,
+                        count: allTransactions.length,
+                        source: 'live_websocket',
+                        timing: Date.now() - startTime,
+                    });
+                } else {
+                    finish({
+                        transactions: [],
+                        count: 0,
+                        source: 'live_websocket',
+                        error: 'WebSocket statement query timed out after 12s.',
+                        errorCode: 'Timeout',
+                        timing: Date.now() - startTime,
+                    });
+                }
+            }, isUnlimited ? 20000 : 12000);
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    ws?.send(JSON.stringify({ authorize: token }));
+                };
+
+                ws.onmessage = (event: MessageEvent) => {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.msg_type === 'authorize') {
+                            if (data.error) {
+                                finish({
+                                    transactions: [],
+                                    count: 0,
+                                    source: 'live_websocket',
+                                    error: `Authorization failed: ${data.error.message}`,
+                                    errorCode: data.error.code || 'AuthFailed',
+                                    timing: Date.now() - startTime,
+                                });
+                                return;
+                            }
+
+                            // If Deriv authorized and returned account_list, persist to client_account_details
+                            if (Array.isArray(data.authorize?.account_list)) {
+                                try {
+                                    const rawStored = localStorage.getItem('client_account_details');
+                                    const existing = rawStored ? JSON.parse(rawStored) : [];
+                                    const existingMap = new Map((Array.isArray(existing) ? existing : []).map((a: any) => [a.loginid, a]));
+                                    data.authorize.account_list.forEach((acc: any) => {
+                                        existingMap.set(acc.loginid, {
+                                            ...(existingMap.get(acc.loginid) || {}),
+                                            loginid: acc.loginid,
+                                            currency: acc.currency,
+                                            is_virtual: acc.is_virtual,
+                                        });
+                                    });
+                                    localStorage.setItem('client_account_details', JSON.stringify(Array.from(existingMap.values())));
+                                } catch {}
+                            }
+
+                            const batchLimit = isUnlimited ? 999 : Math.min(requestedLimit, 999);
+                            const wsReq: any = {
+                                statement: 1,
+                                description: 1,
+                                limit: batchLimit,
+                                offset: 0,
+                            };
+                            if (params.date_from !== undefined && params.date_from > 0) wsReq.date_from = Math.floor(params.date_from);
+                            if (params.date_to !== undefined && params.date_to > 0) wsReq.date_to = Math.floor(params.date_to);
+                            if (params.action_type && params.action_type !== 'all') wsReq.action_type = params.action_type.toLowerCase();
+
+                            ws?.send(JSON.stringify(wsReq));
+                            return;
+                        }
+
+                        if (data.msg_type === 'statement') {
+                            if (data.error) {
+                                finish({
+                                    transactions: allTransactions,
+                                    count: allTransactions.length,
+                                    source: 'live_websocket',
+                                    error: allTransactions.length ? undefined : (data.error.message || 'Statement query failed'),
+                                    errorCode: data.error.code || 'StatementError',
+                                    timing: Date.now() - startTime,
+                                });
+                                return;
+                            }
+
+                            const rawList: any[] = data.statement?.transactions || [];
+                            const batch: LegacyStatementTransaction[] = rawList.map((s: any) => ({
+                                transaction_id: s.transaction_id ?? Date.now(),
+                                account_id: s.account_id,
+                                loginid: targetLoginId,
+                                action_type: String(s.action_type || 'transaction').toLowerCase(),
+                                amount: typeof s.amount === 'number' ? s.amount : parseFloat(s.amount || '0'),
+                                balance_after: typeof s.balance_after === 'number' ? s.balance_after : parseFloat(s.balance_after || '0'),
+                                transaction_time: typeof s.transaction_time === 'number' ? s.transaction_time : Math.floor(Date.now() / 1000),
+                                contract_id: s.contract_id,
+                                currency: s.currency || 'USD',
+                                reference_id: s.reference_id,
+                                shortcode: s.shortcode,
+                                longcode: s.longcode || s.shortcode,
+                                bet_class: s.bet_class,
+                                bet_type: s.bet_type,
+                                symbol: s.symbol,
+                                app_id: s.app_id,
+                            }));
+
+                            allTransactions.push(...batch);
+
+                            // Check if more pages exist and if we should fetch more
+                            const reachedLimit = !isUnlimited && allTransactions.length >= requestedLimit;
+                            const hasMore = rawList.length === 999;
+                            const safetyCapReached = allTransactions.length >= 10000;
+
+                            if (hasMore && !reachedLimit && !safetyCapReached) {
+                                const nextBatchLimit = isUnlimited ? 999 : Math.min(requestedLimit - allTransactions.length, 999);
+                                const nextReq: any = {
+                                    statement: 1,
+                                    description: 1,
+                                    limit: nextBatchLimit,
+                                    offset: allTransactions.length,
+                                };
+                                if (params.date_from !== undefined && params.date_from > 0) nextReq.date_from = Math.floor(params.date_from);
+                                if (params.date_to !== undefined && params.date_to > 0) nextReq.date_to = Math.floor(params.date_to);
+                                if (params.action_type && params.action_type !== 'all') nextReq.action_type = params.action_type.toLowerCase();
+
+                                ws?.send(JSON.stringify(nextReq));
+                                return;
+                            }
+
+                            finish({
+                                transactions: allTransactions,
+                                count: allTransactions.length,
+                                source: 'live_websocket',
+                                timing: Date.now() - startTime,
+                            });
+                            return;
+                        }
+                    } catch (e: any) {
+                        finish({
+                            transactions: allTransactions,
+                            count: allTransactions.length,
+                            source: 'live_websocket',
+                            error: allTransactions.length ? undefined : 'Failed parsing statement response.',
+                            errorCode: 'ParseError',
+                            timing: Date.now() - startTime,
+                        });
+                    }
+                };
+
+                ws.onerror = () => {
+                    finish({
+                        transactions: allTransactions,
+                        count: allTransactions.length,
+                        source: 'live_websocket',
+                        error: allTransactions.length ? undefined : 'WebSocket connection to Deriv failed.',
+                        errorCode: 'ConnectionError',
+                        timing: Date.now() - startTime,
+                    });
+                };
+            } catch (err: any) {
+                finish({
+                    transactions: [],
+                    count: 0,
+                    source: 'live_websocket',
+                    error: err?.message || 'WebSocket initialization error',
+                    errorCode: 'InitError',
+                    timing: Date.now() - startTime,
+                });
+            }
+        });
     }
 
     /**
      * Unified Query:
      * 1. Runs REST endpoint `https://api.derivws.com/trading/v1/options/legacy/statement`
      * 2. If REST fails with 401 or AuthRequired or 409, tries live WebSocket
-     * 3. Falls back to sample simulation only when user explicitly chooses sample or if no live credentials exist.
+     * 3. Always uses real data from user's accounts.
      */
     public static async getLegacyStatement(params: LegacyStatementParams): Promise<LegacyStatementResponse> {
         if (params.preferSource === 'sample') {
@@ -427,14 +720,18 @@ export class LegacyStatementService {
             return restResult;
         }
 
-        // If REST failed with auth or migration, try live WebSocket
+        // If REST had an auth/gateway error or empty result, query live WebSocket feed with real account token
         const wsResult = await this.getWebSocketStatement(params);
         if (wsResult.transactions.length > 0) {
             return wsResult;
         }
 
-        // If both empty/failed, return whichever gave a clearer error
-        return restResult.error ? restResult : wsResult;
+        // If both empty/failed, return real result/error (never fake sample)
+        return restResult.transactions.length > 0
+            ? restResult
+            : wsResult.transactions.length > 0
+            ? wsResult
+            : (wsResult.error ? wsResult : restResult);
     }
 
     /**

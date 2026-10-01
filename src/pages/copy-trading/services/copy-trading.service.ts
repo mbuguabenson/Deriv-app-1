@@ -41,6 +41,7 @@ export interface CopierAccount {
     last_trade_time?: string;
     last_trade_status?: 'idle' | 'success' | 'failed' | 'skipped';
     last_error?: string;
+    cooldown_until?: number;
 }
 
 export interface CopierTradeLog {
@@ -402,6 +403,11 @@ class CopyTradingEngine {
     private async initiateSocketConnection(conn: CopierSocketConnection): Promise<void> {
         if (!conn || !conn.account) return;
 
+        // Skip if account is in auth failure cooldown
+        if (conn.account.cooldown_until && Date.now() < conn.account.cooldown_until) {
+            return;
+        }
+
         // Clear any pending reconnect timers
         if (conn.reconnectTimeout) {
             clearTimeout(conn.reconnectTimeout);
@@ -464,10 +470,13 @@ class CopyTradingEngine {
                         if (data.error) {
                             console.warn(`[CopierSocketPool] Auth failed for ${conn.loginid}:`, data.error.message);
                             conn.isReady = false;
+                            conn.account.cooldown_until = Date.now() + 180000; // 3 min backoff on auth rejection
+                            conn.account.last_error = data.error.message;
                             return;
                         }
 
                         conn.isReady = true;
+                        conn.account.cooldown_until = undefined;
                         if (data.authorize?.currency) {
                             conn.account.currency = data.authorize.currency;
                         }
@@ -544,13 +553,17 @@ class CopyTradingEngine {
 
     private scheduleReconnect(conn: CopierSocketConnection): void {
         if (conn.reconnectTimeout) return;
+        const currentAcc = this.accounts.find(a => a.loginid === conn.loginid);
+        if (currentAcc && currentAcc.cooldown_until && Date.now() < currentAcc.cooldown_until) {
+            return;
+        }
         conn.reconnectTimeout = setTimeout(() => {
             conn.reconnectTimeout = null;
-            const currentAcc = this.accounts.find(a => a.loginid === conn.loginid);
-            if (currentAcc && currentAcc.is_active) {
+            const acc = this.accounts.find(a => a.loginid === conn.loginid);
+            if (acc && acc.is_active && (!acc.cooldown_until || Date.now() >= acc.cooldown_until)) {
                 this.initiateSocketConnection(conn);
             }
-        }, 2500);
+        }, 3500);
     }
 
     private rejectAllPendingRequests(conn: CopierSocketConnection, reason: string): void {
@@ -1368,6 +1381,11 @@ class CopyTradingEngine {
         // Execute concurrently on all active follower accounts using Promise.allSettled for non-blocking resilience
         await Promise.allSettled(
             activeCopiers.map(async account => {
+                // Skip follower if in auth failure cooldown to prevent thread locking
+                if (account.cooldown_until && Date.now() < account.cooldown_until) {
+                    return;
+                }
+
                 // Safety Guard: Check Demo-to-Real protection
                 if (isMasterVirtual && !account.is_virtual) {
                     const isAllowed = Boolean(this.masterConfig.allow_demo_to_real || account.allow_demo_to_real);
@@ -1438,6 +1456,7 @@ class CopyTradingEngine {
                         logEntry.contract_id = result.contract_id;
                         account.last_trade_status = 'success';
                         account.last_trade_time = timestamp;
+                        account.cooldown_until = undefined;
                         account.total_copied_trades = (account.total_copied_trades || 0) + 1;
                         if (typeof result.balance_after === 'number') {
                             account.balance = result.balance_after;
@@ -1449,6 +1468,10 @@ class CopyTradingEngine {
                         account.last_trade_status = 'failed';
                         account.last_trade_time = timestamp;
                         console.error(`[CopyTrading] Failed replicating to ${account.loginid}:`, result.error);
+                        if (String(result.error || '').toLowerCase().includes('auth') || String(result.error || '').includes('401')) {
+                            account.cooldown_until = Date.now() + 60000;
+                            console.warn(`[CopyTrading] Account ${account.loginid} auth failed. Pausing replication for 60s.`);
+                        }
                     }
                 } catch (err: any) {
                     logEntry.status = 'failed';
@@ -1456,6 +1479,9 @@ class CopyTradingEngine {
                     account.last_trade_status = 'failed';
                     account.last_trade_time = timestamp;
                     console.error(`[CopyTrading] Error replicating to ${account.loginid}:`, err);
+                    if (String(err?.message || '').toLowerCase().includes('auth') || String(err?.message || '').includes('401')) {
+                        account.cooldown_until = Date.now() + 60000;
+                    }
                 }
 
                 logs.push(logEntry);
@@ -1578,12 +1604,16 @@ class CopyTradingEngine {
         }
 
         // Path 2: FALLBACK EXECUTION (Cold socket / reconnecting)
-        const isNewApi =
-            (account.token && (account.token.startsWith('pat_') || account.token.startsWith('PAT_') || account.token.startsWith('ey'))) ||
-            (account.loginid && (account.loginid.startsWith('DOT') || account.loginid.startsWith('dot')));
+        const isNewApi = Boolean(
+            account.token &&
+            (account.token.startsWith('pat_') || account.token.startsWith('PAT_') || account.token.startsWith('ey')) &&
+            !account.loginid.startsWith('DOT')
+        );
 
         if (isNewApi) {
-            return this.executeTradeOnNewApiAccount(account, trade, stake);
+            const newRes = await this.executeTradeOnNewApiAccount(account, trade, stake);
+            if (newRes.success) return newRes;
+            console.warn(`[CopyTrading] New API execution failed for ${account.loginid}, falling back to WebSocket:`, newRes.error);
         }
 
         const appIdsToTry = Array.from(
