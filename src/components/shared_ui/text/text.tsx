@@ -6,6 +6,7 @@ type TTextProps = Omit<HTMLProps<HTMLElement>, 'size'> & {
     align?: string;
     weight?: string;
     lineHeight?: string;
+    line_height?: string;
     styles?: CSSProperties;
     size?: string;
 };
@@ -17,15 +18,17 @@ const Text = ({
     align = 'left',
     weight = 'normal',
     lineHeight = 'm',
+    line_height,
     as,
     className,
     styles,
     ...props
 }: TTextProps) => {
+    const effectiveLineHeight = line_height || lineHeight || 'm';
     const class_styles = {
         '--text-size': `var(--text-size-${size})`,
         '--text-color': `var(--text-${color})`,
-        '--text-lh': `var(--text-lh-${lineHeight})`,
+        '--text-lh': `var(--text-lh-${effectiveLineHeight})`,
         '--text-weight': `var(--text-weight-${weight})`,
         '--text-align': `var(--text-align-${align})`,
     };

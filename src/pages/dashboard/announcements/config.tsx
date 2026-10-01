@@ -217,7 +217,7 @@ export const ANNOUNCEMENTS: Record<string, TAnnouncement> = {
 
 export type TAnnouncementItem = {
     id: string;
-    icon: React.ReactElement;
+    icon: React.ComponentType<{ announce: boolean }> | any;
     title: string;
     message: string;
     date: string;
@@ -226,7 +226,8 @@ export type TAnnouncementItem = {
 };
 
 export type TNotifications = {
-    key: string;
+    id: string;
+    key?: string;
     icon: React.ReactNode;
     title: React.ReactNode;
     message: React.ReactNode;

@@ -104,14 +104,16 @@ const Announcements = observer(({ is_mobile, is_tablet, handleTabChange }: TAnno
             }
             const notificationDate = new Date(item.date);
             if (!accountDate || notificationDate > accountDate) {
+                const IconComponent = item.icon as React.ComponentType<{ announce: boolean }>;
                 tmp_notifications.push({
                     id: item.id,
-                    icon: <item.icon announce={is_not_read} />,
+                    key: item.id,
+                    icon: <IconComponent announce={is_not_read} />,
                     title: <TitleAnnounce title={item.title} announce={is_not_read} />,
                     message: <MessageAnnounce message={item.message} date={item.date} announce={is_not_read} />,
                     buttonAction: performButtonAction(item, modalButtonAction, handleRedirect),
                     actionText: item.actionText,
-                } as any);
+                });
                 temp_localstorage_data[item.id] = is_not_read;
             }
         });
@@ -190,7 +192,7 @@ const Announcements = observer(({ is_mobile, is_tablet, handleTabChange }: TAnno
             >
                 <StandaloneBullhornRegularIcon fill='var(--icon-black-plus)' iconSize='sm' />
                 {!is_mobile && (
-                    <Text size='xs' line_height='s' className={action_button_class_name}>
+                    <Text size='xs' lineHeight='s' className={action_button_class_name}>
                         {localize('Announcements')}
                     </Text>
                 )}
