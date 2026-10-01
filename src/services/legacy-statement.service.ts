@@ -61,7 +61,28 @@ export interface LegacyStatementResponse {
     rawStatus?: number;
 }
 
+export interface LegacyAccountItem {
+    account_id: number | string;
+    currency: string;
+}
+
+export interface LegacyAccountsResponse {
+    loginids?: Record<string, LegacyAccountItem[]>;
+    error?: string;
+    errorCode?: string;
+    rawStatus?: number;
+}
+
+export interface LegacyMigrationStatusResponse {
+    status?: 'complete' | 'pending' | 'failed' | 'not_applicable' | string;
+    error?: string;
+    errorCode?: string;
+    rawStatus?: number;
+}
+
 const LEGACY_STATEMENT_ENDPOINT = 'https://api.derivws.com/trading/v1/options/legacy/statement';
+const LEGACY_ACCOUNTS_ENDPOINT = 'https://api.derivws.com/trading/v1/options/legacy/accounts';
+const LEGACY_MIGRATION_STATUS_ENDPOINT = 'https://api.derivws.com/trading/v1/options/legacy/migration-status';
 const MAX_EPOCH_2038 = 2147483647;
 
 export class LegacyStatementService {
@@ -220,8 +241,20 @@ export class LegacyStatementService {
             'Deriv-App-ID': String(appId),
         };
 
-        if (token) {
-            const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
+        // For REST https://api.derivws.com/trading/v1/options/legacy/statement,
+        // it requires an OAuth 2.0 PKCE access_token (JWT format).
+        // If the provided token is not a JWT, check if OAuthTokenExchangeService has a valid JWT access_token.
+        let restToken = token;
+        const isJwt = (t?: string) => Boolean(t && t.split('.').length === 3);
+        if (!isJwt(restToken)) {
+            const oauthInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
+            if (oauthInfo?.access_token && isJwt(oauthInfo.access_token)) {
+                restToken = oauthInfo.access_token;
+            }
+        }
+
+        if (restToken) {
+            const cleanToken = restToken.replace(/^Bearer\s+/i, '').trim();
             headers['Authorization'] = `Bearer ${cleanToken}`;
         }
 
@@ -229,11 +262,102 @@ export class LegacyStatementService {
     }
 
     /**
+     * Checks the migration status of the user's account on the Deriv Legacy options platform:
+     * GET https://api.derivws.com/trading/v1/options/legacy/migration-status
+     * Status can be: 'complete' | 'pending' | 'failed' | 'not_applicable'
+     */
+    public static async getMigrationStatus(tokenOverride?: string): Promise<LegacyMigrationStatusResponse> {
+        const token = this.resolveToken(undefined, tokenOverride);
+        if (!token) {
+            return {
+                error: 'Deriv API Token required to check migration status.',
+                errorCode: 'AuthRequired',
+            };
+        }
+
+        try {
+            const headers = this.getHeaders(token);
+            const res = await fetch(LEGACY_MIGRATION_STATUS_ENDPOINT, {
+                method: 'GET',
+                headers,
+            });
+
+            const data = await res.json().catch(() => null);
+
+            if (res.ok && data?.status) {
+                return {
+                    status: data.status,
+                    rawStatus: res.status,
+                };
+            }
+
+            const apiError = data?.errors?.[0];
+            return {
+                status: data?.status,
+                error: apiError?.message || data?.message || (res.status === 409 ? 'User migration is pending or has failed' : `HTTP ${res.status}`),
+                errorCode: apiError?.code || (res.status === 409 ? 'MigrationPending' : `HTTP_${res.status}`),
+                rawStatus: res.status,
+            };
+        } catch (e: any) {
+            console.warn('[LegacyStatementService] getMigrationStatus error:', e);
+            return {
+                error: e?.message || 'Failed to check legacy migration status',
+                errorCode: 'NetworkError',
+            };
+        }
+    }
+
+    /**
+     * Fetches user's legacy options accounts from Deriv Legacy options platform:
+     * GET https://api.derivws.com/trading/v1/options/legacy/accounts
+     * Returns: { loginids: { "CR90000123": [{ account_id: 123, currency: "USD" }] } }
+     */
+    public static async getLegacyAccounts(tokenOverride?: string): Promise<LegacyAccountsResponse> {
+        const token = this.resolveToken(undefined, tokenOverride);
+        if (!token) {
+            return {
+                error: 'Deriv API Token required to fetch legacy accounts.',
+                errorCode: 'AuthRequired',
+            };
+        }
+
+        try {
+            const headers = this.getHeaders(token);
+            const res = await fetch(LEGACY_ACCOUNTS_ENDPOINT, {
+                method: 'GET',
+                headers,
+            });
+
+            const data = await res.json().catch(() => null);
+
+            if (res.ok && data?.loginids) {
+                return {
+                    loginids: data.loginids,
+                    rawStatus: res.status,
+                };
+            }
+
+            const apiError = data?.errors?.[0];
+            return {
+                error: apiError?.message || data?.message || (res.status === 404 ? 'No legacy account mapping found' : `HTTP ${res.status}`),
+                errorCode: apiError?.code || (res.status === 404 ? 'NotFound' : res.status === 409 ? 'MigrationPending' : `HTTP_${res.status}`),
+                rawStatus: res.status,
+            };
+        } catch (e: any) {
+            console.warn('[LegacyStatementService] getLegacyAccounts error:', e);
+            return {
+                error: e?.message || 'Failed to fetch legacy accounts',
+                errorCode: 'NetworkError',
+            };
+        }
+    }
+
+    /**
      * 1. Direct Real REST API Call:
      * GET https://api.derivws.com/trading/v1/options/legacy/statement
      */
     public static async getRestStatement(params: LegacyStatementParams): Promise<LegacyStatementResponse> {
-        const rawLoginId = (params.loginid || getActiveLoginId() || 'CR8416851').trim().toUpperCase();
+        const rawLoginId = (params.loginid || getActiveLoginId() || '').trim().toUpperCase();
 
         if (!/^[A-Z]+[0-9]+$/.test(rawLoginId)) {
             return {
@@ -267,7 +391,7 @@ export class LegacyStatementService {
             urlParams.set('offset', String(params.offset));
         }
 
-        if (params.date_from !== undefined && params.date_from >= 0) {
+        if (params.date_from !== undefined && params.date_from > 0) {
             const clampedFrom = Math.min(Math.floor(params.date_from), MAX_EPOCH_2038);
             urlParams.set('date_from', String(clampedFrom));
         }
@@ -777,15 +901,13 @@ export class LegacyStatementService {
             return wsResult;
         }
 
-        // Priority 2: If WebSocket had an error or empty result, check REST
-        if (wsResult.error) {
-            const restResult = await this.getRestStatement(params);
-            if (restResult.transactions.length > 0) {
-                return restResult;
-            }
+        // Priority 2: Also check the Deriv Legacy REST API (historical legacy statement database)
+        const restResult = await this.getRestStatement(params);
+        if (restResult.transactions.length > 0) {
+            return restResult;
         }
 
         // Return real result with real data or specific error (never simulated sample data)
-        return wsResult;
+        return !wsResult.error ? wsResult : !restResult.error ? restResult : wsResult;
     }
 }

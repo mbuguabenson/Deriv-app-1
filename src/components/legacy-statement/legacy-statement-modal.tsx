@@ -46,6 +46,12 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
     const { accountList, activeLoginid } = useApiBase();
     const { client } = useStore() ?? {};
 
+    // Server-verified legacy accounts and migration status per https://developers.deriv.com/docs/options-legacy/
+    const [serverLegacyAccounts, setServerLegacyAccounts] = useState<
+        Array<{ loginid: string; currency: string; is_virtual: boolean }>
+    >([]);
+    const [migrationStatus, setMigrationStatus] = useState<string | null>(null);
+
     // Comprehensive discovery of ALL user accounts from all storage & store sources
     const { realAccounts, demoAccounts, allAccounts } = useMemo(() => {
         const list: Array<{ loginid: string; currency: string; is_virtual: boolean }> = [];
@@ -56,15 +62,16 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             const clean = id.trim().toUpperCase();
             if (!clean || clean === 'DEFAULT' || clean === 'NULL' || clean === 'UNDEFINED') return;
 
-            // Validate account prefix
-            if (!/^[A-Z]{2,4}[0-9]+$/i.test(clean) && !clean.startsWith('DOT')) {
+            // Strict Legacy Options accounts ONLY: CR accounts, ROT accounts, and DOT accounts
+            const isCR = clean.startsWith('CR') && !clean.startsWith('CRW');
+            const isROT = clean.startsWith('ROT');
+            const isDOT = clean.startsWith('DOT');
+
+            if (!isCR && !isROT && !isDOT) {
                 return;
             }
 
-            const isVirt =
-                virtual !== undefined
-                    ? Boolean(virtual)
-                    : clean.startsWith('VR') || clean.startsWith('VRT') || clean.startsWith('DOT') || isDemoAccount(clean);
+            const isVirt = isDOT || (virtual !== undefined ? Boolean(virtual) : false);
 
             const existing = list.find(a => a.loginid === clean);
             if (existing) {
@@ -80,6 +87,9 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 is_virtual: isVirt,
             });
         };
+
+        // 0. Server-discovered legacy accounts from GET /trading/v1/options/legacy/accounts
+        serverLegacyAccounts.forEach(acc => add(acc.loginid, acc.currency, acc.is_virtual));
 
         // 1. Client Store account_list
         if (client?.account_list && Array.isArray(client.account_list)) {
@@ -204,11 +214,15 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                 sessionStorage.getItem('active_loginid');
             if (active) add(active, client?.currency);
 
-            // 13. Deep scan of all localStorage keys for any CR accounts
+            // 13. Deep scan of all localStorage keys for any CR, ROT, or DOT accounts
             try {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
-                    if (key && /^[A-Z]{2,4}[0-9]+$/i.test(key)) {
+                    if (
+                        key &&
+                        (/^CR[0-9]+$/i.test(key) || /^ROT[0-9]+$/i.test(key) || /^DOT[0-9]+$/i.test(key)) &&
+                        !key.toUpperCase().startsWith('CRW')
+                    ) {
                         add(key);
                     }
                 }
@@ -228,30 +242,25 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             demoAccounts: demo,
             allAccounts: [...real, ...demo],
         };
-    }, [client?.account_list, client?.accounts, client?.currency, accountList, activeLoginid]);
+    }, [client?.account_list, client?.accounts, client?.currency, accountList, activeLoginid, serverLegacyAccounts]);
 
-    // Target login ID (defaults to active user account, first real account, or first discovered account)
+    const isLegacyId = (id?: string | null): boolean => {
+        if (!id) return false;
+        const c = id.trim().toUpperCase();
+        return (c.startsWith('CR') && !c.startsWith('CRW')) || c.startsWith('ROT') || c.startsWith('DOT');
+    };
+
+    // Target login ID strictly defaults to an active CR/ROT/DOT account, or first discovered legacy account
     const [loginIdInput, setLoginIdInput] = useState<string>(() => {
-        return (
+        const active = (
             initialLoginId ||
             activeLoginid ||
             localStorage.getItem('active_loginid') ||
             client?.loginid ||
             ''
-        );
+        ).trim().toUpperCase();
+        return isLegacyId(active) ? active : '';
     });
-
-
-    // Auto-select real account or active account when discovered
-    useEffect(() => {
-        if (!loginIdInput && allAccounts.length > 0) {
-            const activeId = activeLoginid || localStorage.getItem('active_loginid') || client?.loginid;
-            const match = allAccounts.find(a => a.loginid === activeId) || realAccounts[0] || allAccounts[0];
-            if (match && match.loginid !== loginIdInput) {
-                setLoginIdInput(match.loginid);
-            }
-        }
-    }, [allAccounts, realAccounts, loginIdInput, activeLoginid, client?.loginid]);
 
     const [transactions, setTransactions] = useState<LegacyStatementTransaction[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -367,6 +376,25 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         [loginIdInput, allAccounts, activeLoginid, dateFrom, dateTo, actionFilter, limit, preferSource, patTokenInput]
     );
 
+    // Auto-select legacy CR, ROT, or DOT account when discovered
+    useEffect(() => {
+        if (allAccounts.length > 0) {
+            const currentValid = isLegacyId(loginIdInput) && allAccounts.some(a => a.loginid === loginIdInput);
+            if (!currentValid) {
+                const activeId = (activeLoginid || localStorage.getItem('active_loginid') || client?.loginid || '').trim().toUpperCase();
+                const match =
+                    (isLegacyId(activeId) && allAccounts.find(a => a.loginid === activeId)) ||
+                    realAccounts[0] ||
+                    demoAccounts[0] ||
+                    allAccounts[0];
+                if (match && match.loginid !== loginIdInput) {
+                    setLoginIdInput(match.loginid);
+                    loadStatementData(match.loginid);
+                }
+            }
+        }
+    }, [allAccounts, realAccounts, demoAccounts, loginIdInput, activeLoginid, client?.loginid, loadStatementData]);
+
     const handleSaveTokenAndConnect = (e?: React.FormEvent) => {
         e?.preventDefault();
         const clean = patTokenInput.trim();
@@ -384,6 +412,55 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
             loadStatementData();
         }
     }, [isOpen, loadStatementData]);
+
+    // Query migration status and server legacy accounts per https://developers.deriv.com/docs/options-legacy/
+    useEffect(() => {
+        if (!isOpen) return;
+
+        let isMounted = true;
+        const token = patTokenInput.trim() || undefined;
+
+        LegacyStatementService.getMigrationStatus(token)
+            .then(res => {
+                if (!isMounted) return;
+                if (res.status) {
+                    setMigrationStatus(res.status);
+                } else if (res.errorCode === 'MigrationPending' || res.rawStatus === 409) {
+                    setMigrationStatus('pending');
+                }
+            })
+            .catch(() => {});
+
+        LegacyStatementService.getLegacyAccounts(token)
+            .then(res => {
+                if (!isMounted) return;
+                if (res.loginids && typeof res.loginids === 'object') {
+                    const discovered: Array<{ loginid: string; currency: string; is_virtual: boolean }> = [];
+                    Object.entries(res.loginids).forEach(([id, items]) => {
+                        const clean = id.trim().toUpperCase();
+                        const isCR = clean.startsWith('CR') && !clean.startsWith('CRW');
+                        const isROT = clean.startsWith('ROT');
+                        const isDOT = clean.startsWith('DOT');
+                        if (isCR || isROT || isDOT) {
+                            const curr = Array.isArray(items) && items[0]?.currency ? items[0].currency : 'USD';
+                            discovered.push({
+                                loginid: clean,
+                                currency: curr,
+                                is_virtual: isDOT,
+                            });
+                        }
+                    });
+                    if (discovered.length > 0) {
+                        setServerLegacyAccounts(discovered);
+                    }
+                }
+            })
+            .catch(() => {});
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isOpen, patTokenInput]);
 
     // Escape key listener
     useEffect(() => {
@@ -594,6 +671,15 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                         <span className='latency-tag'>{fetchLatency}ms</span>
                                     )}
                                 </div>
+                                {migrationStatus && (
+                                    <div
+                                        className={`gateway-status-pill migration-status-${migrationStatus.toLowerCase()}`}
+                                        title='Deriv Platform Upgrade Status (GET /trading/v1/options/legacy/migration-status)'
+                                    >
+                                        <span className='status-dot' />
+                                        <span>Status: {migrationStatus.toUpperCase()}</span>
+                                    </div>
+                                )}
                             </div>
                             <p className='cockpit-desc'>
                                 Institutional Options Statement & Financial Movements prior to migration upgrade &bull; Direct access to api.derivws.com
@@ -608,33 +694,37 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             <select
                                 className='box-select'
                                 value={loginIdInput}
-                                onChange={e => {
+                                onChange={async e => {
                                     const newAcc = e.target.value;
                                     setLoginIdInput(newAcc);
                                     loadStatementData(newAcc);
+                                    try {
+                                        const { AccountSwitcherService } = await import('@/services/account-switcher.service');
+                                        AccountSwitcherService.switchAccount(newAcc).catch(() => {});
+                                    } catch {}
                                 }}
                                 title='Switch account to view statement'
                             >
                                 {realAccounts.length > 0 && (
-                                    <optgroup label='Real Accounts (CR)'>
+                                    <optgroup label='Real Accounts (CR / ROT)'>
                                         {realAccounts.map(acc => (
                                             <option key={acc.loginid} value={acc.loginid}>
-                                                {acc.loginid} ({acc.currency || 'USD'}) — Real
+                                                {acc.loginid} ({acc.currency || 'USD'}) — {acc.loginid.startsWith('ROT') ? 'ROT Real Options' : 'Legacy CR'}
                                             </option>
                                         ))}
                                     </optgroup>
                                 )}
                                 {demoAccounts.length > 0 && (
-                                    <optgroup label='Demo Accounts'>
+                                    <optgroup label='Demo Accounts (DOT)'>
                                         {demoAccounts.map(acc => (
                                             <option key={acc.loginid} value={acc.loginid}>
-                                                {acc.loginid} ({acc.currency || 'USD'}) — Demo
+                                                {acc.loginid} ({acc.currency || 'USD'}) — DOT Demo Options
                                             </option>
                                         ))}
                                     </optgroup>
                                 )}
                                 {allAccounts.length === 0 && (
-                                    <option value={loginIdInput || ''}>{loginIdInput || 'Active Account'}</option>
+                                    <option value={loginIdInput || ''}>{loginIdInput || 'No Legacy Accounts Found'}</option>
                                 )}
                             </select>
                         </div>
