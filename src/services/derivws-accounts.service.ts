@@ -347,7 +347,7 @@ export class DerivWSAccountsService {
 
         const cacheKey = `${accountId}_${(accessToken || '').slice(-8)}`;
         const cachedFailure = this._otpFailureCache.get(cacheKey);
-        if (cachedFailure && Date.now() - cachedFailure.failedAt < 30000) {
+        if (cachedFailure && Date.now() - cachedFailure.failedAt < 3000) {
             throw new Error(cachedFailure.error);
         }
 

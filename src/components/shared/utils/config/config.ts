@@ -1015,10 +1015,29 @@ export const getSocketURL = async (): Promise<string> => {
             }
         }
     } catch (error) {
-        console.warn('[getSocketURL] OTP flow failed, using public market data endpoint:', error);
+        console.warn('[getSocketURL] OTP flow failed or not applicable, checking session credentials:', error);
     }
 
-    // For public market data, use the documented endpoint
+    // If user has active credentials (legacy tokens, account list, or active login id),
+    // use the authenticated Deriv v3 WebSocket endpoint
+    try {
+        const hasLegacySession =
+            !!localStorage.getItem('token1') ||
+            !!localStorage.getItem('authToken') ||
+            !!localStorage.getItem('active_token') ||
+            !!localStorage.getItem('token') ||
+            !!localStorage.getItem('active_loginid') ||
+            !!localStorage.getItem('accountsList') ||
+            !!localStorage.getItem('client.accounts');
+
+        if (hasLegacySession) {
+            const appId = getAppId() || '1089';
+            console.log('[getSocketURL] Using authenticated Deriv v3 WebSocket endpoint for logged-in session, appId:', appId);
+            return `${DERIV_WS_BASE}?app_id=${encodeURIComponent(appId)}&l=en&brand=deriv`;
+        }
+    } catch {}
+
+    // For public market data when user is not logged in, use documented public endpoint
     console.log('[getSocketURL] Using documented Deriv public market data endpoint');
     return DERIV_PUBLIC_WS_BASE;
 };

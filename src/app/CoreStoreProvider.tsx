@@ -140,6 +140,18 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
 
             // Handle auth errors by attempting refresh first, preventing accidental logouts
             if (error?.code === 'DisabledClient' || (error?.code === 'InvalidToken' && msg_type === 'authorize')) {
+                const echoToken = data?.echo_req?.authorize;
+                const activeToken =
+                    localStorage.getItem('authToken') ||
+                    localStorage.getItem('token1') ||
+                    localStorage.getItem('active_token');
+
+                // If error is for a different/background probe token, do not terminate active user session
+                if (echoToken && activeToken && echoToken !== activeToken) {
+                    console.warn('[CoreStoreProvider] Ignoring auth error for secondary/probe token:', echoToken);
+                    return;
+                }
+
                 try {
                     const { OAuthTokenExchangeService } = await import('@/services/oauth-token-exchange.service');
                     const authInfo = OAuthTokenExchangeService.getAuthInfo({ allowExpiredWithRefresh: true });
@@ -160,7 +172,14 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                     // Inside an iframe: avoid disruptive full-window redirects
                     client?.setIsLoggedIn(false);
                 } else if (client?.is_logged_in) {
-                    await client?.logout();
+                    // Only invoke full logout if no valid accounts remain
+                    const rawAccounts = localStorage.getItem('accountsList') || localStorage.getItem('client.accounts');
+                    const hasRemainingAccounts = rawAccounts && Object.keys(JSON.parse(rawAccounts || '{}')).length > 1;
+                    if (!hasRemainingAccounts) {
+                        await client?.logout();
+                    } else {
+                        client?.setIsLoggedIn(false);
+                    }
                 } else {
                     client?.setIsLoggedIn(false);
                 }

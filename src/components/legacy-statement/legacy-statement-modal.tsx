@@ -241,7 +241,6 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
         );
     });
 
-    const [isManualInput, setIsManualInput] = useState<boolean>(false);
 
     // Auto-select real account or active account when discovered
     useEffect(() => {
@@ -256,7 +255,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
 
     const [transactions, setTransactions] = useState<LegacyStatementTransaction[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [activeSource, setActiveSource] = useState<'live_rest' | 'live_websocket' | 'sample_preview'>('live_rest');
+    const [activeSource, setActiveSource] = useState<'live_rest' | 'live_websocket'>('live_websocket');
     const [preferSource, setPreferSource] = useState<'auto' | 'rest' | 'websocket'>('auto');
     const [apiError, setApiError] = useState<{ message: string; code?: string; rawStatus?: number } | null>(null);
     const [fetchLatency, setFetchLatency] = useState<number | undefined>();
@@ -589,9 +588,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                     <span>
                                         {activeSource === 'live_rest'
                                             ? 'Real REST Gateway (200 OK)'
-                                            : activeSource === 'live_websocket'
-                                            ? 'Live WebSocket Feed'
-                                            : 'Sample Simulation'}
+                                            : 'Live WebSocket Feed'}
                                     </span>
                                     {fetchLatency !== undefined && (
                                         <span className='latency-tag'>{fetchLatency}ms</span>
@@ -605,80 +602,41 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                     </div>
 
                     <div className='cockpit-header__right'>
-                        {/* Account Selector & Input */}
+                        {/* Account Selector - Discovered strictly from user's logged-in account */}
                         <div className='account-switcher-box'>
                             <span className='box-label'>Account:</span>
-                            {!isManualInput && allAccounts && allAccounts.length > 0 ? (
-                                <select
-                                    className='box-select'
-                                    value={loginIdInput}
-                                    onChange={e => {
-                                        const newAcc = e.target.value;
-                                        if (newAcc === '__MANUAL__') {
-                                            setIsManualInput(true);
-                                            return;
-                                        }
-                                        setLoginIdInput(newAcc);
-                                        loadStatementData(newAcc);
-                                    }}
-                                    title='Switch account to view statement'
-                                >
-                                    {realAccounts.length > 0 && (
-                                        <optgroup label='Real Accounts (CR)'>
-                                            {realAccounts.map(acc => (
-                                                <option key={acc.loginid} value={acc.loginid}>
-                                                    {acc.loginid} ({acc.currency || 'USD'}) — Real
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    )}
-                                    {demoAccounts.length > 0 && (
-                                        <optgroup label='Demo Accounts'>
-                                            {demoAccounts.map(acc => (
-                                                <option key={acc.loginid} value={acc.loginid}>
-                                                    {acc.loginid} ({acc.currency || 'USD'}) — Demo
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    )}
-                                    <option value='__MANUAL__'>➕ Enter Custom ID...</option>
-                                </select>
-                            ) : (
-                                <div className='manual-account-input-wrap'>
-                                    <input
-                                        type='text'
-                                        className='box-input'
-                                        value={loginIdInput}
-                                        onChange={e => setLoginIdInput(e.target.value.toUpperCase())}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter') {
-                                                loadStatementData(loginIdInput);
-                                            }
-                                        }}
-                                        placeholder='CR...'
-                                        title='Enter Deriv Account ID and press Enter'
-                                        autoFocus
-                                    />
-                                    <button
-                                        type='button'
-                                        className='btn-apply-manual'
-                                        onClick={() => loadStatementData(loginIdInput)}
-                                        title='Query account'
-                                    >
-                                        Go
-                                    </button>
-                                    {allAccounts.length > 0 && (
-                                        <button
-                                            type='button'
-                                            className='btn-cancel-manual'
-                                            onClick={() => setIsManualInput(false)}
-                                            title='Back to account list'
-                                        >
-                                            ✕
-                                        </button>
-                                    )}
-                                </div>
-                            )}
+                            <select
+                                className='box-select'
+                                value={loginIdInput}
+                                onChange={e => {
+                                    const newAcc = e.target.value;
+                                    setLoginIdInput(newAcc);
+                                    loadStatementData(newAcc);
+                                }}
+                                title='Switch account to view statement'
+                            >
+                                {realAccounts.length > 0 && (
+                                    <optgroup label='Real Accounts (CR)'>
+                                        {realAccounts.map(acc => (
+                                            <option key={acc.loginid} value={acc.loginid}>
+                                                {acc.loginid} ({acc.currency || 'USD'}) — Real
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                )}
+                                {demoAccounts.length > 0 && (
+                                    <optgroup label='Demo Accounts'>
+                                        {demoAccounts.map(acc => (
+                                            <option key={acc.loginid} value={acc.loginid}>
+                                                {acc.loginid} ({acc.currency || 'USD'}) — Demo
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                )}
+                                {allAccounts.length === 0 && (
+                                    <option value={loginIdInput || ''}>{loginIdInput || 'Active Account'}</option>
+                                )}
+                            </select>
                         </div>
 
                         {/* Mode Selector Toggle */}
@@ -688,7 +646,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                 className={`mode-btn ${preferSource === 'auto' ? 'active' : ''}`}
                                 onClick={() => {
                                     setPreferSource('auto');
-                                    loadStatementData('auto');
+                                    loadStatementData(undefined, 'auto');
                                 }}
                             >
                                 <Zap size={12} /> Auto
@@ -698,7 +656,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                 className={`mode-btn ${preferSource === 'rest' ? 'active' : ''}`}
                                 onClick={() => {
                                     setPreferSource('rest');
-                                    loadStatementData('rest');
+                                    loadStatementData(undefined, 'rest');
                                 }}
                             >
                                 REST API
@@ -708,7 +666,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                 className={`mode-btn ${preferSource === 'websocket' ? 'active' : ''}`}
                                 onClick={() => {
                                     setPreferSource('websocket');
-                                    loadStatementData('websocket');
+                                    loadStatementData(undefined, 'websocket');
                                 }}
                             >
                                 WebSocket
@@ -780,7 +738,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                         onClick={() => {
                                             setPatTokenInput('');
                                             localStorage.removeItem('deriv_legacy_api_token');
-                                            loadStatementData('auto');
+                                            loadStatementData(undefined, 'auto');
                                         }}
                                         title='Clear Saved Token'
                                     >
@@ -808,9 +766,6 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             <div className='notice-text'>
                                 <strong>Deriv Gateway Diagnostic ({apiError.code || `HTTP ${apiError.rawStatus}`}):</strong>{' '}
                                 <span>{apiError.message}</span>
-                                <span className='notice-hint'>
-                                    Displaying interactive pre-upgrade options history simulation for account {loginIdInput}. Click Refresh or switch to WebSocket mode to retry live feed.
-                                </span>
                             </div>
                         </div>
                         <div className='notice-actions'>
@@ -819,7 +774,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                                 className='notice-btn notice-btn-primary'
                                 onClick={() => {
                                     setPreferSource('websocket');
-                                    loadStatementData('websocket');
+                                    loadStatementData(undefined, 'websocket');
                                 }}
                             >
                                 Switch to WebSocket Mode
@@ -834,7 +789,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             <button
                                 type='button'
                                 className='notice-btn notice-btn-secondary'
-                                onClick={() => loadStatementData('rest')}
+                                onClick={() => loadStatementData(undefined, 'rest')}
                             >
                                 Retry REST Endpoint
                             </button>
@@ -1083,7 +1038,7 @@ export const LegacyStatementModal = observer(({ isOpen, onClose, initialLoginId 
                             </div>
                             <h3 className='loading-title'>Accessing Deriv Options Legacy Statement...</h3>
                             <p className='loading-sub'>
-                                Querying GET https://api.derivws.com/trading/v1/options/legacy/statement?loginid={loginIdInput}
+                                Querying real statement records for account {loginIdInput}...
                             </p>
                         </div>
                     ) : filteredTransactions.length === 0 ? (

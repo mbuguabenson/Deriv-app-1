@@ -585,7 +585,6 @@ class APIBase {
                                 String(res.error.message).includes('authorize')
                             ) {
                                 purgeInvalidToken(token);
-                                if (expectedId) purgeInvalidToken(expectedId);
                             }
                         }
                     } catch (tokErr: any) {
@@ -598,7 +597,6 @@ class APIBase {
                             String(msg).includes('authorize')
                         ) {
                             purgeInvalidToken(token);
-                            if (expectedId) purgeInvalidToken(expectedId);
                         }
                     }
 
@@ -796,6 +794,12 @@ class APIBase {
             }
 
             setAccountList(accountList); // Observable stream
+            this.account_info = {
+                balance: balance?.balance,
+                currency: balance?.currency,
+                loginid: balance?.loginid,
+                account_list: accountList,
+            };
             setAuthData({
                 balance: balance?.balance,
                 currency: balance?.currency,
